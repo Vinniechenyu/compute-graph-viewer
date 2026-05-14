@@ -14,6 +14,35 @@
       background: var(--background);
     }
 
+    * {
+      scrollbar-color: color-mix(in srgb, var(--surface-4) 82%, transparent) color-mix(in srgb, var(--surface-1) 72%, transparent);
+      scrollbar-width: thin;
+    }
+
+    *::-webkit-scrollbar {
+      width: 10px;
+      height: 10px;
+    }
+
+    *::-webkit-scrollbar-track {
+      background: color-mix(in srgb, var(--surface-1) 72%, transparent);
+      border-radius: var(--radius-pill);
+    }
+
+    *::-webkit-scrollbar-thumb {
+      background: color-mix(in srgb, var(--surface-4) 82%, transparent);
+      border: 2px solid color-mix(in srgb, var(--surface-1) 72%, transparent);
+      border-radius: var(--radius-pill);
+    }
+
+    *::-webkit-scrollbar-thumb:hover {
+      background: color-mix(in srgb, var(--foreground-muted) 72%, var(--surface-4));
+    }
+
+    *::-webkit-scrollbar-corner {
+      background: transparent;
+    }
+
     .wb-page {
       display: grid;
       grid-template-rows: 58px minmax(0, 1fr);
@@ -369,6 +398,82 @@
       margin: 2px var(--space-3) var(--space-3) 56px;
     }
 
+    .line-ai-note {
+      margin: 2px var(--space-3) var(--space-3) 56px;
+    }
+
+    .line-ai-card {
+      position: relative;
+      min-width: 0;
+      overflow: hidden;
+      border-radius: var(--radius-md);
+      padding: 1px;
+      background: linear-gradient(
+        135deg,
+        color-mix(in srgb, var(--primary-hover) 82%, transparent),
+        color-mix(in srgb, var(--success) 58%, transparent) 48%,
+        color-mix(in srgb, var(--warning) 62%, transparent)
+      );
+    }
+
+    .line-ai-card::before {
+      content: "";
+      position: absolute;
+      inset: 1px;
+      border-radius: calc(var(--radius-md) - 1px);
+      background: linear-gradient(
+        135deg,
+        color-mix(in srgb, var(--primary) 14%, var(--surface-2)),
+        color-mix(in srgb, var(--surface-1) 88%, transparent)
+      );
+      pointer-events: none;
+    }
+
+    .line-ai-card-inner {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      gap: var(--space-2);
+      padding: var(--space-3);
+      border-radius: calc(var(--radius-md) - 1px);
+      background: color-mix(in srgb, var(--surface-1) 78%, transparent);
+    }
+
+    .line-ai-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-2);
+    }
+
+    .line-ai-badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 20px;
+      padding: 0 var(--space-2);
+      border-radius: var(--radius-pill);
+      background: color-mix(in srgb, var(--primary) 18%, transparent);
+      color: var(--primary-foreground);
+      font: var(--text-label);
+      letter-spacing: 0;
+      white-space: nowrap;
+    }
+
+    .line-ai-title {
+      min-width: 0;
+      color: var(--foreground);
+      font: var(--text-body-sm);
+      font-weight: var(--font-weight-semibold);
+      line-height: 1.45;
+    }
+
+    .line-ai-text {
+      margin: 0;
+      color: var(--foreground-secondary);
+      font: var(--text-body-sm);
+      line-height: 1.55;
+    }
+
     .line-detail-card {
       min-width: 0;
       border-radius: var(--radius-md);
@@ -527,6 +632,77 @@
       grid-template-columns: minmax(0, 1fr);
     }
 
+    .hardware-single {
+      min-width: 0;
+      min-height: 0;
+      display: grid;
+      place-items: center;
+    }
+
+    .hardware-compare {
+      min-width: 0;
+      min-height: 0;
+      display: none;
+      grid-template-rows: minmax(0, 1.2fr) minmax(0, 1fr);
+      gap: var(--space-2);
+    }
+
+    .hardware-viewport.is-compare .hardware-single {
+      display: none;
+    }
+
+    .hardware-viewport.is-compare .hardware-compare {
+      display: grid;
+    }
+
+    .hardware-compare-pane {
+      min-width: 0;
+      min-height: 0;
+      display: block;
+      position: relative;
+    }
+
+    .hardware-compare-head {
+      position: absolute;
+      top: var(--space-2);
+      left: var(--space-2);
+      right: var(--space-2);
+      z-index: var(--z-raised);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-2);
+      padding: 0;
+      border: 0;
+      background: transparent;
+      backdrop-filter: none;
+      color: var(--foreground-secondary);
+      font: var(--text-label);
+      letter-spacing: 0;
+      text-transform: uppercase;
+      pointer-events: none;
+    }
+
+    .hardware-compare-head .wb-chip {
+      min-height: auto;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: var(--foreground-muted);
+    }
+
+    .hardware-compare-stage {
+      min-width: 0;
+      min-height: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      display: grid;
+      place-items: center;
+      border-radius: var(--radius-lg);
+      background: color-mix(in srgb, var(--surface-2) 64%, transparent);
+    }
+
     .hardware-scale {
       width: max-content;
       height: max-content;
@@ -567,6 +743,10 @@
       backdrop-filter: blur(12px);
     }
 
+    .hardware-viewport.is-compare .hardware-status {
+      display: none;
+    }
+
     .path-chip {
       display: inline-flex;
       align-items: center;
@@ -598,26 +778,444 @@
       overflow: auto;
       display: flex;
       flex-direction: column;
-      gap: var(--space-3);
-      padding: var(--space-3);
+      gap: 0;
+      padding: 0 var(--space-3) var(--space-3);
     }
 
     .inspector-section {
       min-width: 0;
-      border-radius: var(--radius-lg);
-      border: 1px solid var(--border-subtle);
-      background: var(--surface-1);
-      padding: var(--space-3);
+      border-radius: 0;
+      border: 0;
+      background: transparent;
+      padding: var(--space-4) 0;
       display: flex;
       flex-direction: column;
       gap: var(--space-3);
     }
 
+    .inspector-section + .inspector-section {
+      border-top: 1px solid var(--border-subtle);
+    }
+
+    .inspector-section[hidden] {
+      display: none;
+    }
+
+    .inspector-section-head {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-2);
+    }
+
     .inspector-section-title {
+      min-width: 0;
+      color: var(--foreground);
+      font: var(--text-title-2);
+      font-weight: var(--font-weight-semibold);
+      letter-spacing: 0;
+      line-height: 1.25;
+    }
+
+    .verdict-card,
+    .cost-summary,
+    .recommendation-list,
+    .tiling-panel,
+    .pipeline-panel {
+      min-width: 0;
+      display: grid;
+      gap: var(--space-2);
+    }
+
+    .inspector-chip-row,
+    .verdict-metric-row,
+    .v2-card-head {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-2);
+    }
+
+    .inspector-chip-row {
+      justify-content: flex-start;
+      flex-wrap: wrap;
+    }
+
+    .inspector-soft-card,
+    .verdict-card,
+    .tiling-card,
+    .pipeline-card,
+    .recommendation-item {
+      min-width: 0;
+      border-radius: var(--radius-md);
+      border: 0;
+      background: color-mix(in srgb, var(--surface-2) 80%, transparent);
+      padding: var(--space-3);
+      display: grid;
+      gap: var(--space-2);
+    }
+
+    .inspector-note-block {
+      min-width: 0;
+      display: grid;
+      gap: var(--space-2);
+      color: var(--foreground-secondary);
+      font: var(--text-body-sm);
+      line-height: 1.45;
+    }
+
+    .verdict-primary {
+      color: var(--foreground);
+      font: var(--text-title-2);
+      line-height: 1.35;
+    }
+
+    .verdict-delta {
+      color: var(--success);
+      font: 700 18px / 1.1 var(--font-sans);
+      white-space: nowrap;
+    }
+
+    .verdict-detail {
+      display: grid;
+      gap: 4px;
+      color: var(--foreground-secondary);
+      font: var(--text-body-sm);
+      line-height: 1.45;
+    }
+
+    .verdict-detail strong {
+      color: var(--foreground);
+      font-weight: var(--font-weight-semibold);
+    }
+
+    .cost-summary {
+      color: var(--foreground-secondary);
+      font: var(--text-body-sm);
+      line-height: 1.45;
+    }
+
+    .recommendation-item {
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      align-items: start;
+    }
+
+    .recommendation-rank {
+      width: 22px;
+      height: 22px;
+      border-radius: var(--radius-pill);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--state-muted);
+      color: var(--foreground);
+      font: var(--text-label);
+    }
+
+    .recommendation-copy {
+      min-width: 0;
+      display: grid;
+      gap: 4px;
+    }
+
+    .recommendation-title {
+      color: var(--foreground);
+      font: var(--text-body-sm);
+      font-weight: var(--font-weight-semibold);
+      line-height: 1.35;
+    }
+
+    .recommendation-copy p {
+      margin: 0;
+      color: var(--foreground-secondary);
+      font: var(--text-body-sm);
+      line-height: 1.45;
+    }
+
+    .recommendation-gain {
+      color: var(--success);
+      font: var(--text-mono);
+      white-space: nowrap;
+    }
+
+    .v2-divider {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
       color: var(--foreground-muted);
       font: var(--text-label);
       letter-spacing: 0;
       text-transform: uppercase;
+    }
+
+    .v2-divider::before,
+    .v2-divider::after {
+      content: "";
+      height: 1px;
+      flex: 1 1 auto;
+      background: var(--border-subtle);
+    }
+
+    .v2-card-title {
+      color: var(--foreground);
+      font: var(--text-body-sm);
+      font-weight: var(--font-weight-semibold);
+    }
+
+    .v2-card-subtitle {
+      color: var(--foreground-muted);
+      font: var(--text-label);
+      white-space: nowrap;
+    }
+
+    .tiling-stats,
+    .pipeline-stats {
+      min-width: 0;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: var(--space-2);
+    }
+
+    .tiling-stat,
+    .pipeline-stat {
+      min-width: 0;
+      border-radius: var(--radius-md);
+      background: color-mix(in srgb, var(--surface-1) 82%, transparent);
+      padding: var(--space-2);
+      display: grid;
+      gap: 2px;
+    }
+
+    .tiling-stat span,
+    .pipeline-stat span {
+      color: var(--foreground-muted);
+      font: var(--text-label);
+    }
+
+    .tiling-stat strong,
+    .pipeline-stat strong {
+      color: var(--foreground);
+      font: var(--text-mono);
+      overflow-wrap: anywhere;
+    }
+
+    .tile-grid-wrap {
+      min-width: 0;
+      display: grid;
+      gap: var(--space-2);
+    }
+
+    .tile-axis-label {
+      color: var(--foreground-muted);
+      font: var(--text-label);
+      letter-spacing: 0;
+    }
+
+    .tile-map {
+      min-width: 0;
+      display: grid;
+      grid-template-columns: 44px minmax(0, 1fr);
+      grid-template-rows: auto auto auto;
+      gap: 6px var(--space-2);
+      align-items: center;
+    }
+
+    .tile-axis-top,
+    .tile-axis-left,
+    .tile-axis-foot {
+      color: var(--foreground-muted);
+      font: var(--text-label);
+      letter-spacing: 0;
+    }
+
+    .tile-axis-top,
+    .tile-axis-foot {
+      grid-column: 2;
+    }
+
+    .tile-axis-left {
+      grid-column: 1;
+      grid-row: 2;
+      display: grid;
+      gap: 2px;
+      justify-items: end;
+      text-align: right;
+      line-height: 1.25;
+    }
+
+    .tile-axis-left strong {
+      color: var(--foreground-secondary);
+      font-weight: var(--font-weight-semibold);
+    }
+
+    .tile-grid {
+      --tile-cols: 6;
+      --tile-rows: 4;
+      grid-column: 2;
+      grid-row: 2;
+      display: grid;
+      grid-template-columns: repeat(var(--tile-cols), minmax(0, 1fr));
+      grid-template-rows: repeat(var(--tile-rows), minmax(18px, 1fr));
+      gap: 3px;
+      border-radius: var(--radius-sm);
+      background: color-mix(in srgb, var(--surface-1) 82%, transparent);
+      padding: var(--space-2);
+    }
+
+    .tile-cell {
+      min-width: 0;
+      min-height: 18px;
+      border-radius: 2px;
+      background: color-mix(in srgb, var(--surface-4) 48%, transparent);
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border-default) 68%, transparent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .tile-cell.is-active {
+      background: color-mix(in srgb, var(--primary) 70%, var(--success));
+      color: var(--foreground);
+    }
+
+    .tile-marker {
+      font: 700 12px / 1 var(--font-sans);
+    }
+
+    .tile-memory-title {
+      color: var(--foreground);
+      font: var(--text-body-sm);
+      font-weight: var(--font-weight-semibold);
+    }
+
+    .memory-bars {
+      display: grid;
+      gap: var(--space-2);
+    }
+
+    .memory-row {
+      display: grid;
+      grid-template-columns: 42px minmax(0, 1fr) auto;
+      gap: var(--space-2);
+      align-items: center;
+      color: var(--foreground-secondary);
+      font: var(--text-label);
+    }
+
+    .memory-track {
+      height: 7px;
+      border-radius: var(--radius-pill);
+      background: var(--surface-1);
+      overflow: hidden;
+    }
+
+    .memory-fill {
+      display: block;
+      height: 100%;
+      width: var(--memory-pct);
+      border-radius: inherit;
+      background: color-mix(in srgb, var(--primary) 68%, var(--success));
+    }
+
+    .memory-row.is-warning .memory-fill {
+      background: var(--warning);
+    }
+
+    .pipeline-lanes {
+      min-width: 0;
+      display: grid;
+      gap: 6px;
+    }
+
+    .pipeline-axis {
+      display: grid;
+      grid-template-columns: 48px minmax(0, 1fr);
+      gap: var(--space-2);
+      color: var(--foreground-muted);
+      font: var(--text-label);
+    }
+
+    .pipeline-ticks {
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .pipeline-lane {
+      display: grid;
+      grid-template-columns: 48px minmax(0, 1fr);
+      gap: var(--space-2);
+      align-items: center;
+    }
+
+    .pipeline-unit {
+      color: var(--foreground-secondary);
+      font: var(--text-label);
+      white-space: nowrap;
+    }
+
+    .pipeline-track {
+      position: relative;
+      height: 16px;
+      border-radius: var(--radius-pill);
+      overflow: hidden;
+      background: var(--surface-1);
+    }
+
+    .pipeline-segment {
+      position: absolute;
+      top: 3px;
+      bottom: 3px;
+      left: var(--seg-left);
+      width: var(--seg-width);
+      border-radius: var(--radius-pill);
+      background: color-mix(in srgb, var(--primary) 70%, var(--success));
+    }
+
+    .pipeline-segment.is-critical {
+      background: var(--success);
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--foreground) 42%, transparent);
+    }
+
+    .pipeline-segment.is-bubble {
+      background:
+        repeating-linear-gradient(
+          135deg,
+          color-mix(in srgb, var(--warning) 44%, transparent) 0 3px,
+          transparent 3px 6px
+        );
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warning) 58%, transparent);
+    }
+
+    .pipeline-legend {
+      display: flex;
+      gap: var(--space-3);
+      flex-wrap: wrap;
+      color: var(--foreground-muted);
+      font: var(--text-label);
+    }
+
+    .pipeline-legend span {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .pipeline-legend span::before {
+      content: "";
+      width: 14px;
+      height: 7px;
+      border-radius: var(--radius-pill);
+      background: var(--primary);
+    }
+
+    .pipeline-legend .is-bubble::before {
+      background: var(--warning);
+    }
+
+    .pipeline-legend .is-critical::before {
+      background: var(--success);
     }
 
     .inspector-controls {
@@ -809,12 +1407,357 @@
       width: 100%;
     }
 
+    .slider-row.is-disabled {
+      opacity: 0.58;
+    }
+
+    .slider-row.is-disabled input {
+      cursor: not-allowed;
+    }
+
+    .slider-impact {
+      margin: 0;
+      color: var(--foreground-muted);
+      font: var(--text-body-sm);
+      line-height: 1.45;
+    }
+
     .analysis-list,
     .hybrid-split,
     .cycle-split,
     .mode-signal-list {
       display: grid;
       gap: var(--space-2);
+    }
+
+    .cycle-card {
+      min-width: 0;
+      display: grid;
+      gap: var(--space-2);
+    }
+
+    .cycle-card-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: var(--space-2);
+      color: var(--foreground-secondary);
+      font: var(--text-label);
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+
+    .cycle-card-head strong {
+      color: var(--foreground);
+      font: var(--text-body-sm);
+    }
+
+    .cycle-split.is-compare {
+      gap: var(--space-3);
+    }
+
+    .cycle-split.is-compare .cycle-card {
+      padding-bottom: var(--space-3);
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .cycle-split.is-compare .cycle-card:last-child {
+      padding-bottom: 0;
+      border-bottom: 0;
+    }
+
+    .analysis-visual-card {
+      min-width: 0;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-subtle);
+      background:
+        linear-gradient(135deg, color-mix(in srgb, var(--surface-2) 88%, transparent), color-mix(in srgb, var(--surface-1) 84%, transparent));
+      padding: var(--space-3);
+      display: grid;
+      gap: var(--space-3);
+    }
+
+    .analysis-visual-head {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-2);
+    }
+
+    .analysis-visual-title {
+      min-width: 0;
+      color: var(--foreground);
+      font: var(--text-body-sm);
+      font-weight: var(--font-weight-semibold);
+      line-height: 1.35;
+    }
+
+    .analysis-visual-badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 20px;
+      padding: 0 var(--space-2);
+      border-radius: var(--radius-pill);
+      background: color-mix(in srgb, var(--primary) 16%, transparent);
+      color: var(--foreground-secondary);
+      font: var(--text-label);
+      white-space: nowrap;
+    }
+
+    .analysis-flow {
+      min-width: 0;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(76px, 1fr));
+      gap: var(--space-2);
+      align-items: stretch;
+    }
+
+    .analysis-flow-step {
+      min-width: 0;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      background: color-mix(in srgb, var(--surface-1) 82%, transparent);
+      padding: var(--space-2);
+      display: grid;
+      gap: 3px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .analysis-flow-step.is-active {
+      border-color: color-mix(in srgb, var(--foreground-muted) 36%, var(--border-subtle));
+      background: color-mix(in srgb, var(--surface-3) 34%, var(--surface-1));
+    }
+
+    .analysis-flow-step span {
+      color: var(--foreground-muted);
+      font: var(--text-label);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .analysis-flow-step strong {
+      color: var(--foreground);
+      font: var(--text-body-sm);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .analysis-visual-note {
+      margin: 0;
+      color: var(--foreground-secondary);
+      font: var(--text-body-sm);
+      line-height: 1.5;
+    }
+
+    .analysis-evidence-list {
+      min-width: 0;
+      display: grid;
+      gap: var(--space-2);
+    }
+
+    .analysis-evidence-item {
+      min-width: 0;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-subtle);
+      background: color-mix(in srgb, var(--surface-1) 82%, transparent);
+      padding: var(--space-2);
+      display: grid;
+      gap: 3px;
+    }
+
+    .analysis-evidence-item strong {
+      color: var(--foreground);
+      font: var(--text-body-sm);
+    }
+
+    .analysis-evidence-item span {
+      color: var(--foreground-secondary);
+      font: var(--text-body-sm);
+      line-height: 1.45;
+    }
+
+    .mode-meter {
+      display: grid;
+      gap: var(--space-2);
+    }
+
+    .mode-meter-bar {
+      height: 14px;
+      border-radius: var(--radius-pill);
+      overflow: hidden;
+      display: flex;
+      background: var(--surface-1);
+      border: 1px solid var(--border-subtle);
+    }
+
+    .mode-meter-segment {
+      min-width: 0;
+      width: var(--segment-pct);
+    }
+
+    .mode-meter-segment.is-simd {
+      background: linear-gradient(90deg, var(--primary), color-mix(in srgb, var(--primary) 62%, var(--success)));
+    }
+
+    .mode-meter-segment.is-simt {
+      background: linear-gradient(90deg, color-mix(in srgb, var(--warning) 80%, var(--danger)), var(--warning));
+    }
+
+    .mode-meter-legend {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: var(--space-2);
+    }
+
+    .mode-meter-item {
+      min-width: 0;
+      display: grid;
+      gap: 2px;
+      padding: var(--space-2);
+      border-radius: var(--radius-md);
+      background: color-mix(in srgb, var(--surface-1) 82%, transparent);
+      border: 1px solid var(--border-subtle);
+    }
+
+    .mode-meter-item span {
+      color: var(--foreground-muted);
+      font: var(--text-label);
+    }
+
+    .mode-meter-item strong {
+      color: var(--foreground);
+      font: var(--text-body-sm);
+    }
+
+    .scenario-grid {
+      min-width: 0;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
+      gap: var(--space-2);
+    }
+
+    .scenario-card {
+      min-width: 0;
+      display: grid;
+      gap: var(--space-2);
+      padding: var(--space-2);
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-subtle);
+      background: color-mix(in srgb, var(--surface-1) 82%, transparent);
+    }
+
+    .scenario-card.is-best {
+      border-color: color-mix(in srgb, var(--primary) 56%, var(--border-subtle));
+      background: color-mix(in srgb, var(--primary) 12%, var(--surface-1));
+    }
+
+    .scenario-card strong {
+      color: var(--foreground);
+      font: var(--text-label);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .scenario-card span {
+      color: var(--foreground-muted);
+      font: var(--text-label);
+    }
+
+    .scenario-track {
+      height: 7px;
+      border-radius: var(--radius-pill);
+      background: var(--surface-3);
+      overflow: hidden;
+    }
+
+    .scenario-fill {
+      display: block;
+      height: 100%;
+      width: var(--scenario-pct);
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--primary), color-mix(in srgb, var(--primary) 48%, var(--success)));
+    }
+
+    .partition-map {
+      min-width: 0;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-subtle);
+      background: color-mix(in srgb, var(--surface-2) 82%, transparent);
+      padding: var(--space-3);
+      display: grid;
+      gap: var(--space-3);
+    }
+
+    .partition-lane {
+      min-width: 0;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+      gap: var(--space-2);
+      align-items: stretch;
+    }
+
+    .partition-node {
+      min-width: 0;
+      position: relative;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-subtle);
+      background: color-mix(in srgb, var(--surface-1) 84%, transparent);
+      padding: var(--space-2);
+      display: grid;
+      gap: 4px;
+      overflow: hidden;
+    }
+
+    .partition-node.is-active {
+      border-color: color-mix(in srgb, var(--foreground-muted) 36%, var(--border-subtle));
+      background: color-mix(in srgb, var(--surface-3) 36%, var(--surface-1));
+    }
+
+    .partition-node span {
+      color: var(--foreground-muted);
+      font: var(--text-label);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .partition-node strong {
+      color: var(--foreground);
+      font: var(--text-body-sm);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .partition-summary {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: var(--space-2);
+    }
+
+    .partition-stat {
+      min-width: 0;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-subtle);
+      background: color-mix(in srgb, var(--surface-1) 82%, transparent);
+      padding: var(--space-2);
+      display: grid;
+      gap: 2px;
+    }
+
+    .partition-stat span {
+      color: var(--foreground-muted);
+      font: var(--text-label);
+    }
+
+    .partition-stat strong {
+      color: var(--foreground);
+      font: var(--text-body-sm);
     }
 
     .finding,
@@ -897,6 +1840,44 @@
       gap: 0;
     }
 
+    .debug-section {
+      background: color-mix(in srgb, var(--surface-1) 72%, transparent);
+    }
+
+    .debug-summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-2);
+      cursor: pointer;
+      list-style: none;
+    }
+
+    .debug-summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .debug-summary::after {
+      content: "⌄";
+      color: var(--foreground-muted);
+      font: 700 14px / 1 var(--font-sans);
+      transition: transform var(--duration-fast) var(--easing-default);
+    }
+
+    .debug-section[open] .debug-summary::after {
+      transform: rotate(180deg);
+    }
+
+    .debug-summary .wb-chip {
+      color: var(--foreground-muted);
+      border-color: var(--border-subtle);
+      background: transparent;
+    }
+
+    .debug-section #reasonList {
+      margin-top: var(--space-3);
+    }
+
     .cycle-summary {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -947,6 +1928,9 @@
       background: var(--primary-hover);
     }
 
+    .cycle-fill.is-compute { background: var(--success); }
+    .cycle-fill.is-data { background: var(--primary-hover); }
+    .cycle-fill.is-sync { background: var(--warning); }
     .cycle-fill.is-simd { background: var(--success); }
     .cycle-fill.is-simt { background: var(--warning); }
     .cycle-fill.is-switch { background: var(--danger); }
@@ -962,6 +1946,31 @@
       font: 700 15px / 1.2 var(--font-sans);
       white-space: normal;
       overflow-wrap: anywhere;
+    }
+
+    .inspector-body .metric-card,
+    .inspector-body .slider-row,
+    .inspector-body .analysis-visual-card,
+    .inspector-body .analysis-flow-step,
+    .inspector-body .analysis-evidence-item,
+    .inspector-body .mode-meter-item,
+    .inspector-body .scenario-card,
+    .inspector-body .partition-map,
+    .inspector-body .partition-node,
+    .inspector-body .partition-stat,
+    .inspector-body .finding,
+    .inspector-body .hybrid-card,
+    .inspector-body .mode-signal,
+    .inspector-body .cycle-row {
+      border: 0;
+    }
+
+    .inspector-body .cycle-split.is-compare .cycle-card {
+      border-bottom-color: var(--border-subtle);
+    }
+
+    .inspector-body .reason-row {
+      border-bottom-color: var(--border-subtle);
     }
 
     @media (max-width: 1420px) {
@@ -993,7 +2002,7 @@
         <div class="wb-context" aria-label="Context">
           <span class="wb-chip">内核 <strong id="contextKernelName">c_api_add</strong></span>
           <span class="wb-chip">目标 <strong id="contextTarget">Ascend 950B</strong></span>
-          <span class="wb-chip">分析层级 <strong id="contextAnalysis">T1 静态</strong></span>
+          <span class="wb-chip">分析 <strong id="contextAnalysis">T1 静态</strong></span>
           <span class="wb-chip is-verdict">结论 <strong id="contextVerdict">PURE SIMD</strong></span>
         </div>
       </div>
@@ -1018,7 +2027,7 @@
           </div>
           <div class="panel-shell-meta">
             <span class="wb-chip" id="sourceLineCount">136 行</span>
-            <span class="wb-chip is-verdict" id="sourceMarkCount">6 行已标注</span>
+            <button class="btn btn-sm btn-ghost" type="button" id="sourceMarkToggle" aria-pressed="true">隐藏标注</button>
           </div>
         </header>
         <div class="wb-source-body layout-surface-fill-strong" id="sourceBody" role="listbox" aria-label="Kernel source lines"></div>
@@ -1032,6 +2041,7 @@
               <select class="kernel-select" id="archSelect" aria-label="选择硬件架构">
                 <option value="ascend950" selected>Ascend 950</option>
                 <option value="ascend910b">Ascend 910B</option>
+                <option value="compare950910b">950 / 910B 对比视图</option>
               </select>
             </div>
           </div>
@@ -1049,8 +2059,34 @@
           </div>
         </header>
         <div class="hardware-viewport layout-surface-fill" id="hardwareViewport">
-          <div class="hardware-scale" id="hardwareScale">
-            <iframe class="hardware-frame" id="hardwareFrame" src="./hardware-frame.html" title="Ascend 950B architecture map"></iframe>
+          <div class="hardware-single" id="hardwareSingle">
+            <div class="hardware-scale" id="hardwareScale" data-hardware-scale="primary">
+              <iframe class="hardware-frame" id="hardwareFrame" data-hardware-frame="primary" src="./hardware-frame.html" title="Selected Ascend architecture map"></iframe>
+            </div>
+          </div>
+          <div class="hardware-compare" id="hardwareCompare" aria-label="Ascend 950 and 910B architecture comparison">
+            <section class="hardware-compare-pane" aria-label="Ascend 950 architecture">
+              <div class="hardware-compare-head">
+                <span>Ascend 950</span>
+                <span class="wb-chip">35%</span>
+              </div>
+              <div class="hardware-compare-stage">
+                <div class="hardware-scale" data-hardware-scale="ascend950">
+                  <iframe class="hardware-frame" data-hardware-frame="ascend950" src="./hardware-frame.html" title="Ascend 950 architecture map"></iframe>
+                </div>
+              </div>
+            </section>
+            <section class="hardware-compare-pane" aria-label="Ascend 910B architecture">
+              <div class="hardware-compare-head">
+                <span>Ascend 910B</span>
+                <span class="wb-chip">35%</span>
+              </div>
+              <div class="hardware-compare-stage">
+                <div class="hardware-scale" data-hardware-scale="ascend910b">
+                  <iframe class="hardware-frame" data-hardware-frame="ascend910b" src="./hardware-frame.html" title="Ascend 910B architecture map"></iframe>
+                </div>
+              </div>
+            </section>
           </div>
           <div class="hardware-status" id="pathChips"></div>
         </div>
@@ -1062,498 +2098,101 @@
             <h2 class="panel-shell-title">Inspector</h2>
           </div>
           <div class="panel-shell-meta">
-            <span class="wb-chip" id="selectedLineChip">第 48 行</span>
-            <span class="wb-chip is-verdict" id="selectedVerdictChip">SIMD / Cube</span>
+            <span class="wb-chip" id="selectedKernelChip">c_api_add</span>
+            <span class="wb-chip is-verdict" id="selectedKindChip">SIMD</span>
           </div>
         </header>
         <div class="panel-shell-body inspector-body layout-surface-fill">
-          <section class="inspector-section" aria-label="Decision basis">
-            <span class="inspector-section-title">基本解释</span>
-            <div class="evidence-body" id="evidenceBody"></div>
-          </section>
-
-          <section class="inspector-section" aria-label="Cycle split">
-            <div class="rewrite-head">
-              <span class="inspector-section-title">Cycle Split</span>
-              <span class="wb-chip" id="cycleArchChip">Ascend 950</span>
+          <section class="inspector-section" id="verdictSection" aria-label="Comparative verdict" hidden>
+            <div class="inspector-section-head">
+              <span class="inspector-section-title">对比结论 · Comparative Verdict</span>
+              <button class="btn btn-sm btn-ghost" type="button" aria-label="复制对比结论">复制</button>
             </div>
-            <div class="cycle-split" id="cycleSplit"></div>
+            <div class="verdict-card" id="verdictBody"></div>
           </section>
 
           <section class="inspector-section" aria-label="Analysis controls">
-            <div class="rewrite-head">
-              <span class="inspector-section-title">分析层级</span>
+            <div class="inspector-section-head">
+              <span class="inspector-section-title">分析配置 · Tunables</span>
               <span class="wb-chip" id="modeTag">COMPILED analysis</span>
             </div>
             <div class="inspector-controls" aria-label="Analysis tier">
-              <button class="btn btn-sm" type="button" data-tier="t1">T1 Static</button>
+              <button class="btn btn-sm" type="button" data-tier="t1">T1 Source</button>
               <button class="btn btn-sm is-selected" type="button" data-tier="t2">T2 Compiled</button>
-              <button class="btn btn-sm" type="button" data-tier="t3">T3 Simulated</button>
+              <button class="btn btn-sm" type="button" data-tier="t3">T3 Profiled</button>
             </div>
-            <div class="slider-row">
-              <div><span>K tile</span><strong id="kValue">128</strong></div>
+            <div class="slider-row" id="kSliderRow">
+              <div><span id="kSliderLabel">K tile</span><strong id="kValue">128</strong></div>
               <input id="kSlider" type="range" min="64" max="384" step="64" value="128" aria-label="K tile">
+              <p class="slider-impact" id="kImpact">影响 SIMD cycle。</p>
             </div>
-            <div class="slider-row">
-              <div><span>tail length</span><strong id="tailValue">17</strong></div>
+            <div class="slider-row" id="tailSliderRow">
+              <div><span id="tailSliderLabel">tail length</span><strong id="tailValue">17</strong></div>
               <input id="tailSlider" type="range" min="0" max="64" step="1" value="17" aria-label="Tail length">
+              <p class="slider-impact" id="tailImpact">影响 SIMT tail。</p>
             </div>
             <div class="analysis-list" id="analysisList"></div>
           </section>
 
-          <section class="inspector-section" aria-label="Hybrid split">
-            <span class="inspector-section-title">Hybrid Split</span>
+          <section class="inspector-section" aria-label="Cost breakdown">
+            <div class="inspector-section-head">
+              <span class="inspector-section-title">周期成本拆分 · Cost Breakdown</span>
+              <span class="wb-chip" id="cycleArchChip">Ascend 950</span>
+            </div>
+            <div class="cost-summary" id="costSummary"></div>
+            <div class="cycle-split" id="cycleSplit"></div>
+          </section>
+
+          <section class="inspector-section" aria-label="Mode partition">
+            <div class="inspector-section-head">
+              <span class="inspector-section-title">混合执行画像 · Hybrid Profile</span>
+              <span class="wb-chip" id="hybridStatusChip">Hybrid</span>
+            </div>
             <div class="hybrid-split" id="hybridSplit"></div>
           </section>
 
-          <section class="inspector-section" aria-label="Reason codes">
-            <span class="inspector-section-title">reason codes</span>
+          <section class="inspector-section" aria-label="Optimization recommendations">
+            <div class="inspector-section-head">
+              <span class="inspector-section-title">优化建议 · Recommendations</span>
+              <span class="wb-chip">Top 3</span>
+            </div>
+            <div class="recommendation-list" id="recommendationList"></div>
+          </section>
+
+          <details class="inspector-section debug-section" aria-label="Debug evidence">
+            <summary class="debug-summary">
+              <span class="inspector-section-title">证据追踪 · Evidence</span>
+              <span class="wb-chip" id="evidenceSummaryChip">reason codes</span>
+            </summary>
             <div class="reason-list" id="reasonList"></div>
+          </details>
+
+          <section class="inspector-section v2-section" aria-label="Tiling analysis">
+            <div class="inspector-section-head">
+              <span class="inspector-section-title">V2 切分分析 · Tiling</span>
+              <span class="wb-chip">V2</span>
+            </div>
+            <div class="tiling-panel" id="tilingPanel"></div>
+          </section>
+
+          <section class="inspector-section v2-section" aria-label="Pipeline analysis">
+            <div class="inspector-section-head">
+              <span class="inspector-section-title">V2 流水线分析 · Pipeline</span>
+              <span class="wb-chip">V2</span>
+            </div>
+            <div class="pipeline-panel" id="pipelinePanel"></div>
           </section>
         </div>
       </section>
     </main>
   </div>
 
+  <script src="./kernels/registry.js"></script>
+  <script src="./kernels/c_api_add.js"></script>
+  <script src="./kernels/gelu_high_api.js"></script>
+  <script src="./kernels/gelu_high_performance.js"></script>
+  <script src="./kernels/fp8_mmad_masked_reduce.js"></script>
   <script>
-    const FP8_LINES = [
-      {
-        id: 'l42',
-        line: 42,
-        kind: 'memory',
-        tag: 'MTE2 预取',
-        code: 'DataCopy(aL1, aGM + tileOffset, BLOCK_K * BLOCK_M);',
-        short: 'Cube 计算开始前，先把 GM / L2 数据搬入 AIC L1。',
-        selectors: ['[data-mem950-node="rail:GM"]', '[data-mem950-node="rail:L2"]', '#mem950-aic [data-aic-node="buffer:L1"]'],
-        routes: ['l2-to-aic'],
-        path: 'Global Memory → L2 → MTE2 → AIC L1',
-        verdict: '访存预取',
-        reasons: ['GM 连续读', 'L1 复用窗口', 'MTE2 可搬运'],
-        explanation: '这个 tile 会被多个 MMA 步骤复用。先通过 L2 / MTE2 搬入 L1，比重复从 GM 读取更稳定。',
-        rewrite: 'DataCopy(aL1, aGM + tileOffset, alignedBlockBytes);',
-        metrics: { confidence: '91%', cycles: '-18%', pressure: 'L2 中等' }
-      },
-      {
-        id: 'l48',
-        line: 48,
-        kind: 'compute',
-        tag: 'SIMD / Cube',
-        code: 'MmadFp8(cL0C, aL0A, bL0B, repeatM, repeatN, repeatK);',
-        short: '对齐后的 FP8 矩阵片段适合走 AIC Cube 路径。',
-        selectors: ['#mem950-aic [data-aic-node="buffer:L1"]', '#mem950-aic [data-aic-node="buffer:L0A"]', '#mem950-aic [data-aic-node="buffer:L0B"]', '#mem950-aic [data-aic-node="cube:CUBE"]', '#mem950-aic [data-aic-node="buffer:L0C"]'],
-        routes: ['l2-to-aic'],
-        path: 'L1 → MTE1 → L0A / L0B → Cube → L0C',
-        verdict: 'SIMD / Cube',
-        reasons: ['Cube 友好形状', 'stride 已对齐', '支持 FP8 MMAD'],
-        explanation: '矩阵片段形状匹配 Cube 执行，两个操作数都能放入 L0A / L0B，不需要额外的标量分支控制。',
-        rewrite: 'MmadFp8(cL0C, aL0A, bL0B, mmadShape.m, mmadShape.n, mmadShape.k);',
-        metrics: { confidence: '94%', cycles: '-31%', pressure: 'L0 较高' }
-      },
-      {
-        id: 'l57',
-        line: 57,
-        kind: 'control',
-        tag: 'FixPipe 同步',
-        code: 'PipeBarrier<PIPE_FIX>();',
-        short: '进入向量 epilogue 前，用 FixPipe 保护 L0C 结果顺序。',
-        selectors: ['#mem950-aic [data-aic-node="buffer:FP"]', '#mem950-aic [data-aic-node="scheduler:Dispatch"]', '#mem950-aic [data-aic-node="buffer:L0C"]', '#mem950-aiv1 [data-aiv-node="buffer:UB"]'],
-        routes: ['aic-to-aiv1'],
-        path: 'L0C → FixPipe → 直连 CV 通道 → AIV UB',
-        verdict: '混合路径交接',
-        reasons: ['L0C 到 UB 交接', '需要顺序保护', '直连 CV 通道'],
-        explanation: '结果从 Cube 域进入向量 epilogue，需要明确的流水边界来保证 L0C 到 UB 的交接顺序。',
-        rewrite: 'SetFlag<PIPE_FIX, PIPE_V>();\nWaitFlag<PIPE_FIX, PIPE_V>();',
-        metrics: { confidence: '88%', cycles: '+2%', pressure: '同步压力低' }
-      },
-      {
-        id: 'l73',
-        line: 73,
-        kind: 'compute',
-        tag: 'SIMD / Vector',
-        code: 'Add(outUb, cUb, biasUb, VECTOR_ELEMS);',
-        short: 'MMA 后的 bias add 是 AIV 上的稠密向量操作。',
-        selectors: ['#mem950-aiv1 [data-aiv-node="buffer:UB"]', '#mem950-aiv1 [data-aiv-node="exec:SIMD"]', '#mem950-aiv1 [data-aiv-node="vector:Vector"]'],
-        routes: ['aic-to-aiv1'],
-        path: 'AIC L0C → AIV UB → SIMD → Vector',
-        verdict: 'SIMD / Vector',
-        reasons: ['稠密向量通道', '无分支发散', '数据已在 UB'],
-        explanation: '直连通道交接后数据已经在 UB 中，逐元素加法可以稳定映射到 Vector 执行单元。',
-        rewrite: 'Add(outUb, cUb, biasUb, alignedVectorElems);',
-        metrics: { confidence: '96%', cycles: '-22%', pressure: 'UB 中等' }
-      },
-      {
-        id: 'l82',
-        line: 82,
-        kind: 'control',
-        tag: 'SIMT 条件分支',
-        code: 'if (mask[k]) { outUb[k] = relu(outUb[k]); }',
-        short: 'mask 控制的分支需要隔离为 SIMT 区域。',
-        selectors: ['#mem950-aiv1 [data-aiv-node="buffer:UB"]', '#mem950-aiv1 [data-aiv-node="scalar:Scalar"]', '#mem950-aiv1 [data-aiv-node="exec:SIMT"]', '#mem950-aiv1 [data-aiv-node="vector:Vector"]'],
-        routes: [],
-        path: 'UB → Scalar 控制 → SIMT Warp Scheduler → Vector',
-        verdict: 'SIMT 区域',
-        reasons: ['线程分歧已测得', 'mask 密度变化', '标量守卫'],
-        explanation: '分支条件随元素变化，工作台会把它标为 SIMT 岛，而不是折叠进稠密 SIMD 向量路径。',
-        rewrite: 'Select(outUb, outUb, Zero, maskUb, VECTOR_ELEMS);',
-        metrics: { confidence: '83%', cycles: '-9%', pressure: '控制压力中等' }
-      },
-      {
-        id: 'l96',
-        line: 96,
-        kind: 'memory',
-        tag: 'MTE3 写回',
-        code: 'DataCopy(outGM + tileOffset, outUb, BLOCK_M * BLOCK_N);',
-        short: '向量结果从 UB 通过 MTE3 写回 L2 / GM。',
-        selectors: ['#mem950-aiv2 [data-aiv-node="buffer:UB"]', '[data-mem950-node="rail:L2"]', '[data-mem950-node="rail:GM"]'],
-        routes: ['aiv2-to-l2'],
-        path: 'AIV UB → MTE3 → L2 → Global Memory',
-        verdict: '访存写回',
-        reasons: ['写回连续', 'UB 排空', 'MTE3 可搬运'],
-        explanation: 'epilogue 后最终 tile 已经连续，可以从 AIV UB 经 MTE3 写回 L2 / GM。',
-        rewrite: 'DataCopy(outGM + tileOffset, outUb, alignedOutputBytes);',
-        metrics: { confidence: '90%', cycles: '-14%', pressure: 'GM 中等' }
-      }
-    ];
-
-    const FP8_SOURCE_LINES = [
-      '#include "tikicpulib.h"',
-      '#include "kernel_operator.h"',
-      '',
-      'using namespace AscendC;',
-      '',
-      'namespace {',
-      'constexpr int32_t BLOCK_M = 128;',
-      'constexpr int32_t BLOCK_N = 128;',
-      'constexpr int32_t BLOCK_K = 64;',
-      'constexpr int32_t VECTOR_ELEMS = 256;',
-      'constexpr int32_t kPrefetchStride = 8;',
-      'constexpr int32_t kPrefetchAhead  = 32;',
-      '}  // namespace',
-      '',
-      'template <typename DataT, typename AccT>',
-      'class FP8MmadMaskedReduce {',
-      ' public:',
-      '  __aicore__ inline FP8MmadMaskedReduce() = default;',
-      '',
-      '  __aicore__ inline void Init(GM_ADDR aGm, GM_ADDR bGm,',
-      '                              GM_ADDR biasGm, GM_ADDR maskGm,',
-      '                              GM_ADDR outGm) {',
-      '    aGM = aGm; bGM = bGm;',
-      '    biasGM = biasGm; maskGM = maskGm; outGM = outGm;',
-      '    pipe.InitBuffer(aL1Que, 1, BLOCK_K * BLOCK_M * sizeof(DataT));',
-      '    pipe.InitBuffer(bL1Que, 1, BLOCK_K * BLOCK_N * sizeof(DataT));',
-      '    pipe.InitBuffer(cL0CQue, 1, BLOCK_M * BLOCK_N * sizeof(AccT));',
-      '  }',
-      '',
-      '  __aicore__ inline void Process() {',
-      '    const int32_t tileCount = CeilDiv(M, BLOCK_M);',
-      '    for (int32_t tile = 0; tile < tileCount; ++tile) {',
-      '      const int32_t tileOffset = tile * BLOCK_M * K;',
-      '      LocalTensor<DataT> aL1 = aL1Que.AllocTensor<DataT>();',
-      '      LocalTensor<DataT> bL1 = bL1Que.AllocTensor<DataT>();',
-      '      const int32_t aBytes = BLOCK_K * BLOCK_M;',
-      '      const int32_t bBytes = BLOCK_K * BLOCK_N;',
-      '      WaitFlag<PIPE_MTE2, PIPE_M>();',
-      '      EnableMte2Prefetch(aL1Que);',
-      '',
-      '      // 把 tile A 从 GM/L2 装入 AIC L1，供后续 MMA 复用',
-      '      DataCopy(aL1, aGM + tileOffset, BLOCK_K * BLOCK_M);',
-      '      DataCopy(bL1, bGM + tileOffset, BLOCK_K * BLOCK_N);',
-      '      aL1Que.EnQue(aL1);',
-      '      bL1Que.EnQue(bL1);',
-      '      LocalTensor<DataT> aL0A = LoadL0A(aL1, mmadShape);',
-      '      LocalTensor<DataT> bL0B = LoadL0B(bL1, mmadShape);',
-      '      MmadFp8(cL0C, aL0A, bL0B, repeatM, repeatN, repeatK);',
-      '      cL0CQue.EnQue(cL0C);',
-      '      FreeL0A(aL0A);',
-      '      FreeL0B(bL0B);',
-      '',
-      '      // Cube 完成，准备交接到 Vector epilogue',
-      '      LocalTensor<AccT> cUb = TransferToVector(cL0C);',
-      '      ReleaseL0C(cL0C);',
-      '      SetFlag<PIPE_FIX, PIPE_V>();',
-      '      PipeBarrier<PIPE_FIX>();',
-      '      WaitFlag<PIPE_FIX, PIPE_V>();',
-      '',
-      '      LocalTensor<AccT> biasUb = biasQue.AllocTensor<AccT>();',
-      '      DataCopy(biasUb, biasGM + tile * BLOCK_N, BLOCK_N);',
-      '      biasQue.EnQue(biasUb);',
-      '',
-      '      LocalTensor<DataT> maskUb = maskQue.AllocTensor<DataT>();',
-      '      DataCopy(maskUb, maskGM + tile * BLOCK_N, BLOCK_N);',
-      '      maskQue.EnQue(maskUb);',
-      '',
-      '      LocalTensor<AccT> outUb = outQue.AllocTensor<AccT>();',
-      '',
-      '      // Bias add：稠密向量加法，AIV SIMD 通道',
-      '      const int32_t biasElems = AlignTo(VECTOR_ELEMS, 8);',
-      '      AlignVectorIo(outUb, cUb, biasElems);',
-      '      Add(outUb, cUb, biasUb, VECTOR_ELEMS);',
-      '      biasQue.FreeTensor(biasUb);',
-      '',
-      '      // mask 控制的逐元素分支，会被识别为 SIMT 区域',
-      '      const auto* mask = maskUb.GetPhyAddr();',
-      '      for (int32_t k = 0; k < VECTOR_ELEMS; ++k) {',
-      '        if (k % kPrefetchStride == 0) {',
-      '          PrefetchHint(maskUb, k + kPrefetchAhead);',
-      '        }',
-      '        if (mask[k]) { outUb[k] = relu(outUb[k]); }',
-      '      }',
-      '      maskQue.FreeTensor(maskUb);',
-      '',
-      '      const int32_t outOffset = tile * BLOCK_M * N;',
-      '      outQue.EnQue(outUb);',
-      '',
-      '      // 写回前对齐边界，避免非对齐 MTE3 拖慢',
-      '      AlignBoundary(outUb, BLOCK_M * BLOCK_N);',
-      '      WaitFlag<PIPE_V, PIPE_MTE3>();',
-      '',
-      '      // 经 MTE3 写回 L2 / GM，完成本 tile',
-      '      const int32_t writeBytes = AlignTo(BLOCK_M * BLOCK_N, 32);',
-      '      EnableMte3Drain(outQue);',
-      '      DataCopy(outGM + tileOffset, outUb, BLOCK_M * BLOCK_N);',
-      '      outQue.FreeTensor(outUb);',
-      '    }',
-      '  }',
-      '};'
-    ];
-
-    const C_API_ADD_SOURCE_LINES = String.raw`/**
-* Copyright (c) 2025 Huawei Technologies Co., Ltd.
-* This program is free software, you can redistribute it and/or modify it under the terms and conditions of
-* CANN Open Software License Agreement Version 2.0 (the "License").
-* Please refer to the License for details. You may not use this file except in compliance with the License.
-* THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
-* INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
-* See LICENSE in the root of the software repository for the full text of the License.
-*/
-
-
-/* !
- * \file c_api_add.asc
- * \brief
- */
-
-#include <cstdint>
-#include <iostream>
-#include <vector>
-#include <algorithm>
-#include <iterator>
-#include "acl/acl.h"
-#include "c_api/asc_simd.h"
-
-constexpr uint32_t TILE_LENGTH = 2048;
-constexpr uint32_t NUM_BLOCKS = 8;
-
-__vector__ __global__ __aicore__ void add_custom(__gm__ float* x, __gm__ float* y, __gm__ float* z)
-{
-    asc_init();
-
-    uint32_t blockLength = NUM_BLOCKS * TILE_LENGTH / asc_get_block_num();
-
-    __gm__ float* xGm = x + asc_get_block_idx() * blockLength;
-    __gm__ float* yGm = y + asc_get_block_idx() * blockLength;
-    __gm__ float* zGm = z + asc_get_block_idx() * blockLength;
-
-    __ubuf__ float xLocal[TILE_LENGTH];
-    __ubuf__ float yLocal[TILE_LENGTH];
-    __ubuf__ float zLocal[TILE_LENGTH];
-
-    asc_copy_gm2ub((__ubuf__ void*)xLocal, (__gm__ void*)xGm, blockLength * sizeof(float));
-    asc_copy_gm2ub((__ubuf__ void*)yLocal, (__gm__ void*)yGm, blockLength * sizeof(float));
-    asc_sync();
-
-    asc_add(zLocal, xLocal, yLocal, blockLength);
-    asc_sync();
-
-    asc_copy_ub2gm((__gm__ void*)zGm, (__ubuf__ void*)zLocal, blockLength * sizeof(float));
-    asc_sync();
-}
-
-std::vector<float> kernel_add(std::vector<float> &x, std::vector<float> &y)
-{
-    constexpr uint32_t numBlocks = NUM_BLOCKS;
-    uint32_t totalLength = x.size();
-    size_t totalByteSize = totalLength * sizeof(float);
-    int32_t deviceId = 0;
-    aclrtStream stream = nullptr;
-    uint8_t *xHost = reinterpret_cast<uint8_t *>(x.data());
-    uint8_t *yHost = reinterpret_cast<uint8_t *>(y.data());
-    uint8_t *zHost = nullptr;
-    float *xDevice = nullptr;
-    float *yDevice = nullptr;
-    float *zDevice = nullptr;
-
-    aclInit(nullptr);
-    aclrtSetDevice(deviceId);
-    aclrtCreateStream(&stream);
-
-    aclrtMallocHost((void **)(&zHost), totalByteSize);
-    aclrtMalloc((void **)&xDevice, totalByteSize, ACL_MEM_MALLOC_HUGE_FIRST);
-    aclrtMalloc((void **)&yDevice, totalByteSize, ACL_MEM_MALLOC_HUGE_FIRST);
-    aclrtMalloc((void **)&zDevice, totalByteSize, ACL_MEM_MALLOC_HUGE_FIRST);
-
-    aclrtMemcpy((uint8_t*)xDevice, totalByteSize, xHost, totalByteSize, ACL_MEMCPY_HOST_TO_DEVICE);
-    aclrtMemcpy((uint8_t*)yDevice, totalByteSize, yHost, totalByteSize, ACL_MEMCPY_HOST_TO_DEVICE);
-
-    add_custom<<<numBlocks, nullptr, stream>>>(xDevice, yDevice, zDevice);
-    aclrtSynchronizeStream(stream);
-
-    aclrtMemcpy(zHost, totalByteSize, (uint8_t*)zDevice, totalByteSize, ACL_MEMCPY_DEVICE_TO_HOST);
-    std::vector<float> z((float *)zHost, (float *)(zHost + totalByteSize));
-
-    aclrtFree(xDevice);
-    aclrtFree(yDevice);
-    aclrtFree(zDevice);
-    aclrtFreeHost(zHost);
-
-    aclrtDestroyStream(stream);
-    aclrtResetDevice(deviceId);
-    aclFinalize();
-
-    return z;
-}
-
-uint32_t VerifyResult(std::vector<float> &output, std::vector<float> &golden)
-{
-    auto printTensor = [](std::vector<float> &tensor, const char *name) {
-        constexpr size_t maxPrintSize = 20;
-        std::cout << name << ": ";
-        std::copy(tensor.begin(), tensor.begin() + std::min(tensor.size(), maxPrintSize),
-            std::ostream_iterator<float>(std::cout, " "));
-        if (tensor.size() > maxPrintSize) {
-            std::cout << "...";
-        }
-        std::cout << std::endl;
-    };
-    printTensor(output, "Output");
-    printTensor(golden, "Golden");
-    if (std::equal(golden.begin(), golden.end(), output.begin())) {
-        std::cout << "[Success] Case accuracy is verification passed." << std::endl;
-        return 0;
-    } else {
-        std::cout << "[Failed] Case accuracy is verification failed!" << std::endl;
-        return 1;
-    }
-    return 0;
-}
-
-int32_t main(int32_t argc, char *argv[])
-{
-    constexpr uint32_t totalLength = NUM_BLOCKS * TILE_LENGTH;
-    std::vector<float> x(totalLength);
-    std::vector<float> y(totalLength);
-    for (uint32_t i = 0; i < totalLength; ++i) {
-        x[i] = i * 0.1f;
-        y[i] = i * 0.1f;
-    }
-    std::vector<float> output = kernel_add(x, y);
-    std::vector<float> golden(totalLength);
-    for (uint32_t i = 0; i < totalLength; ++i) {
-        golden[i] = x[i] + y[i];
-    }
-    return VerifyResult(output, golden);
-}`.split('\n');
-
-    const C_API_ADD_LINES = [
-      {
-        id: 'add-l32',
-        line: 32,
-        kind: 'control',
-        tag: 'block 切分',
-        code: 'uint32_t blockLength = NUM_BLOCKS * TILE_LENGTH / asc_get_block_num();',
-        short: '按 block 均分连续向量，SIMD 主干没有额外 tail 分支。',
-        selectors: ['#mem950-aiv1 [data-aiv-node="scalar:Scalar"]', '#mem950-aiv1 [data-aiv-node="exec:SIMD"]'],
-        routes: [],
-        path: 'Block Scheduler → Scalar 参数 → SIMD 执行配置',
-        verdict: 'SIMD 分块',
-        reasons: ['固定 tile 长度', 'block 均分', '无数据相关分支'],
-        explanation: 'TILE_LENGTH 与 NUM_BLOCKS 都是编译期常量，blockLength 只由 block 数确定。Inspector 会把它判为稳定的 SIMD 分块策略。',
-        rewrite: 'uint32_t blockLength = AlignDown(NUM_BLOCKS * TILE_LENGTH / asc_get_block_num(), 8);',
-        metrics: { confidence: '89%', cycles: '0%', pressure: '控制低' }
-      },
-      {
-        id: 'add-l42',
-        line: 42,
-        kind: 'memory',
-        tag: 'GM→UB 读入',
-        code: 'asc_copy_gm2ub((__ubuf__ void*)xLocal, (__gm__ void*)xGm, blockLength * sizeof(float));',
-        short: 'x 向量从 GM/L2 连续搬入 UB，可观察 128B sector 命中。',
-        selectors: ['[data-mem950-node="rail:GM"]', '[data-mem950-node="rail:L2"]', '#mem950-aiv1 [data-aiv-node="buffer:UB"]'],
-        routes: ['l2-to-aiv1'],
-        path: 'Global Memory → L2 → AIV UB',
-        verdict: '访存读入',
-        reasons: ['GM 连续读', 'UB 常驻输入', '128B sector 友好'],
-        explanation: 'xGm 基于 blockIdx 做连续偏移，源地址和长度都适合用 NDDMA / sector 命中报告进一步确认访存效率。',
-        rewrite: 'asc_copy_gm2ub((__ubuf__ void*)xLocal, (__gm__ void*)xGm, AlignTo(blockLength, 32) * sizeof(float));',
-        metrics: { confidence: '92%', cycles: '-12%', pressure: 'L2 低' }
-      },
-      {
-        id: 'add-l43',
-        line: 43,
-        kind: 'memory',
-        tag: 'GM→UB 读入',
-        code: 'asc_copy_gm2ub((__ubuf__ void*)yLocal, (__gm__ void*)yGm, blockLength * sizeof(float));',
-        short: '第二个输入保持相同 stride，适合与 x 读入合并成访存白盒报告。',
-        selectors: ['[data-mem950-node="rail:GM"]', '[data-mem950-node="rail:L2"]', '#mem950-aiv1 [data-aiv-node="buffer:UB"]'],
-        routes: ['l2-to-aiv1'],
-        path: 'Global Memory → L2 → AIV UB',
-        verdict: '访存读入',
-        reasons: ['双输入对齐', 'burst 长度稳定', 'UB 常驻输入'],
-        explanation: 'yGm 与 xGm 的索引规则一致，工具可以把两条搬运合并观察，给出 sector 命中率和 NDDMA 重写收益。',
-        rewrite: 'asc_copy_gm2ub((__ubuf__ void*)yLocal, (__gm__ void*)yGm, AlignTo(blockLength, 32) * sizeof(float));',
-        metrics: { confidence: '91%', cycles: '-10%', pressure: 'L2 低' }
-      },
-      {
-        id: 'add-l46',
-        line: 46,
-        kind: 'compute',
-        tag: 'SIMD / Vector',
-        code: 'asc_add(zLocal, xLocal, yLocal, blockLength);',
-        short: '核心算子是稠密逐元素加法，直接落在 AIV SIMD / Vector 路径。',
-        selectors: ['#mem950-aiv1 [data-aiv-node="buffer:UB"]', '#mem950-aiv1 [data-aiv-node="exec:SIMD"]', '#mem950-aiv1 [data-aiv-node="vector:Vector"]'],
-        routes: [],
-        path: 'AIV UB → SIMD → Vector',
-        verdict: 'PURE SIMD',
-        reasons: ['稠密向量通道', '无分支发散', '寄存器压力低'],
-        explanation: 'asc_add 的输入输出都在 UB，且没有 mask 或 ragged tail。模式建议器会给出 PURE SIMD，Hybrid Inspector 只保留解释而不拆 SIMT 岛。',
-        rewrite: 'asc_add(zLocal, xLocal, yLocal, AlignTo(blockLength, 8));',
-        metrics: { confidence: '97%', cycles: '-19%', pressure: 'UB 低' }
-      },
-      {
-        id: 'add-l49',
-        line: 49,
-        kind: 'memory',
-        tag: 'UB→GM 写回',
-        code: 'asc_copy_ub2gm((__gm__ void*)zGm, (__ubuf__ void*)zLocal, blockLength * sizeof(float));',
-        short: '输出向量从 UB 连续写回 GM，关注写回对齐和 MTE drain。',
-        selectors: ['#mem950-aiv1 [data-aiv-node="buffer:UB"]', '[data-mem950-node="rail:L2"]', '[data-mem950-node="rail:GM"]'],
-        routes: ['aiv1-to-l2'],
-        path: 'AIV UB → L2 → Global Memory',
-        verdict: '访存写回',
-        reasons: ['写回连续', 'UB 排空', 'MTE3 可搬运'],
-        explanation: 'zGm 与输入同样按 block 连续切分，写回路径可以用 128B sector 和 L2 Control Hint 做最终校准。',
-        rewrite: 'asc_copy_ub2gm((__gm__ void*)zGm, (__ubuf__ void*)zLocal, AlignTo(blockLength, 32) * sizeof(float));',
-        metrics: { confidence: '93%', cycles: '-11%', pressure: 'GM 低' }
-      },
-      {
-        id: 'add-l79',
-        line: 79,
-        kind: 'control',
-        tag: 'Kernel Launch',
-        code: 'add_custom<<<numBlocks, nullptr, stream>>>(xDevice, yDevice, zDevice);',
-        short: 'Host 侧 launch 决定 block 数，适合作为 910→950 迁移检查入口。',
-        selectors: ['#mem950-aiv1 [data-aiv-node="scalar:Scalar"]', '#mem950-aiv1 [data-aiv-node="exec:SIMD"]'],
-        routes: [],
-        path: 'ACL Runtime → Kernel Launch → AIV SIMD',
-        verdict: '迁移检查点',
-        reasons: ['block 数显式', 'host/device 边界', '可做 what-if'],
-        explanation: 'numBlocks 当前固定为 8。What-if 分析可以快速比较 block 数、tile 长度和实际 block_num 对 SIMD 利用率的影响。',
-        rewrite: 'add_custom<<<numBlocks, nullptr, stream>>>(xDevice, yDevice, zDevice); // inspect block occupancy',
-        metrics: { confidence: '86%', cycles: 'what-if', pressure: '调度低' }
-      }
-    ];
-
     const ARCHES = {
       ascend950: {
         id: 'ascend950',
@@ -1568,45 +2207,22 @@ int32_t main(int32_t argc, char *argv[])
         preset: 'ascend910b',
         modeLabel: '910B SIMD baseline',
         notes: '传统 AIV SIMD 为主，AIC/AIV 协作按 GM/L2 路径建模。'
+      },
+      compare950910b: {
+        id: 'compare950910b',
+        label: '950 / 910B 对比视图',
+        modeLabel: '950 / 910B compare',
+        members: ['ascend950', 'ascend910b'],
+        notes: '并排比较 950 SIMD/SIMT 迁移收益与 910B SIMD baseline。'
       }
     };
 
-    const KERNELS = [
-      {
-        id: 'fp8_mmad_masked_reduce',
-        name: 'fp8_mmad_masked_reduce.tik',
-        label: 'fp8_mmad_masked_reduce',
-        path: 'kernels/fp8_mmad_masked_reduce.tik',
-        summary: 'FP8 MMAD + masked epilogue',
-        target: 'Ascend 950B',
-        analysis: 'T2 静态 + 画像',
-        verdict: '混合路径',
-        defaultTier: 't2',
-        selectedId: 'l42',
-        sourceLines: FP8_SOURCE_LINES,
-        annotations: FP8_LINES
-      },
-      {
-        id: 'c_api_add',
-        name: 'c_api_add.asc',
-        label: 'c_api_add',
-        path: 'gitcode.com/cann/asc-devkit/.../c_api_add.asc',
-        sourceUrl: 'https://gitcode.com/cann/asc-devkit/blob/master/examples/02_simd_c_api/00_introduction/01_add/c_api_async_add/c_api_add.asc',
-        summary: 'Baseline SIMD C API / legacy source kernel',
-        target: 'Ascend 950',
-        analysis: 'T1 静态 + 迁移检查',
-        verdict: '可迁移 baseline',
-        defaultTier: 't1',
-        selectedId: 'add-l42',
-        sourceLines: C_API_ADD_SOURCE_LINES,
-        annotations: C_API_ADD_LINES
-      }
-    ];
+    const KERNELS = window.WB_KERNELS || [];
 
     const TIER_TEXT = {
-      t1: ['T1 Static · ~1.2s', 'STATIC', '静态层只读取控制流、访存步长和 tile 形状，适合快速指出 SIMD/SIMT 倾向。'],
+      t1: ['T1 Source · ~1.2s', 'SOURCE', '静态层只读取控制流、访存步长和 tile 形状，适合快速指出 SIMD/SIMT 倾向。'],
       t2: ['T2 Compiled · ~18s', 'COMPILED', '编译层加入寄存器压力、FixPipe burst、C-V 直通路和编译期 cycle 估算。'],
-      t3: ['T3 Simulated · ~12min', 'SIMULATED', '仿真层追加 CANN SIM 画像，校准线程分歧、L2 sector 命中和模式切换开销。']
+      t3: ['T3 Profiled · ~12min', 'PROFILED', 'Profile 层追加 CANN SIM / T3 画像，校准线程分歧、L2 sector 命中和模式切换开销。']
     };
 
     const REASON_CODE_MAP = {
@@ -1638,20 +2254,78 @@ int32_t main(int32_t argc, char *argv[])
       '寄存器压力低': 'low_register_pressure',
       'block 数显式': 'explicit_block_count',
       'host/device 边界': 'host_device_boundary',
-      '可做 what-if': 'what_if_candidate'
+      '可做 what-if': 'what_if_candidate',
+      'GM/L2 协作路径': 'gm_l2_staging_path',
+      'SIMD 谓词化': 'simd_predication_fallback'
+    };
+
+    const REASON_HUMAN_TEXT = {
+      contiguous_gm_load: 'GM 连续读取',
+      l1_reuse_window: 'L1 复用窗口',
+      mte2_prefetch_eligible: 'MTE2 预取可行',
+      cube_friendly_shape: 'Cube 友好 tile 形状',
+      aligned_stride: '访存 stride 已对齐',
+      fp8_mmad_supported: 'FP8 MMAD 路径可用',
+      loc_to_ub_handoff: 'L0C 到 UB 交接',
+      fixpipe_order_guard: 'FixPipe 顺序保护',
+      cv_direct_path: 'C-V 直通路径',
+      dense_vector_lane: '稠密向量通道',
+      no_thread_divergence: '无线程分歧',
+      ub_resident_operand: '操作数常驻 UB',
+      thread_divergence_measured: '已测得线程分歧',
+      mask_density_variance: 'mask 密度变化',
+      scalar_guard_branch: '标量守卫分支',
+      contiguous_store: '连续写回',
+      ub_drain: 'UB 排空',
+      mte3_store_eligible: 'MTE3 写回可行',
+      static_tile_length: '固定 tile 长度',
+      block_even_partition: 'block 均匀切分',
+      no_data_dependent_branch: '无数据相关分支',
+      ub_resident_input: '输入常驻 UB',
+      sector_128b_friendly: '128B sector 友好',
+      dual_input_aligned: '双输入对齐',
+      stable_burst_length: 'burst 长度稳定',
+      low_register_pressure: '寄存器压力低',
+      explicit_block_count: 'block 数显式',
+      host_device_boundary: 'host/device 边界',
+      what_if_candidate: '可执行 what-if 评估',
+      gm_l2_staging_path: 'GM/L2 协作路径',
+      simd_predication_fallback: 'SIMD 谓词化降级',
+      c_api_vector_kernel: 'C API Vector kernel',
+      legacy_950_migration_candidate: '950 迁移候选路径',
+      native_910b_simd_baseline: '910B SIMD baseline',
+      gelu_vector_kernel: 'GELU Vector kernel',
+      regbase_vf_candidate: 'RegBase/VF 候选路径',
+      ascendc_gelu_api_lowering: 'AscendC GELU API 展开',
+      bufferid_migration_candidate: 'BufferID 迁移候选',
+      fixpipe_burst_boundary: 'FixPipe burst 边界',
+      simt_region_split: 'SIMT 区域拆分',
+      lane_mask_penalty: 'lane mask 开销',
+      sector_128b_watch: '128B sector 观察点',
+      nddma_rewrite_candidate: 'NDDMA 重写候选',
+      gm_ub_dma_baseline: 'GM↔UB DMA baseline',
+      sync_gap_watch: '同步 gap 观察点',
+      dual_issue_candidate: 'dual-issue 候选',
+      counterfactual_tail_zero: 'tail=0 反事实样本'
     };
 
     const state = {
-      selectedKernelId: 'c_api_add',
-      selectedArch: 'ascend950',
-      selectedId: 'add-l42',
+      selectedKernelId: 'fp8_mmad_masked_reduce',
+      selectedArch: 'compare950910b',
+      selectedId: 'l42',
       pathKind: 'memory',
-      tier: 't1',
+      tier: 't2',
       kTile: 128,
       tailLength: 17,
+      annotationsVisible: true,
       fitted: true,
-      frameReady: false,
-      frameSize: { width: 1200, height: 820 },
+      frameReady: { primary: false, ascend950: false, ascend910b: false },
+      frameSizes: {
+        primary: { width: 1200, height: 820 },
+        ascend950: { width: 1200, height: 820 },
+        ascend910b: { width: 1200, height: 820 }
+      },
+      scales: { primary: 1, ascend950: 0.35, ascend910b: 0.35 },
       scale: 1
     };
 
@@ -1662,8 +2336,45 @@ int32_t main(int32_t argc, char *argv[])
       return KERNELS.find((kernel) => kernel.id === state.selectedKernelId) || KERNELS[0];
     }
 
+    function isGeluKernel(kernel = currentKernel()) {
+      return kernel?.family === 'gelu';
+    }
+
     function currentArch() {
       return ARCHES[state.selectedArch] || ARCHES.ascend950;
+    }
+
+    function isCompareArch(id = state.selectedArch) {
+      return Array.isArray(ARCHES[id]?.members);
+    }
+
+    function activeArchIds() {
+      const arch = currentArch();
+      return arch.members || [arch.id];
+    }
+
+    function primaryArchId() {
+      return activeArchIds()[0] || 'ascend950';
+    }
+
+    function archById(id) {
+      return ARCHES[id] || ARCHES.ascend950;
+    }
+
+    function frameKeyForArch(archId) {
+      return isCompareArch() ? archId : 'primary';
+    }
+
+    function frameForKey(key) {
+      return qs(`[data-hardware-frame="${key}"]`);
+    }
+
+    function scaleForKey(key) {
+      return qs(`[data-hardware-scale="${key}"]`);
+    }
+
+    function frameSizeForKey(key) {
+      return state.frameSizes[key] || state.frameSizes.primary;
     }
 
     function currentAnnotations() {
@@ -1677,6 +2388,20 @@ int32_t main(int32_t argc, char *argv[])
     function analysisMeta() {
       const kernel = currentKernel();
       const arch = currentArch();
+      if (isCompareArch()) {
+        if (isGeluKernel(kernel)) {
+          return {
+            target: arch.label,
+            analysis: `${kernel.analysis} + 950/910B 对比`,
+            verdict: `${kernel.verdict} 对比`
+          };
+        }
+        return {
+          target: arch.label,
+          analysis: kernel.id === 'c_api_add' ? 'T1 静态 + 950/910B 迁移对比' : 'T2 编译估算 + 950/910B 对比',
+          verdict: kernel.id === 'c_api_add' ? 'PURE SIMD baseline 对比' : 'Hybrid vs baseline 对比'
+        };
+      }
       if (kernel.id === 'c_api_add' && arch.id === 'ascend910b') {
         return {
           target: arch.label,
@@ -1705,22 +2430,59 @@ int32_t main(int32_t argc, char *argv[])
       };
     }
 
-    function lineForArch(line) {
+    function adaptLineForArch(line, archId) {
+      if (!line || archId !== 'ascend910b') return line;
+      const selectors = (line.selectors || []).map((selector) => (
+        selector
+          .replace(/#mem950-aiv2/g, '#mem950-aiv1')
+          .replace(/exec:SIMT/g, 'exec:SIMD')
+      ));
+      const routeMap = {
+        'aic-to-aiv1': ['l2-to-aic', 'l2-to-aiv1'],
+        'aiv2-to-aic': ['l2-to-aic'],
+        'l2-to-aiv2': ['l2-to-aiv1'],
+        'l2-to-aiv2-dcache': ['l2-to-aiv1-dcache'],
+        'aiv2-to-l2': ['aiv1-to-l2']
+      };
+      const routes = [...new Set((line.routes || []).flatMap((route) => routeMap[route] || [route]))];
+      const next = { ...line, selectors, routes };
+      if (currentKernel().id !== 'c_api_add' && line.id === 'l57') {
+        next.tag = 'AIC/AIV 交接';
+        next.path = 'AIC L0C → GM/L2 staging → AIV UB';
+        next.verdict = '910B 兼容交接';
+        next.reasons = ['L0C 到 UB 交接', '需要顺序保护', 'GM/L2 协作路径'];
+        next.explanation = '910B 没有 950 的 C-V 直通路，交接解释会降级为 AIC/AIV 通过 GM/L2 staging 协作。';
+      }
+      if (currentKernel().id !== 'c_api_add' && line.id === 'l82') {
+        next.tag = 'SIMD fallback';
+        next.path = 'UB → Scalar guard → SIMD predication → Vector';
+        next.verdict = '910B 降级检查';
+        next.reasons = ['标量守卫', 'mask 密度变化', 'SIMD 谓词化'];
+        next.explanation = '910B 目标没有 SIMT island，mask tail 需要改写成 SIMD 谓词化或单独 cleanup path。';
+      }
+      return next;
+    }
+
+    function lineForArch(line, archId = primaryArchId()) {
       if (!line) return null;
-      const override = line.arch?.[state.selectedArch] || {};
-      return {
+      const override = line.arch?.[archId] || {};
+      return adaptLineForArch({
         ...line,
         ...override,
         metrics: { ...(line.metrics || {}), ...(override.metrics || {}) },
         reasons: override.reasons || line.reasons,
         selectors: override.selectors || line.selectors,
         routes: override.routes || line.routes
-      };
+      }, archId);
     }
 
-    function selectedLine() {
+    function selectedAnnotation() {
       const annotations = currentAnnotations();
-      return lineForArch(annotations.find((line) => line.id === state.selectedId) || annotations[0]);
+      return annotations.find((line) => line.id === state.selectedId) || annotations[0];
+    }
+
+    function selectedLine(archId = primaryArchId()) {
+      return lineForArch(selectedAnnotation(), archId);
     }
 
     function tagClass(kind) {
@@ -1750,6 +2512,46 @@ int32_t main(int32_t argc, char *argv[])
             <span class="line-mini-metric"><span>cycles</span><strong>${escapeHtml(line.metrics.cycles)}</strong></span>
             <span class="line-mini-metric"><span>pressure</span><strong>${escapeHtml(line.metrics.pressure)}</strong></span>
           </div>
+        </div>
+      `;
+    }
+
+    function sourceAiRecommendations(lineNo) {
+      if (currentKernel().id !== 'c_api_add' || primaryArchId() !== 'ascend950') return [];
+      const notes = {
+        32: [
+          ['L32 · 对齐 blockLength', '把 blockLength 约束为 32 个 float 的倍数，让每次 GM↔UB 搬运落在 128B sector 边界；非对齐 tail 单独走 cleanup path。']
+        ],
+        42: [
+          ['建议改写', 'xLocal 搬运前检查 xGm 128B 对齐；若连续块足够长，标记为 nddma_rewrite_candidate，并打开 L2 sector 统计。']
+        ],
+        43: [
+          ['L42-L43 · 搬运升级检查', '对 x/y 两路 asc_copy_gm2ub 计算 sector hit rate；若 stride/shape 稳定，生成 950 migration variant，优先尝试 NDDMA 或双缓冲预取。']
+        ],
+        44: [
+          ['L44/L47/L50 · 同步收窄', '当前 asc_sync() 是全局保守同步；950 目标下检查能否改成更窄的 BufferID/set-wait 或 producer/consumer barrier，减少 memory/sync cycles。']
+        ]
+      };
+      return notes[lineNo] || [];
+    }
+
+    function renderAiRecommendationCard(items) {
+      if (!items.length) return '';
+      return `
+        <div class="line-ai-note">
+          <article class="line-ai-card">
+            <div class="line-ai-card-inner">
+              ${items.map((item, index) => `
+                <div>
+                  <div class="line-ai-head">
+                    <strong class="line-ai-title">${escapeHtml(item[0])}</strong>
+                    ${index === 0 ? '<span class="line-ai-badge">AI 智能推荐</span>' : ''}
+                  </div>
+                  <p class="line-ai-text">${escapeHtml(item[1])}</p>
+                </div>
+              `).join('')}
+            </div>
+          </article>
         </div>
       `;
     }
@@ -1820,8 +2622,12 @@ int32_t main(int32_t argc, char *argv[])
       if (select) select.value = kernel.id;
       const lineCount = qs('#sourceLineCount');
       if (lineCount) lineCount.textContent = `${kernel.sourceLines.length} 行`;
-      const markCount = qs('#sourceMarkCount');
-      if (markCount) markCount.textContent = `${annotations.length} 行已标注`;
+      const markToggle = qs('#sourceMarkToggle');
+      if (markToggle) {
+        markToggle.textContent = state.annotationsVisible ? '隐藏标注' : '显示标注';
+        markToggle.title = `${annotations.length} 行已标注`;
+        markToggle.setAttribute('aria-pressed', state.annotationsVisible ? 'true' : 'false');
+      }
       const contextKernel = qs('#contextKernelName');
       if (contextKernel) contextKernel.textContent = kernel.label;
       const contextTarget = qs('#contextTarget');
@@ -1851,27 +2657,28 @@ int32_t main(int32_t argc, char *argv[])
       currentSourceLines().forEach((code, idx) => {
         const lineNo = idx + 1;
         const key = keyByLine[lineNo];
-        const line = lineForArch(key);
+        const line = state.annotationsVisible ? lineForArch(key) : null;
+        const isCard = state.annotationsVisible && !!line && !key?.tagOnly;
         const row = document.createElement('div');
         let cls = 'source-line';
-        if (line) {
+        if (isCard) {
           cls += ` is-key ${tagClass(line.kind)}`;
           if (key.id === state.selectedId) cls += ' is-selected';
         }
         row.className = cls;
         row.dataset.lineNo = lineNo;
-        if (line) {
+        if (isCard) {
           row.dataset.lineId = key.id;
           row.setAttribute('role', 'option');
           row.setAttribute('aria-selected', key.id === state.selectedId ? 'true' : 'false');
           row.addEventListener('click', () => selectLine(key.id));
         }
-        const tagHtml = line
+        const tagHtml = state.annotationsVisible && line
           ? `<span class="mode-tag source-line-tag ${tagClass(line.kind)}">${escapeHtml(line.tag)}</span>`
           : '<span></span>';
         row.innerHTML = `<span class="source-line-no">${lineNo}</span><span class="source-line-code">${highlightCpp(code)}</span>${tagHtml}`;
         body.appendChild(row);
-        if (line) {
+        if (isCard) {
           const detail = document.createElement('div');
           detail.className = `line-detail ${key.id === state.selectedId ? 'is-open' : ''}`;
           detail.dataset.lineId = key.id;
@@ -1879,57 +2686,20 @@ int32_t main(int32_t argc, char *argv[])
           detail.addEventListener('click', () => selectLine(key.id));
           body.appendChild(detail);
         }
+        if (state.annotationsVisible) {
+          const aiRecommendations = sourceAiRecommendations(lineNo);
+          if (aiRecommendations.length > 0) {
+            const aiNote = document.createElement('div');
+            aiNote.innerHTML = renderAiRecommendationCard(aiRecommendations);
+            body.appendChild(aiNote.firstElementChild);
+          }
+        }
       });
       const sel = body.querySelector('.is-selected');
       if (sel) {
         const offset = sel.offsetTop - body.clientHeight / 2 + sel.offsetHeight / 2;
         body.scrollTop = Math.max(0, offset);
       }
-    }
-
-    function renderEvidence() {
-      const line = selectedLine();
-      qs('#selectedLineChip').textContent = `第 ${line.line} 行`;
-      qs('#selectedVerdictChip').textContent = line.verdict;
-      qs('#evidenceBody').innerHTML = `
-        <div class="evidence-summary">
-          <span class="mode-tag ${tagClass(line.kind)}">${escapeHtml(line.tag)}</span>
-          <div class="summary-line">L${line.line} ${escapeHtml(line.code)}</div>
-          <div class="summary-path">${escapeHtml(line.path)}</div>
-          <div class="reason-list">
-            ${line.reasons.map((reason) => `<span class="reason-pill">${escapeHtml(reason)}</span>`).join('')}
-          </div>
-        </div>
-        <div class="evidence-explain">
-          <div class="evidence-block">
-            <span class="evidence-label">模式解释</span>
-            <p class="evidence-text">${escapeHtml(line.explanation)}</p>
-          </div>
-          <div class="evidence-block">
-            <div class="rewrite-head">
-              <span class="evidence-label">建议改写</span>
-              <button class="btn btn-solid btn-sm rewrite-apply" type="button" id="applyRewriteBtn" data-line-id="${line.id}">应用改写</button>
-            </div>
-            <pre class="rewrite-code">${highlightCpp(line.rewrite)}</pre>
-          </div>
-        </div>
-        <div class="evidence-metrics">
-          <div class="metric-card">
-            <span class="metric-label">置信度</span>
-            <span class="metric-value">${escapeHtml(line.metrics.confidence)}</span>
-          </div>
-          <div class="metric-card">
-            <span class="metric-label">周期变化</span>
-            <span class="metric-value">${escapeHtml(line.metrics.cycles)}</span>
-          </div>
-          <div class="metric-card">
-            <span class="metric-label">资源压力</span>
-            <span class="metric-value">${escapeHtml(line.metrics.pressure)}</span>
-          </div>
-        </div>
-      `;
-      const applyBtn = qs('#applyRewriteBtn');
-      if (applyBtn) applyBtn.addEventListener('click', () => onApplyRewrite(applyBtn));
     }
 
     function reasonCode(reason) {
@@ -1943,53 +2713,287 @@ int32_t main(int32_t argc, char *argv[])
       return `<article class="finding"><strong>${escapeHtml(title)}</strong><p>${escapeHtml(text)}</p></article>`;
     }
 
-    function analysisFindings(line) {
-      const tier = TIER_TEXT[state.tier];
-      const items = [[tier[0], tier[2]]];
-      if (currentKernel().id === 'c_api_add') {
-        const text = state.selectedArch === 'ascend950'
-          ? '__vector__ add_custom 以 GM→UB、SIMD add、UB→GM 三段构成；950 下作为 legacy baseline 做迁移收益评估。'
-          : '__vector__ add_custom 以 GM→UB、SIMD add、UB→GM 三段构成，是 910B/AIV SIMD 的 baseline 示例。';
-        items.push(['C API kernel', text]);
+    function renderEvidenceItem(item) {
+      const detail = typeof item === 'string' ? { title: '', text: item } : item;
+      return `
+        <div class="analysis-evidence-item">
+          ${detail.title ? `<strong>${escapeHtml(detail.title)}</strong>` : ''}
+          <span>${escapeHtml(detail.text || '')}</span>
+        </div>
+      `;
+    }
+
+    function renderFlowCard(title, badge, steps, evidence = [], note = '') {
+      return `
+        <article class="analysis-visual-card">
+          <div class="analysis-visual-head">
+            <strong class="analysis-visual-title">${escapeHtml(title)}</strong>
+            <span class="analysis-visual-badge">${escapeHtml(badge)}</span>
+          </div>
+          <div class="analysis-flow">
+            ${steps.map((step) => `
+              <div class="analysis-flow-step ${step.active ? 'is-active' : ''}">
+                <span>${escapeHtml(step.label)}</span>
+                <strong>${escapeHtml(step.value)}</strong>
+              </div>
+            `).join('')}
+          </div>
+          ${note ? `<p class="analysis-visual-note">${escapeHtml(note)}</p>` : ''}
+          ${evidence.length ? `
+            <div class="analysis-evidence-list">
+              ${evidence.map(renderEvidenceItem).join('')}
+            </div>
+          ` : ''}
+        </article>
+      `;
+    }
+
+    function renderTierVisual() {
+      const tierIndex = { t1: 0, t2: 1, t3: 2 }[state.tier] ?? 1;
+      const evidenceByTier = {
+        t1: [
+          { title: '分支和循环', text: '先看代码里有没有 if / for，以及这些控制流会不会让不同元素走不同路径。' },
+          { title: '内存是否连续', text: '再看 GM / UB 读写是不是连续；连续读写更适合 SIMD 和高效搬运。' },
+          { title: '数据块大小', text: '最后看一次处理的数据块是否对齐，以及会不会挤占 UB。' }
+        ],
+        t2: [
+          { title: '寄存器和 UB 压力', text: '编译后估算临时变量、寄存器和 UB 占用，判断是否会拖慢 SIMD 主路径。' },
+          { title: '同步和通路', text: '检查 FixPipe、C-V 直通路、DataCopy 等路径是否引入等待。' },
+          { title: 'cycle 估算', text: '把计算、搬运和同步拆成 cycle，用来解释为什么某个模式更合适。' }
+        ],
+        t3: [
+          { title: '仿真校准', text: '用 CANN SIM 复核编译估算，减少静态判断偏差。' },
+          { title: '分支分歧成本', text: '如果存在 SIMT 区域，评估不同元素走不同路径带来的实际开销。' },
+          { title: '访存命中校准', text: '用 sector / cache 行为修正 128B 对齐和搬运收益。' }
+        ]
+      };
+      return renderFlowCard('当前信号', TIER_TEXT[state.tier][0], [
+        { label: 'T1', value: 'Static', active: tierIndex === 0 },
+        { label: 'T2', value: 'Compile', active: tierIndex === 1 },
+        { label: 'T3', value: 'Simulate', active: tierIndex === 2 }
+      ], evidenceByTier[state.tier] || [], '这张卡说明 Inspector 当前用哪些证据判断 SIMD / SIMT。');
+    }
+
+    function renderKernelFlowVisual() {
+      const kernel = currentKernel();
+      if (isGeluKernel(kernel)) {
+        if (kernel.profile === 'gelu_high_performance') {
+          return renderFlowCard('GELU 数据流', 'RegBase / VF', [
+            { label: 'GM tile', value: 'DataCopyPad', active: false },
+            { label: 'UB', value: 'Ping / Pong', active: false },
+            { label: 'Compute', value: 'asc_vf_call', active: true },
+            { label: 'GM out', value: 'MTE3', active: false }
+          ], [
+            { title: '为什么关注 asc_vf_call', text: '它把 GELU 的 Mul / Add / Exp / Div 串成寄存器级 VF 路径，是性能样例的主要收益来源。' },
+            { title: '为什么关注 Ping/Pong', text: '双缓冲让搬运和计算交错执行，问题通常出在同步等待和 stride 搬运成本。' }
+          ]);
+        }
+        return renderFlowCard('GELU 数据流', 'High API', [
+          { label: 'GM', value: 'DataCopy', active: false },
+          { label: 'UB', value: 'tmpBuf', active: false },
+          { label: 'Compute', value: 'AscendC::Gelu', active: true },
+          { label: 'GM out', value: 'DataCopy', active: false }
+        ], [
+          { title: '为什么关注 API 展开', text: '高阶 API 容易隐藏真实 Vector 指令、临时缓冲和 UB 占用，需要在 Inspector 里白盒化。' },
+          { title: '为什么关注 DataCopy', text: '输入输出仍然要从 GM 搬到 UB，再写回 GM；对齐和搬运长度会影响总 cycle。' }
+        ]);
       }
-      if (line.kind === 'compute') {
-        const computeText = currentKernel().id === 'c_api_add'
-          ? '当前路径保持 AIV Vector 稠密执行，核心判断是输入连续、无 mask 分支和低寄存器压力。'
-          : '当前路径保持 Cube / Vector 稠密执行，核心判断是形状规整、128B 对齐和低分支密度。';
-        items.push(['SIMD 主区域', computeText]);
+      if (kernel.id === 'c_api_add') {
+        return renderFlowCard('Kernel 数据流', 'Vector Add', [
+          { label: 'GM', value: 'x / y', active: false },
+          { label: 'UB', value: 'xLocal / yLocal', active: false },
+          { label: 'SIMD', value: 'asc_add', active: true },
+          { label: 'GM out', value: 'z', active: false }
+        ], [
+          { title: '为什么是 PURE SIMD', text: '每个元素都做同一个加法，没有按元素变化的分支，所以不需要 SIMT。' },
+          { title: '主要优化点', text: '收益来自 128B 对齐、GM↔UB 搬运和 asc_sync 同步范围收窄。' }
+        ]);
       }
-      if (line.kind === 'memory') {
-        const memoryText = state.selectedArch === 'ascend950'
-          ? '访存检查会继续标注 stride、slice、broadcast 和 sector 命中率，未命中时进入 NDDMA / 128B sector 重写建议。'
-          : '910B 目标保留 GM/L2/UB 连续搬运解释，重点检查对齐、block 切分和 asc_sync 前后的流水空洞。';
-        items.push(['访存路径', memoryText]);
-      }
-      if (line.id === 'l57') {
-        items.push(['C-V 交接点', '这一行是 Cube 域到 Vector 域的边界，FixPipe / BufferID 的顺序语义要进入白盒报告。']);
-      }
-      if (line.id === 'l82') {
-        items.push(['SIMT 岛', 'mask 随元素变化，建议把最小分支区域拆成 SIMT region，避免拖慢前后的 SIMD 主干。']);
-      }
-      if (state.tailLength === 0) {
-        items.push(['What-if', 'tail length 为 0 时，当前 kernel 可以收敛到 PURE SIMD，SIMT 岛和切换开销都可以消失。']);
+      return renderFlowCard('Kernel 数据流', 'Hybrid', [
+        { label: 'GM / L1', value: 'prefetch', active: false },
+        { label: 'Cube', value: 'FP8 MMAD', active: true },
+        { label: 'Handoff', value: 'C-V', active: false },
+        { label: 'Vector', value: 'mask tail', active: false }
+      ], [
+        { title: '为什么可能是 Hybrid', text: '主计算适合 SIMD/Cube，但 mask 或 tail 区域可能需要拆成更小的 SIMT 区域。' },
+        { title: '主要切换成本', text: 'C-V 交接、FixPipe 顺序保护和 tail 分支会决定 Hybrid 是否值得。' }
+      ]);
+    }
+
+    function renderModeMeterVisual(line) {
+      const split = cycleSplitForArch(selectedAnnotation(), primaryArchId());
+      const simd = split.rows.find((row) => row.id === 'simd')?.cycles || 0;
+      const simt = split.rows.find((row) => row.id === 'simt')?.cycles || 0;
+      const simdPct = split.total > 0 ? Math.round((simd / split.total) * 100) : 0;
+      const simtPct = split.total > 0 ? Math.round((simt / split.total) * 100) : 0;
+      const memoryPct = Math.max(0, 100 - simdPct - simtPct);
+      const modeBadge = simt === 0 ? 'SIMT 0 cyc' : `SIMT ${simtPct}%`;
+      const modeNotes = isGeluKernel()
+        ? [
+          { title: '为什么 SIMT 是 0', text: 'GELU 每个元素执行同一条算术链，没有按元素变化的 if/else 分支。' },
+          { title: line.kind === 'compute' ? '当前行含义' : '当前路径含义', text: line.kind === 'compute' ? '当前高亮的是 Vector / VF 计算路径。' : '当前高亮的是 GM / UB 搬运或同步路径。' }
+        ]
+        : [
+          { title: line.kind === 'memory' ? '访存主导' : '计算主导', text: `${line.verdict}；当前目标是 ${archById(primaryArchId()).label}。` }
+        ];
+      return `
+        <article class="analysis-visual-card">
+          <div class="analysis-visual-head">
+            <strong class="analysis-visual-title">执行模式</strong>
+            <span class="analysis-visual-badge">${escapeHtml(modeBadge)}</span>
+          </div>
+          <div class="mode-meter">
+            <div class="mode-meter-bar" aria-label="SIMD SIMT ratio">
+              <span class="mode-meter-segment is-simd" style="--segment-pct: ${simdPct}%"></span>
+              <span class="mode-meter-segment is-simt" style="--segment-pct: ${simtPct}%"></span>
+              <span class="mode-meter-segment" style="--segment-pct: ${memoryPct}%"></span>
+            </div>
+            <div class="mode-meter-legend">
+              <div class="mode-meter-item"><span>SIMD</span><strong>${escapeHtml(simd)} cyc · ${simdPct}%</strong></div>
+              <div class="mode-meter-item"><span>SIMT</span><strong>${escapeHtml(simt)} cyc · ${simtPct}%</strong></div>
+            </div>
+          </div>
+          <div class="analysis-evidence-list">
+            ${modeNotes.map(renderEvidenceItem).join('')}
+          </div>
+        </article>
+      `;
+    }
+
+    function renderWhatIfVisual() {
+      const kernel = currentKernel();
+      let scenarios;
+      if (kernel.profile === 'gelu_high_performance') {
+        scenarios = [
+          ['Vector', 'scenario 0', 100, false],
+          ['RegBase/VF', 'scenario 1', 76, false],
+          ['Unroll', 'scenario 2', 68, true]
+        ];
+      } else if (kernel.profile === 'gelu_api') {
+        scenarios = [
+          ['API + tmp', 'baseline', 100, false],
+          ['API no tmp', 'check', 112, false],
+          ['VF sample', 'target', 72, true]
+        ];
+      } else if (kernel.id === 'c_api_add') {
+        scenarios = [
+          ['Baseline', 'current', 100, false],
+          ['128B align', 'copy', 84, false],
+          ['BufferID', 'sync', 76, true]
+        ];
       } else {
-        items.push(['What-if', `tail length = ${state.tailLength}，保留 SIMT tail region；若 tail 密度继续升高，需要 T3 仿真校准分歧成本。`]);
+        scenarios = [
+          ['SIMD only', 'tail 0', 82, true],
+          ['Hybrid', 'current', 100, false],
+          ['SIMT tail', 'dense mask', 118, false]
+        ];
       }
-      if (state.kTile <= 64) {
-        items.push(['Tile 风险', 'K tile 偏小，Cube 利用率会下降，Inspector 会提高 SIMT 或重切 tile 的权重。']);
-      } else if (state.kTile >= 256) {
-        items.push(['寄存器压力', 'K tile 偏大，T2/T3 需要检查寄存器 spill 和 UB handoff 是否抵消 SIMD 收益。']);
+      return `
+        <article class="analysis-visual-card">
+          <div class="analysis-visual-head">
+            <strong class="analysis-visual-title">What-if 对比</strong>
+            <span class="analysis-visual-badge">cycle cost</span>
+          </div>
+          <div class="scenario-grid">
+            ${scenarios.map(([name, label, pct, best]) => `
+              <div class="scenario-card ${best ? 'is-best' : ''}">
+                <strong>${best ? '推荐 · ' : ''}${escapeHtml(name)}</strong>
+                <span>${escapeHtml(label)} · ${escapeHtml(pct)}%</span>
+                <div class="scenario-track"><span class="scenario-fill" style="--scenario-pct: ${Math.min(100, pct)}%"></span></div>
+              </div>
+            `).join('')}
+          </div>
+        </article>
+      `;
+    }
+
+    function renderAnalysisVisuals(line) {
+      return [
+        renderTierVisual(),
+        renderKernelFlowVisual(),
+        renderModeMeterVisual(line),
+        renderWhatIfVisual()
+      ].join('');
+    }
+
+    function sliderModel() {
+      const kernel = currentKernel();
+      if (kernel.id === 'c_api_add') {
+        return {
+          kLabel: 'block length',
+          kImpact: '影响 memory / sync cycle 估算；该 kernel 仍保持 PURE SIMD。',
+          tailLabel: 'tail cleanup',
+          tailDisabled: true,
+          tailValue: 'N/A',
+          tailImpact: '当前 c_api_add 示例没有动态 tail 分支，拖动不会产生 SIMT。'
+        };
       }
-      return items;
+      if (kernel.profile === 'gelu_high_performance') {
+        return {
+          kLabel: 'tile size',
+          kImpact: '影响 RegBase / VF occupancy、DataCopyPad cost 和 UB 压力估算。',
+          tailLabel: 'tail cleanup',
+          tailDisabled: true,
+          tailValue: 'N/A',
+          tailImpact: 'GELU high performance 的 tail 是 tile 边界 cleanup，不拆成 SIMT。'
+        };
+      }
+      if (kernel.profile === 'gelu_api') {
+        return {
+          kLabel: 'tile size',
+          kImpact: '影响 AscendC::Gelu 展开后的 tmpBuf / UB pressure 估算。',
+          tailLabel: 'tail cleanup',
+          tailDisabled: true,
+          tailValue: 'N/A',
+          tailImpact: 'GELU high API 是 PURE SIMD，没有 SIMT tail。'
+        };
+      }
+      return {
+        kLabel: 'K tile',
+        kImpact: '影响 SIMD 主计算段 cycle、Cube 利用率和寄存器压力。',
+        tailLabel: 'tail length',
+        tailDisabled: false,
+        tailValue: String(state.tailLength),
+        tailImpact: '影响 SIMT tail 区域 cycle；tail 为 0 时该区段会折叠。'
+      };
+    }
+
+    function renderSliderControls() {
+      const model = sliderModel();
+      const kSlider = qs('#kSlider');
+      const tailSlider = qs('#tailSlider');
+      qs('#kSliderLabel').textContent = model.kLabel;
+      qs('#kValue').textContent = state.kTile;
+      qs('#kImpact').textContent = model.kImpact;
+      if (kSlider) {
+        kSlider.disabled = false;
+        kSlider.setAttribute('aria-label', model.kLabel);
+      }
+      qs('#tailSliderLabel').textContent = model.tailLabel;
+      qs('#tailValue').textContent = model.tailValue;
+      qs('#tailImpact').textContent = model.tailImpact;
+      qs('#tailSliderRow').classList.toggle('is-disabled', model.tailDisabled);
+      if (tailSlider) {
+        tailSlider.disabled = model.tailDisabled;
+        tailSlider.setAttribute('aria-label', model.tailLabel);
+      }
     }
 
     function extraReasonCodes(line) {
       const codes = [];
-      if (currentKernel().id === 'c_api_add') codes.push('c_api_vector_kernel', state.selectedArch === 'ascend950' ? 'legacy_950_migration_candidate' : 'native_910b_simd_baseline');
+      if (currentKernel().id === 'c_api_add') {
+        codes.push('c_api_vector_kernel');
+        if (isCompareArch()) codes.push('legacy_950_migration_candidate', 'native_910b_simd_baseline');
+        else codes.push(primaryArchId() === 'ascend950' ? 'legacy_950_migration_candidate' : 'native_910b_simd_baseline');
+      }
+      if (isGeluKernel()) {
+        codes.push('gelu_vector_kernel', currentKernel().profile === 'gelu_high_performance' ? 'regbase_vf_candidate' : 'ascendc_gelu_api_lowering');
+      }
       if (line.id === 'l57') codes.push('bufferid_migration_candidate', 'fixpipe_burst_boundary');
       if (line.id === 'l82') codes.push('simt_region_split', 'lane_mask_penalty');
       if (line.kind === 'memory') {
-        if (state.selectedArch === 'ascend950') codes.push('sector_128b_watch', 'nddma_rewrite_candidate');
+        if (isCompareArch()) codes.push('sector_128b_watch', 'nddma_rewrite_candidate', 'gm_ub_dma_baseline', 'sync_gap_watch');
+        else if (primaryArchId() === 'ascend950') codes.push('sector_128b_watch', 'nddma_rewrite_candidate');
         else codes.push('gm_ub_dma_baseline', 'sync_gap_watch');
       }
       if (line.kind === 'compute') codes.push('dual_issue_candidate');
@@ -1997,160 +3001,701 @@ int32_t main(int32_t argc, char *argv[])
       return codes;
     }
 
-    function hybridSplitCards(line) {
-      if (currentKernel().id === 'c_api_add') {
-        return [
-          ['SIMD trunk', `L42-L49 形成 GM/L2 → UB → SIMD Vector → GM 的完整主干，K tile=${state.kTile} 仅作为 what-if 参数保留。`],
-          ['SIMT island', state.selectedArch === 'ascend950' ? '950 目标下未检测到 mask、ragged tail 或数据相关分支，SIMT cycles = 0。' : '910B 目标没有 SIMT 分支模型，保持 AIV SIMD baseline。'],
-          ['Handoff cost', state.selectedArch === 'ascend950' ? '没有 Cube→Vector 的 FixPipe 交接，主要同步点是 asc_sync()，需要关注搬运和计算之间的流水空洞。' : 'AIC/AIV 协作按 GM/L2 路径解释，不显示 950 C-V 直通路。'],
-          ['Migration note', state.selectedArch === 'ascend950' ? '适合接入 910→950 迁移助手：检查 asc_copy_gm2ub / asc_copy_ub2gm 是否可升级为 NDDMA 或 128B sector 友好策略。' : '作为 910B baseline，可以优先确认 GM/UB 连续性、block 切分和同步开销。']
-        ];
-      }
-      const simtText = state.tailLength === 0
-        ? 'tail 已清零，SIMT 岛可以被折叠，CI 只需要保留 reason code 追踪。'
-        : `tail=${state.tailLength}，mask / ragged 分支保留为 SIMT 岛，避免 SIMD lane masking 侵蚀主循环吞吐。`;
-      const handoffText = line.id === 'l57'
-        ? '当前行就是主交接点：L0C 经 FixPipe / C-V 直通路进入 AIV UB，建议在报告中显式标注同步边界。'
-        : '主交接点仍在 L57：FixPipe、C-V 直通路和 BufferID 语义决定 Hybrid 切换成本。';
-      return [
-        ['SIMD trunk', `L42-L73 保持 GM/L2 预取、Cube FP8 MMAD 和 Vector epilogue 的稠密路径，K tile=${state.kTile}。`],
-        ['SIMT island', simtText],
-        ['Handoff cost', handoffText],
-        ['White-box report', 'Feature enablement report 应列出 NDDMA、C-V 直通路、FixPipe、BufferID、MXFPx 的使能率和未使能原因。']
-      ];
-    }
-
-    function cApiAdd950Suggestions(line) {
-      const common = [
-        ['L32 · 对齐 blockLength', '把 blockLength 约束为 32 个 float 的倍数，让每次 GM↔UB 搬运落在 128B sector 边界；非对齐 tail 单独走 cleanup path。'],
-        ['L42-L43 · 搬运升级检查', '对 x/y 两路 asc_copy_gm2ub 计算 sector hit rate；若 stride/shape 稳定，生成 950 migration variant，优先尝试 NDDMA 或双缓冲预取。'],
-        ['L44/L47/L50 · 同步收窄', '当前 asc_sync() 是全局保守同步；950 目标下检查能否改成更窄的 BufferID/set-wait 或 producer/consumer barrier，减少 memory/sync cycles。'],
-        ['L79 · launch what-if', '扫描 NUM_BLOCKS 与 TILE_LENGTH，目标是提高 AIV occupancy，同时保持单 block 搬运长度 >= 128B 且 UB 不溢出。']
-      ];
-      const byLine = {
-        'add-l32': [
-          ['建议改写', '先做 AlignDown(totalLength / blockNum, 32)，再把余数 tail 拆成独立分支；这样主循环保持 PURE SIMD，SIMT cycle 仍为 0。']
-        ],
-        'add-l42': [
-          ['建议改写', 'xLocal 搬运前检查 xGm 128B 对齐；若连续块足够长，标记为 nddma_rewrite_candidate，并打开 L2 sector 统计。']
-        ],
-        'add-l43': [
-          ['建议改写', 'yLocal 与 xLocal 使用相同 burst 策略；如果两路输入相邻且同 stride，可以在报告里合并为 dual-input prefetch 机会。']
-        ],
-        'add-l46': [
-          ['建议改写', 'asc_add 保持 SIMD Vector，不引入 SIMT；优化重点是把 blockLength 对齐到 vector lane 宽度，并确认寄存器/UB 压力不会触发 spill。']
-        ],
-        'add-l49': [
-          ['建议改写', 'zLocal 写回使用 128B 对齐长度，tail 写回拆开；观察 MTE3 drain 是否能和下一 tile 的 GM→UB 搬运重叠。']
-        ],
-        'add-l79': [
-          ['建议改写', '把 numBlocks 从固定 8 改成 target-aware 参数，由 950 AIV 数量、TILE_LENGTH 和 UB 容量共同决定，并生成 what-if 对比。']
-        ]
-      };
-      return (byLine[line.id] || []).concat(common).slice(0, 4);
-    }
-
-    function cycleSplit(line) {
+    function modePartitionModel(line) {
       const kernel = currentKernel();
-      if (state.selectedArch === 'ascend910b') {
-        const simd = kernel.id === 'c_api_add' ? 132 : 910;
-        const simt = 0;
-        const bridge = kernel.id === 'c_api_add' ? 214 : 380;
-        const total = simd + simt + bridge;
+      if (kernel.id === 'c_api_add') {
         return {
-          title: '910B SIMD baseline',
-          total,
-          note: '910B 侧按 SIMD/AIV + GM/L2 搬运建模，不产生 SIMT cycle。',
-          rows: [
-            { id: 'simd', label: 'SIMD / AIV', cycles: simd, total },
-            { id: 'simt', label: 'SIMT', cycles: simt, total },
-            { id: 'switch', label: 'DMA / sync', cycles: bridge, total }
+          badge: isCompareArch() ? '950 / 910B' : primaryArchId(),
+          nodes: [
+            { kind: 'memory', label: 'Load', value: 'GM→UB', active: line.kind === 'memory' && line.line < 46 },
+            { kind: 'simd', label: 'SIMD', value: 'asc_add', active: line.kind === 'compute' },
+            { kind: 'memory', label: 'Store', value: 'UB→GM', active: line.kind === 'memory' && line.line >= 46 },
+            { kind: 'sync', label: 'Sync', value: 'asc_sync', active: line.kind === 'control' }
+          ],
+          stats: [
+            ['SIMD', '主路径'],
+            ['SIMT', '0 cyc'],
+            ['重点', '访存/同步']
           ]
         };
+      }
+      if (isGeluKernel(kernel)) {
+        if (kernel.profile === 'gelu_high_performance') {
+          return {
+            badge: 'RegBase / VF',
+            nodes: [
+              { kind: 'memory', label: 'Load', value: 'DataCopyPad', active: line.kind === 'memory' && line.line <= 154 },
+              { kind: 'sync', label: 'Buffer', value: 'Ping/Pong', active: line.kind === 'control' },
+              { kind: 'simd', label: 'SIMD', value: 'asc_vf_call', active: line.kind === 'compute' },
+              { kind: 'memory', label: 'Store', value: 'MTE3', active: line.kind === 'memory' && line.line > 154 }
+            ],
+            stats: [
+              ['SIMD', 'VF 融合'],
+              ['SIMT', '0 cyc'],
+              ['同步', 'eventID']
+            ]
+          };
+        }
+        return {
+          badge: 'High API',
+          nodes: [
+            { kind: 'memory', label: 'Load', value: 'DataCopy', active: line.kind === 'memory' && line.line < 68 },
+            { kind: 'sync', label: 'Temp', value: 'tmpBuf', active: line.line === 143 },
+            { kind: 'simd', label: 'SIMD', value: 'Gelu API', active: line.kind === 'compute' },
+            { kind: 'memory', label: 'Store', value: 'DataCopy', active: line.kind === 'memory' && line.line >= 68 }
+          ],
+          stats: [
+            ['SIMD', 'API 展开'],
+            ['SIMT', '0 cyc'],
+            ['检查', 'tmpBuf']
+          ]
+        };
+      }
+      return {
+        badge: state.tailLength === 0 ? 'SIMD only' : 'Hybrid',
+        nodes: [
+          { kind: 'memory', label: 'Load', value: 'GM/L1', active: line.kind === 'memory' && line.line < 57 },
+          { kind: 'simd', label: 'SIMD', value: 'Cube/Vector', active: line.kind === 'compute' },
+          { kind: 'sync', label: 'Handoff', value: 'C-V / FixPipe', active: line.id === 'l57' },
+          { kind: 'simt', label: 'SIMT', value: 'mask tail', active: line.id === 'l82' }
+        ],
+        stats: [
+          ['SIMD', '主干'],
+          ['SIMT', state.tailLength === 0 ? '关闭' : 'tail'],
+          ['切换', 'C-V']
+        ]
+      };
+    }
+
+    function renderModePartitionVisual(line) {
+      const model = modePartitionModel(line);
+      return `
+        <article class="partition-map">
+          <div class="analysis-visual-head">
+            <strong class="analysis-visual-title">模式分区路径</strong>
+            <span class="analysis-visual-badge">${escapeHtml(model.badge)}</span>
+          </div>
+          <div class="partition-lane">
+            ${model.nodes.map((node) => `
+              <div class="partition-node is-${escapeHtml(node.kind)} ${node.active ? 'is-active' : ''}">
+                <span>${escapeHtml(node.label)}</span>
+                <strong>${escapeHtml(node.value)}</strong>
+              </div>
+            `).join('')}
+          </div>
+          <div class="partition-summary">
+            ${model.stats.map((item) => `
+              <div class="partition-stat">
+                <span>${escapeHtml(item[0])}</span>
+                <strong>${escapeHtml(item[1])}</strong>
+              </div>
+            `).join('')}
+          </div>
+        </article>
+      `;
+    }
+
+    function gelu950Suggestions(line) {
+      const kernel = currentKernel();
+      if (kernel.profile === 'gelu_high_performance') {
+        return [
+          ['RegBase/VF 对比', '把 scenarioNum=0/1/2 的 cycle、寄存器压力和 VF occupancy 列成白盒报告，证明收益来自融合而不是 SIMT。'],
+          ['DataCopyPad sector', '对 L154/L172 的 blockLen/srcStride 计算 128B sector hit rate；stride 稳定时标记 nddma_rewrite_candidate。'],
+          ['同步收窄', '把 EVENT_ID0/1 的 set/wait 依赖范围映射到 BufferID 或 producer/consumer barrier，减少读写交错中的 sync cycles。'],
+          ['tail 控制', 'L53/L54 的 tail 是 tile 边界控制，保持 SIMD cleanup path，不要拆成 SIMT island。']
+        ];
+      }
+      return [
+        ['API 展开报告', '展示 AscendC::Gelu 被展开后的 Vector 指令、tmpBufSize、UB 占用和寄存器压力。'],
+        ['tmpBuf 规划', 'L143 的 GetGeluMinTmpSize 应进入 feature report，说明 tmp buffer 是否导致 UB 压力或额外搬运。'],
+        ['DataCopy 对齐', 'L57/L78 的 DataCopy 主路径按 32 个 float 对齐，放大数据规模时检查 128B sector 命中。'],
+        ['高性能分支', '若 API 版 cycle 不达标，提示跳转到 gelu_high_performance 样例对比 RegBase/VF 优化路径。']
+      ];
+    }
+
+    function kernelKind(kernel = currentKernel()) {
+      if (kernel.id === 'fp8_mmad_masked_reduce') return 'Hybrid';
+      if (kernel.profile === 'gelu_high_performance') return 'SIMD';
+      if (kernel.profile === 'gelu_api') return 'SIMD';
+      if (kernel.id === 'c_api_add') return 'SIMD';
+      return kernel.verdict?.includes('Cube') ? 'Cube' : 'Hybrid';
+    }
+
+    function costSplit(title, note, rowPairs, options = {}) {
+      const total = rowPairs.reduce((sum, row) => sum + Math.max(0, row.cycles || 0), 0);
+      return {
+        title,
+        total,
+        note,
+        showNote: options.showNote,
+        rows: rowPairs.map((row) => ({ ...row, total })),
+        suggestions: options.suggestions || []
+      };
+    }
+
+    function cycleSplitForArch(line, archId = primaryArchId()) {
+      const kernel = currentKernel();
+      const archLine = lineForArch(line, archId) || line;
+      const tileDelta = Math.round((state.kTile - 128) / 64);
+      if (isGeluKernel(kernel)) {
+        const highPerf = kernel.profile === 'gelu_high_performance';
+        const memoryFocus = archLine.kind === 'memory' ? 18 : 0;
+        if (archId === 'ascend910b') {
+          return costSplit(
+            highPerf ? '910B GELU VF baseline' : '910B GELU API baseline',
+            '910B 侧按 SIMD/AIV + GM/L2 搬运建模，pipeline overlap 较低。',
+            [
+              { id: 'compute', label: 'Compute', cycles: highPerf ? 520 : 310 },
+              { id: 'data', label: 'Data movement', cycles: (highPerf ? 236 : 140) + memoryFocus },
+              { id: 'sync', label: 'Mode switch & sync', cycles: highPerf ? 104 : 36 }
+            ]
+          );
+        }
+        return costSplit(
+          highPerf ? '950 GELU RegBase/VF estimate' : '950 GELU API estimate',
+          highPerf
+            ? 'GELU high performance 样例保持 SIMD/VF 路径，收益来自 RegBase/VF 融合、ping-pong 搬运和同步收窄。'
+            : 'GELU high API 样例保持 PURE SIMD，重点是把 AscendC::Gelu 展开、tmpBuf 和 GM↔UB DataCopy 做成可解释报告。',
+          [
+            { id: 'compute', label: 'Compute', cycles: (highPerf ? 386 : 268) + Math.max(-18, tileDelta * -6) },
+            { id: 'data', label: 'Data movement', cycles: (highPerf ? 142 : 104) + memoryFocus },
+            { id: 'sync', label: 'Mode switch & sync', cycles: highPerf ? 64 : 24 }
+          ],
+          { suggestions: archId === 'ascend950' ? gelu950Suggestions(archLine) : [] }
+        );
       }
 
       if (kernel.id === 'c_api_add') {
-        const simd = line.kind === 'compute' ? 118 : 142;
-        const simt = 0;
-        const bridge = line.kind === 'memory' ? 204 : 168;
-        const total = simd + simt + bridge;
-        return {
-          title: '950 migration estimate',
-          total,
-          note: '该 C API 示例在 950 上仍是 PURE SIMD baseline；SIMT cycle 为 0。适配重点不是拆 SIMT，而是把主路径做成 128B 对齐、可预取、同步更窄的 950 migration variant。',
-          suggestions: cApiAdd950Suggestions(line),
-          rows: [
-            { id: 'simd', label: 'SIMD', cycles: simd, total },
-            { id: 'simt', label: 'SIMT', cycles: simt, total },
-            { id: 'switch', label: 'memory / sync', cycles: bridge, total }
-          ]
-        };
+        if (archId === 'ascend910b') {
+          return costSplit(
+            '910B SIMD baseline',
+            '910B 侧按 SIMD/AIV + GM/L2 搬运建模，不产生 SIMT cycle。',
+            [
+              { id: 'compute', label: 'Compute', cycles: 132 },
+              { id: 'data', label: 'Data movement', cycles: 172 },
+              { id: 'sync', label: 'Mode switch & sync', cycles: 42 }
+            ]
+          );
+        }
+        const blockDelta = Math.round((state.kTile - 128) / 16);
+        return costSplit(
+          '950 SIMD migration estimate',
+          '该 C API 示例在 950 上仍是 PURE SIMD baseline；适配重点是 128B 对齐、可预取搬运和同步范围收窄。',
+          [
+            { id: 'compute', label: 'Compute', cycles: (archLine.kind === 'compute' ? 118 : 142) + blockDelta },
+            { id: 'data', label: 'Data movement', cycles: (archLine.kind === 'memory' ? 184 : 148) + Math.max(0, Math.round(blockDelta * 0.75)) },
+            { id: 'sync', label: 'Mode switch & sync', cycles: 28 }
+          ],
+          { showNote: false }
+        );
       }
 
-      const simd = Math.max(760, 1180 + state.kTile * 2);
-      const simt = state.tailLength === 0 ? 0 : 58 + state.tailLength * 4;
-      const bridge = state.tailLength === 0 ? 22 : 42;
-      const total = simd + simt + bridge;
-      return {
-        title: '950 SIMD/SIMT compiled estimate',
-        total,
-        note: '950 Inspector 将 SIMD 主干、SIMT tail island 和模式切换开销拆开显示，用于判断 Hybrid 是否值得保留。',
-        rows: [
-          { id: 'simd', label: 'SIMD trunk', cycles: simd, total },
-          { id: 'simt', label: 'SIMT island', cycles: simt, total },
-          { id: 'switch', label: 'switch / handoff', cycles: bridge, total }
+      if (archId === 'ascend910b') {
+        return costSplit(
+          '910B SIMD fallback baseline',
+          '910B 侧没有 950 C-V 直通路；mask tail / AIC-AIV 交接按 SIMD fallback 与 GM/L2 staging 估算。',
+          [
+            { id: 'compute', label: 'Compute', cycles: archLine.id === 'l82' ? 112 : 110 },
+            { id: 'data', label: 'Data movement', cycles: archLine.kind === 'memory' ? 82 : 70 },
+            { id: 'sync', label: 'Mode switch & sync', cycles: archLine.id === 'l57' ? 110 : 100 }
+          ]
+        );
+      }
+
+      const tailPenalty = state.tailLength === 0 ? -24 : Math.round((state.tailLength - 17) * 0.5);
+      return costSplit(
+        '950 Hybrid compiled estimate',
+        '950 Inspector 将 Cube/SIMD 主干、SIMT tail island 和模式切换开销拆开显示，用于判断 Hybrid 是否值得保留。',
+        [
+          { id: 'compute', label: 'Compute', cycles: Math.max(78, 96 - tileDelta * 4) },
+          { id: 'data', label: 'Data movement', cycles: Math.max(34, 46 - tileDelta * 3) },
+          { id: 'sync', label: 'Mode switch & sync', cycles: Math.max(18, 42 + tailPenalty) }
         ]
-      };
+      );
+    }
+
+    function dominantCostRow(split) {
+      return split.rows.reduce((best, row) => (row.cycles > best.cycles ? row : best), split.rows[0]);
+    }
+
+    function formatCycleDelta(delta) {
+      if (delta === 0) return '±0 cyc';
+      return `${delta > 0 ? '▲ +' : '▼ '}${delta} cyc`;
+    }
+
+    function renderCycleCard(split, archId, baselineSplit = null) {
+      const arch = archById(archId);
+      const dominant = dominantCostRow(split);
+      const dominantPct = split.total > 0 ? Math.round((dominant.cycles / split.total) * 100) : 0;
+      return `
+        <article class="cycle-card">
+          <div class="cycle-card-head">
+            <strong>${escapeHtml(arch.label)}</strong>
+            <span>${escapeHtml(split.title)}</span>
+          </div>
+          <div class="cycle-summary">
+            <div class="metric-card">
+              <span class="metric-label">total</span>
+              <span class="metric-value">${escapeHtml(split.total)} cyc</span>
+            </div>
+            <div class="metric-card">
+              <span class="metric-label">dominant</span>
+              <span class="metric-value">${escapeHtml(dominant.label)} ${dominantPct}%</span>
+            </div>
+            <div class="metric-card">
+              <span class="metric-label">tier</span>
+              <span class="metric-value">${escapeHtml(TIER_TEXT[state.tier][0].split(' · ')[0])}</span>
+            </div>
+          </div>
+          ${split.rows.map((row) => {
+            const pct = row.total > 0 ? Math.round((row.cycles / row.total) * 100) : 0;
+            const baselineRow = baselineSplit?.rows.find((item) => item.id === row.id);
+            const delta = baselineRow ? row.cycles - baselineRow.cycles : null;
+            const deltaHtml = delta === null ? '' : `<span>${escapeHtml(formatCycleDelta(delta))}</span>`;
+            return `
+              <div class="cycle-row">
+                <div class="cycle-row-head">
+                  <span class="cycle-row-label">${escapeHtml(row.label)}</span>
+                  <span class="cycle-row-value">${escapeHtml(row.cycles)} cyc · ${pct}% ${deltaHtml}</span>
+                </div>
+                <div class="cycle-track"><span class="cycle-fill is-${escapeHtml(row.id)}" style="--cycle-pct: ${pct}%"></span></div>
+              </div>
+            `;
+          }).join('')}
+          ${split.showNote === false ? '' : `
+            <article class="finding">
+              <strong>${escapeHtml(split.title)}</strong>
+              <p>${escapeHtml(split.note)}</p>
+            </article>
+          `}
+        </article>
+      `;
+    }
+
+    function renderCostSummary(split) {
+      const dominant = dominantCostRow(split);
+      const pct = split.total > 0 ? Math.round((dominant.cycles / split.total) * 100) : 0;
+      const summary = qs('#costSummary');
+      if (!summary) return;
+      summary.innerHTML = `<span>total ${escapeHtml(split.total)} cyc · 主导项 ${escapeHtml(dominant.label)} (${pct}%) · ${TIER_TEXT[state.tier][1].toLowerCase()} estimate</span>`;
     }
 
     function renderCycleSplit() {
       const host = qs('#cycleSplit');
       if (!host) return;
-      const split = cycleSplit(selectedLine());
+      const line = selectedAnnotation();
       const archChip = qs('#cycleArchChip');
       if (archChip) archChip.textContent = currentArch().modeLabel;
+      const splits = Object.fromEntries(activeArchIds().map((archId) => [archId, cycleSplitForArch(line, archId)]));
+      renderCostSummary(splits[primaryArchId()]);
+      host.classList.toggle('is-compare', isCompareArch());
+      host.innerHTML = activeArchIds()
+        .map((archId) => renderCycleCard(splits[archId], archId, isCompareArch() && archId === 'ascend950' ? splits.ascend910b : null))
+        .join('');
+    }
+
+    function verdictModel() {
+      const line = selectedAnnotation();
+      const split950 = cycleSplitForArch(line, 'ascend950');
+      const split910 = cycleSplitForArch(line, 'ascend910b');
+      const delta = split950.total - split910.total;
+      const pct = split910.total > 0 ? Math.round(Math.abs(delta) / split910.total * 100) : 0;
+      const rows = split950.rows.map((row) => {
+        const base = split910.rows.find((item) => item.id === row.id);
+        return { ...row, delta: base ? row.cycles - base.cycles : 0 };
+      });
+      const strongest = rows.reduce((best, row) => (row.delta < best.delta ? row : best), rows[0]);
+      const reason = strongest.id === 'sync'
+        ? 'FixPipe 直通 Cube / Vector 边界更短，减少跨域同步。'
+        : strongest.id === 'data'
+          ? '片上搬运路径更短，GM↔L2↔UB/L1 的 staging 开销降低。'
+          : '950 编译路径提升了主计算段利用率。';
+      return { split950, split910, delta, pct, strongest, reason };
+    }
+
+    function renderVerdict() {
+      const section = qs('#verdictSection');
+      const host = qs('#verdictBody');
+      if (!section || !host) return;
+      section.hidden = !isCompareArch();
+      if (!isCompareArch()) return;
+      const model = verdictModel();
       host.innerHTML = `
-        <div class="cycle-summary">
-          <div class="metric-card">
-            <span class="metric-label">total</span>
-            <span class="metric-value">${escapeHtml(split.total)} cyc</span>
-          </div>
-          <div class="metric-card">
-            <span class="metric-label">SIMD</span>
-            <span class="metric-value">${escapeHtml(split.rows[0].cycles)} cyc</span>
-          </div>
-          <div class="metric-card">
-            <span class="metric-label">SIMT</span>
-            <span class="metric-value">${escapeHtml(split.rows[1].cycles)} cyc</span>
-          </div>
+        <div class="verdict-metric-row">
+          <div class="verdict-primary">950 相比 910B：总 cycle ${model.delta <= 0 ? '下降' : '上升'} ${model.pct}%</div>
+          <div class="verdict-delta">${model.delta <= 0 ? '▼' : '▲'} ${model.pct}%</div>
         </div>
-        ${split.rows.map((row) => {
-          const pct = row.total > 0 ? Math.round((row.cycles / row.total) * 100) : 0;
-          return `
-            <div class="cycle-row">
-              <div class="cycle-row-head">
-                <span class="cycle-row-label">${escapeHtml(row.label)}</span>
-                <span class="cycle-row-value">${escapeHtml(row.cycles)} cyc · ${pct}%</span>
-              </div>
-              <div class="cycle-track"><span class="cycle-fill is-${escapeHtml(row.id)}" style="--cycle-pct: ${pct}%"></span></div>
+        <div class="verdict-detail">
+          <span>${escapeHtml(model.split910.total)} cyc → ${escapeHtml(model.split950.total)} cyc</span>
+          <span>主要变化：<strong>${escapeHtml(model.strongest.label)}</strong> ${escapeHtml(formatCycleDelta(model.strongest.delta))}</span>
+          <span>原因：${escapeHtml(model.reason)}</span>
+        </div>
+      `;
+    }
+
+    function renderAnalysisSourceCard() {
+      const tier = TIER_TEXT[state.tier];
+      const kernel = currentKernel();
+      return `
+        <div class="inspector-note-block">
+          <div class="analysis-visual-head">
+            <strong class="analysis-visual-title">数据来源</strong>
+            <span class="analysis-visual-badge">${escapeHtml(tier[0])}</span>
+          </div>
+          <p class="analysis-visual-note">${escapeHtml(tier[2])}</p>
+          <p class="analysis-visual-note">主切分参数作用于 ${escapeHtml(kernel.label)} 的 kernel 级成本、tiling 与 pipeline 估算。</p>
+        </div>
+      `;
+    }
+
+    function modeShareModel() {
+      const kernel = currentKernel();
+      if (kernel.id === 'fp8_mmad_masked_reduce') {
+        const simtPct = state.tailLength === 0 ? 0 : Math.min(38, 18 + Math.round(state.tailLength * 0.58));
+        return {
+          simdPct: 100 - simtPct,
+          simtPct,
+          switchCount: state.tailLength === 0 ? 1 : 3,
+          switchCost: cycleSplitForArch(selectedAnnotation(), primaryArchId()).rows.find((row) => row.id === 'sync')?.cycles || 0,
+          applicable: true
+        };
+      }
+      return {
+        simdPct: 100,
+        simtPct: 0,
+        switchCount: 0,
+        switchCost: 0,
+        applicable: false
+      };
+    }
+
+    function renderHybridProfile(line) {
+      const host = qs('#hybridSplit');
+      const chip = qs('#hybridStatusChip');
+      if (!host) return;
+      const mode = modeShareModel();
+      if (chip) chip.textContent = mode.applicable ? (mode.simtPct > 0 ? 'Hybrid' : 'SIMD only') : 'N/A';
+      if (!mode.applicable) {
+        host.innerHTML = `
+          <article class="partition-map">
+            <div class="analysis-visual-head">
+              <strong class="analysis-visual-title">模式分区路径</strong>
+              <span class="analysis-visual-badge">PURE SIMD</span>
             </div>
-          `;
-        }).join('')}
-        <article class="finding">
-          <strong>${escapeHtml(split.title)}</strong>
-          <p>${escapeHtml(split.note)}</p>
-          ${(split.suggestions || []).length > 0 ? `
-            <div class="migration-advice-list">
-              ${split.suggestions.map((item) => `
-                <div class="migration-advice-item">
-                  <span>${escapeHtml(item[0])}</span>
-                  <p>${escapeHtml(item[1])}</p>
-                </div>
-              `).join('')}
+            <p class="analysis-visual-note">本 kernel 当前为纯 SIMD / Vector 路径，无 SIMT tail 区域；模式分区用于确认该状态而非提示拆分。</p>
+          </article>
+        `;
+        return;
+      }
+      host.innerHTML = `
+        <article class="partition-map">
+          <div class="analysis-visual-head">
+            <strong class="analysis-visual-title">SIMD / SIMT 分区</strong>
+            <span class="analysis-visual-badge">${escapeHtml(mode.simtPct > 20 ? 'SIMT > 20%' : 'within threshold')}</span>
+          </div>
+          <div class="mode-meter">
+            <div class="mode-meter-bar" aria-label="SIMD SIMT ratio">
+              <span class="mode-meter-segment is-simd" style="--segment-pct: ${mode.simdPct}%"></span>
+              <span class="mode-meter-segment is-simt" style="--segment-pct: ${mode.simtPct}%"></span>
             </div>
-          ` : ''}
+            <div class="mode-meter-legend">
+              <div class="mode-meter-item"><span>SIMD</span><strong>${mode.simdPct}%</strong></div>
+              <div class="mode-meter-item"><span>SIMT</span><strong>${mode.simtPct}%${mode.simtPct > 20 ? ' · >20%' : ''}</strong></div>
+            </div>
+          </div>
+        </article>
+        ${renderModePartitionVisual(line)}
+        <article class="partition-map">
+          <div class="partition-summary">
+            <div class="partition-stat"><span>模式切换</span><strong>${mode.switchCount} 次</strong></div>
+            <div class="partition-stat"><span>切换成本</span><strong>${mode.switchCost} cyc</strong></div>
+            <div class="partition-stat"><span>阈值</span><strong>SIMT 20%</strong></div>
+          </div>
         </article>
       `;
+    }
+
+    function recommendationModel() {
+      const kernel = currentKernel();
+      const mode = modeShareModel();
+      const pipeline = pipelineModel(primaryArchId());
+      const items = [];
+      if (mode.simtPct > 20) {
+        items.push({
+          title: `SIMT 占比 ${mode.simtPct}% 超过阈值`,
+          text: '现象：tail 段触发 predication fallback。原因：tile 尾部小于 SIMD lane 宽度。建议：将 tail 拆为独立 kernel，或把 K tile 调整为 128 的倍数。',
+          gain: 'est. -18%'
+        });
+      }
+      if (pipeline.overlap < 50) {
+        items.push({
+          title: `Pipeline overlap 仅 ${pipeline.overlap}%`,
+          text: `现象：关键路径卡在 ${pipeline.criticalUnit}。建议：尝试将 ${sliderModel().kLabel} 提升到 128，并复核 MTE2 / Cube 对齐。`,
+          gain: 'est. -18%'
+        });
+      }
+      if (kernel.id === 'c_api_add') {
+        items.push({
+          title: 'Data movement 占比较高',
+          text: '现象：GM↔UB 搬运仍是主要开销。建议：检查 128B sector 命中，并收窄 asc_sync 同步范围。',
+          gain: 'est. -12%'
+        });
+      } else if (isGeluKernel(kernel)) {
+        items.push({
+          title: kernel.profile === 'gelu_high_performance' ? '验证 RegBase/VF 收益来源' : '展开 High API 成本',
+          text: kernel.profile === 'gelu_high_performance'
+            ? '现象：收益集中在 compute 段。建议：对 scenarioNum=0/1/2 记录 cycle 与寄存器压力。'
+            : '现象：GELU API 隐藏 tmpBuf 与 UB 占用。建议：输出 API lowering 报告并检查 tmpBuf 是否造成额外搬运。',
+          gain: kernel.profile === 'gelu_high_performance' ? 'est. -10%' : 'est. -8%'
+        });
+      } else {
+        items.push({
+          title: 'Mode switch 仍是主要节省项',
+          text: '现象：950 相比 910B 的主要差异来自 C-V / FixPipe 边界。建议：优先复核 FixPipe 直通与 BufferID 迁移。',
+          gain: 'est. -14%'
+        });
+      }
+      items.push({
+        title: '保留 T3 Profiled 校准点',
+        text: '现象：当前 V2 pipeline 仍为编译期估算。建议：进入 T3 后校准 bubble、sector 命中和 critical path。',
+        gain: 'risk down'
+      });
+      return items.slice(0, 3);
+    }
+
+    function renderRecommendations() {
+      const host = qs('#recommendationList');
+      if (!host) return;
+      host.innerHTML = recommendationModel().map((item, index) => `
+        <article class="recommendation-item">
+          <span class="recommendation-rank">${index + 1}</span>
+          <div class="recommendation-copy">
+            <strong class="recommendation-title">${escapeHtml(item.title)}</strong>
+            <p>${escapeHtml(item.text)}</p>
+          </div>
+          <span class="recommendation-gain">${escapeHtml(item.gain)}</span>
+        </article>
+      `).join('');
+    }
+
+    function tilingModel(archId = primaryArchId()) {
+      const kernel = currentKernel();
+      const archScale = archId === 'ascend910b' ? 0.72 : 1;
+      if (kernel.id === 'c_api_add') {
+        const tileCount = Math.max(4, Math.round(2048 / state.kTile));
+        return {
+          layout: '1D',
+          shape: `block × ${state.kTile}`,
+          count: `${tileCount} vector blocks`,
+          cols: Math.min(8, tileCount),
+          rows: 2,
+          activeIndex: 2,
+          axisTop: `block axis (${tileCount} chunks) →`,
+          axisLeft: 'vector',
+          axisLeftSize: `${state.kTile} elems`,
+          primaryAxis: 'block length',
+          doubleBuffer: 'N/A',
+          memory: [
+            ['L1', Math.round(18 * archScale), 1024],
+            ['L0A', 0, 64],
+            ['L0B', 0, 64],
+            ['UB', Math.min(86, Math.round((state.kTile / 384) * 54 + 18)), 256]
+          ]
+        };
+      }
+      if (isGeluKernel(kernel)) {
+        const highPerf = kernel.profile === 'gelu_high_performance';
+        return {
+          layout: '2D',
+          shape: highPerf ? `M × N = 256 × ${state.kTile * 32}` : `N = ${state.kTile}`,
+          count: highPerf ? '32 × 2 = 64 tiles' : '1 vector tile',
+          cols: highPerf ? 6 : 8,
+          rows: highPerf ? 4 : 1,
+          activeIndex: highPerf ? 9 : 3,
+          axisTop: highPerf ? 'N axis (2 tiles × 4096) →' : 'N axis (1 vector tile) →',
+          axisLeft: highPerf ? 'M axis' : 'vector',
+          axisLeftSize: highPerf ? '32 × 256' : `${state.kTile} elems`,
+          primaryAxis: 'tile size',
+          doubleBuffer: highPerf ? 'enabled' : 'N/A',
+          memory: [
+            ['L1', highPerf ? Math.round(42 * archScale) : 12, 1024],
+            ['L0A', 0, 64],
+            ['L0B', 0, 64],
+            ['UB', highPerf ? 62 : 28, 256]
+          ]
+        };
+      }
+      return {
+        layout: '2D',
+        shape: `M × N × K = 64 × 64 × ${state.kTile}`,
+        count: '8 × 6 × 2 = 96 tiles',
+        cols: 6,
+        rows: 4,
+        activeIndex: 14,
+        axisTop: 'N axis (6 tiles × 64) →',
+        axisLeft: 'M axis',
+        axisLeftSize: '8 × 64',
+        primaryAxis: 'K',
+        doubleBuffer: 'enabled',
+        memory: [
+          ['L1', Math.round((state.kTile / 128) * 68 * archScale), 1024],
+          ['L0A', Math.round(45 * archScale), 64],
+          ['L0B', Math.round(60 * archScale), 64],
+          ['UB', Math.round((state.tailLength > 0 ? 18 : 12) * archScale), 256]
+        ]
+      };
+    }
+
+    function renderTilingCard(archId) {
+      const arch = archById(archId);
+      const model = tilingModel(archId);
+      const cells = Array.from({ length: model.cols * model.rows }, (_, index) => index);
+      return `
+        <article class="tiling-card">
+          <div class="v2-card-head">
+            <strong class="v2-card-title">${escapeHtml(arch.label)}</strong>
+            <span class="v2-card-subtitle">${escapeHtml(model.layout)} layout</span>
+          </div>
+          <div class="tiling-stats">
+            <div class="tiling-stat"><span>Tile shape</span><strong>${escapeHtml(model.shape)}</strong></div>
+            <div class="tiling-stat"><span>Tile count</span><strong>${escapeHtml(model.count)}</strong></div>
+          </div>
+          <div class="tile-grid-wrap">
+            <div class="tile-map">
+              <div class="tile-axis-top">${escapeHtml(model.axisTop)}</div>
+              <div class="tile-axis-left">
+                <span>${escapeHtml(model.axisLeft)}</span>
+                <strong>${escapeHtml(model.axisLeftSize)}</strong>
+                <span>↓</span>
+              </div>
+              <div class="tile-grid" style="--tile-cols: ${model.cols}; --tile-rows: ${model.rows}">
+                ${cells.map((index) => `
+                  <span class="tile-cell ${index === model.activeIndex ? 'is-active' : ''}">
+                    ${index === model.activeIndex ? '<span class="tile-marker">●</span>' : ''}
+                  </span>
+                `).join('')}
+              </div>
+              <div class="tile-axis-foot"><span class="tile-marker">●</span> 当前主切分轴 ${escapeHtml(model.primaryAxis)}</div>
+            </div>
+          </div>
+          <strong class="tile-memory-title">片上存储占用</strong>
+          <div class="memory-bars">
+            ${model.memory.map(([name, pct, capacity]) => `
+              <div class="memory-row ${pct > 85 ? 'is-warning' : ''}">
+                <span>${escapeHtml(name)}</span>
+                <div class="memory-track"><span class="memory-fill" style="--memory-pct: ${Math.min(100, pct)}%"></span></div>
+                <strong>${escapeHtml(pct)}% / ${escapeHtml(capacity)} KB</strong>
+              </div>
+            `).join('')}
+          </div>
+          <div class="inspector-chip-row">
+            <span class="wb-chip">Double buffer ${escapeHtml(model.doubleBuffer)}</span>
+            <span class="wb-chip">Primary axis ${escapeHtml(sliderModel().kLabel)}</span>
+          </div>
+        </article>
+      `;
+    }
+
+    function renderTiling() {
+      const host = qs('#tilingPanel');
+      if (!host) return;
+      host.innerHTML = activeArchIds().map(renderTilingCard).join('');
+    }
+
+    function pipelineModel(archId = primaryArchId()) {
+      const kernel = currentKernel();
+      const total = archId === 'ascend910b' ? 280 : cycleSplitForArch(selectedAnnotation(), archId).total;
+      const isHybrid = kernel.id === 'fp8_mmad_masked_reduce';
+      const highPerf = kernel.profile === 'gelu_high_performance';
+      const overlap = archId === 'ascend910b' ? 42 : isHybrid ? Math.max(42, 70 - Math.round(state.tailLength * 0.35)) : highPerf ? 66 : 54;
+      const units = isHybrid ? ['MTE2', 'MTE1', 'Cube', 'MTE3', 'Vector', 'Scalar'] : ['MTE2', 'Vector', 'MTE3', 'Scalar'];
+      const segments = [
+        { unit: 'MTE2', start: 0, end: Math.round(total * 0.22), stage: 'prefetch' },
+        { unit: 'MTE2', start: Math.round(total * 0.34), end: Math.round(total * 0.48), stage: 'prefetch' },
+        { unit: 'MTE2', start: Math.round(total * 0.5), end: Math.round(total * 0.57), stage: 'bubble', isBubble: true, stallReason: '等 L2 sector' },
+        { unit: isHybrid ? 'MTE1' : 'Vector', start: Math.round(total * 0.12), end: Math.round(total * 0.38), stage: isHybrid ? 'load L0' : 'compute' },
+        { unit: isHybrid ? 'Cube' : 'Vector', start: Math.round(total * 0.3), end: Math.round(total * 0.78), stage: 'compute', isCritical: true },
+        { unit: 'MTE3', start: Math.round(total * 0.68), end: Math.round(total * 0.92), stage: 'store' },
+        { unit: 'Scalar', start: Math.round(total * 0.52), end: Math.round(total * 0.62), stage: 'guard' }
+      ].filter((segment) => units.includes(segment.unit));
+      return {
+        total,
+        units,
+        segments,
+        overlap,
+        criticalUnit: isHybrid ? 'Cube' : 'Vector',
+        criticalPct: isHybrid ? 78 : highPerf ? 64 : 58,
+        source: state.tier === 't3' ? 'profiled' : 'estimated'
+      };
+    }
+
+    function renderPipelineCard(archId) {
+      const arch = archById(archId);
+      const model = pipelineModel(archId);
+      const ticks = [0, Math.round(model.total * 0.25), Math.round(model.total * 0.5), Math.round(model.total * 0.75), model.total];
+      return `
+        <article class="pipeline-card">
+          <div class="v2-card-head">
+            <strong class="v2-card-title">${escapeHtml(arch.label)}</strong>
+            <span class="v2-card-subtitle">${escapeHtml(model.source)} · cycle</span>
+          </div>
+          <div class="pipeline-stats">
+            <div class="pipeline-stat"><span>Overlap</span><strong>MTE × ${escapeHtml(model.criticalUnit)} ${model.overlap}%</strong></div>
+            <div class="pipeline-stat"><span>Critical path</span><strong>${escapeHtml(model.criticalUnit)} · ${model.criticalPct}%</strong></div>
+          </div>
+          <div class="pipeline-lanes">
+            <div class="pipeline-axis">
+              <span></span>
+              <div class="pipeline-ticks">${ticks.map((tick) => `<span>${escapeHtml(tick)}</span>`).join('')}</div>
+            </div>
+            ${model.units.map((unit) => `
+              <div class="pipeline-lane">
+                <span class="pipeline-unit">${escapeHtml(unit)}</span>
+                <div class="pipeline-track">
+                  ${model.segments.filter((segment) => segment.unit === unit).map((segment) => {
+                    const left = model.total > 0 ? Math.round(segment.start / model.total * 100) : 0;
+                    const width = model.total > 0 ? Math.max(2, Math.round((segment.end - segment.start) / model.total * 100)) : 0;
+                    const cls = `${segment.isBubble ? 'is-bubble' : ''} ${segment.isCritical ? 'is-critical' : ''}`;
+                    return `<span class="pipeline-segment ${cls}" title="${escapeHtml(segment.stallReason || segment.stage)}" style="--seg-left: ${left}%; --seg-width: ${width}%"></span>`;
+                  }).join('')}
+                </div>
+              </div>
+            `).join('')}
+          </div>
+          <div class="pipeline-legend">
+            <span>work</span>
+            <span class="is-bubble">bubble</span>
+            <span class="is-critical">critical path</span>
+          </div>
+        </article>
+      `;
+    }
+
+    function renderPipeline() {
+      const host = qs('#pipelinePanel');
+      if (!host) return;
+      host.innerHTML = activeArchIds().map(renderPipelineCard).join('');
+    }
+
+    function reasonDisplayText(code) {
+      return REASON_HUMAN_TEXT[code] || code.replace(/_/g, ' ');
+    }
+
+    function renderEvidence(line) {
+      const codes = line.reasons.map(reasonCode).concat(extraReasonCodes(line));
+      const host = qs('#reasonList');
+      const summary = qs('#evidenceSummaryChip');
+      if (summary) summary.textContent = `${codes.length} 条证据`;
+      if (!host) return;
+      host.innerHTML = codes.map((code, index) => `
+        <div class="reason-row">
+          <div>
+            <strong class="recommendation-title">${escapeHtml(reasonDisplayText(code))}</strong>
+            <code>${escapeHtml(code)}</code>
+          </div>
+          <span class="wb-chip">${index === 0 ? 'primary' : index < line.reasons.length ? 'supporting' : currentArch().label}</span>
+        </div>
+      `).join('');
     }
 
     function renderInspectorDetails() {
@@ -2158,72 +3703,74 @@ int32_t main(int32_t argc, char *argv[])
       const tier = TIER_TEXT[state.tier];
       const modeTag = qs('#modeTag');
       if (!modeTag) return;
+      qs('#selectedKernelChip').textContent = currentKernel().label;
+      qs('#selectedKindChip').textContent = isCompareArch() ? 'Compare' : kernelKind();
       modeTag.textContent = `${tier[1]} analysis`;
       qsa('[data-tier]').forEach((button) => {
         button.classList.toggle('is-selected', button.dataset.tier === state.tier);
       });
       syncTierIndicator();
-      qs('#kValue').textContent = state.kTile;
-      qs('#tailValue').textContent = state.tailLength;
-      qs('#analysisList').innerHTML = analysisFindings(line).map((item) => finding(item[0], item[1])).join('');
+      renderSliderControls();
+      renderVerdict();
+      qs('#analysisList').innerHTML = renderAnalysisSourceCard();
       renderCycleSplit();
-      const codes = line.reasons.map(reasonCode).concat(extraReasonCodes(line));
-      qs('#reasonList').innerHTML = codes.map((code, index) => `
-        <div class="reason-row">
-          <code>${escapeHtml(code)}</code>
-          <span class="wb-chip">${index === 0 ? 'primary' : index < line.reasons.length ? 'supporting' : currentArch().label}</span>
-        </div>
-      `).join('');
-      qs('#hybridSplit').innerHTML = hybridSplitCards(line).map((item) => `
-        <article class="hybrid-card">
-          <strong>${escapeHtml(item[0])}</strong>
-          <p>${escapeHtml(item[1])}</p>
-        </article>
-      `).join('');
+      renderHybridProfile(line);
+      renderRecommendations();
+      renderEvidence(line);
+      renderTiling();
+      renderPipeline();
     }
 
     function renderInspector() {
-      renderEvidence();
       renderInspectorDetails();
     }
 
-    function onApplyRewrite(btn) {
-      const original = btn.textContent;
-      btn.textContent = '已应用';
-      btn.disabled = true;
-      setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 1600);
-    }
-
     function renderPathChips() {
-      const line = selectedLine();
-      if (!line) return;
+      const baseLine = selectedAnnotation();
+      if (!baseLine) return;
       const chips = qs('#pathChips');
       chips.innerHTML = '';
-      line.path.split('→').map((item) => item.trim()).forEach((item, index) => {
-        const chip = document.createElement('span');
-        chip.className = `path-chip ${index > 0 && index < line.path.split('→').length - 1 ? 'is-active' : ''}`;
-        chip.textContent = item;
-        chips.appendChild(chip);
+      activeArchIds().forEach((archId) => {
+        const line = lineForArch(baseLine, archId);
+        const parts = line.path.split('→').map((item) => item.trim());
+        if (isCompareArch()) {
+          const label = document.createElement('span');
+          label.className = 'path-chip is-active';
+          label.textContent = archById(archId).label;
+          chips.appendChild(label);
+        }
+        parts.forEach((item, index) => {
+          const chip = document.createElement('span');
+          chip.className = `path-chip ${index > 0 && index < parts.length - 1 ? 'is-active' : ''}`;
+          chip.textContent = item;
+          chips.appendChild(chip);
+        });
       });
     }
 
     function clearHardwareFocus() {
-      postHardwareFocus([], []);
+      ['primary', 'ascend950', 'ascend910b'].forEach((key) => postHardwareFocus([], [], key));
     }
 
     function applyHardwareFocus() {
-      const line = selectedLine();
-      if (!line) return;
-      postHardwareFocus(line.selectors, line.routes);
+      const baseLine = selectedAnnotation();
+      if (!baseLine) return;
+      activeArchIds().forEach((archId) => {
+        const line = lineForArch(baseLine, archId);
+        postHardwareFocus(line.selectors, line.routes, frameKeyForArch(archId));
+      });
     }
 
     function postHardwareArch() {
-      const frame = qs('#hardwareFrame');
-      if (!state.frameReady || !frame.contentWindow) return;
-      frame.contentWindow.postMessage({
-        type: 'hardware-arch-change',
-        preset: currentArch().preset
-      }, '*');
+      activeArchIds().forEach((archId) => {
+        const key = frameKeyForArch(archId);
+        const frame = frameForKey(key);
+        if (!state.frameReady[key] || !frame?.contentWindow) return;
+        frame.contentWindow.postMessage({
+          type: 'hardware-arch-change',
+          preset: archById(archId).preset
+        }, '*');
+      });
     }
 
     function selectArch(id) {
@@ -2235,6 +3782,7 @@ int32_t main(int32_t argc, char *argv[])
       renderSource();
       renderInspector();
       renderPathChips();
+      renderHardwareMode();
       postHardwareArch();
       applyHardwareFocus();
     }
@@ -2278,7 +3826,7 @@ int32_t main(int32_t argc, char *argv[])
 
     function selectPathKind(kind) {
       state.pathKind = kind;
-      const next = currentAnnotations().find((line) => line.kind === kind);
+      const next = currentAnnotations().find((line) => line.kind === kind && !line.tagOnly);
       if (next) {
         state.selectedId = next.id;
         currentKernel().selectedId = next.id;
@@ -2291,55 +3839,97 @@ int32_t main(int32_t argc, char *argv[])
     }
 
     function renderHardware() {
-      const frame = qs('#hardwareFrame');
-      frame.addEventListener('load', () => {
-        state.frameReady = true;
-        requestAnimationFrame(() => {
-          postHardwareArch();
-          if (state.fitted) fitHardware();
-          applyHardwareFocus();
+      qsa('[data-hardware-frame]').forEach((frame) => {
+        frame.addEventListener('load', () => {
+          const key = frame.dataset.hardwareFrame || 'primary';
+          state.frameReady[key] = true;
+          requestAnimationFrame(() => {
+            postHardwareArch();
+            renderHardwareMode();
+            applyHardwareFocus();
+          });
         });
       });
+      renderHardwareMode();
     }
 
     function fitHardware() {
+      if (isCompareArch()) {
+        setCompareHardwareScale();
+        return;
+      }
       const viewport = qs('#hardwareViewport');
-      const scaleEl = qs('#hardwareScale');
+      const scaleEl = scaleForKey('primary');
       if (!viewport || !scaleEl) return;
+      const size = frameSizeForKey('primary');
       const availableWidth = Math.max(1, viewport.clientWidth - 28);
       const availableHeight = Math.max(1, viewport.clientHeight - 76);
-      const scale = Math.min(1, availableWidth / state.frameSize.width, availableHeight / state.frameSize.height);
-      setHardwareScale(Math.max(0.36, scale));
+      const scale = Math.min(1, availableWidth / size.width, availableHeight / size.height);
+      setHardwareScale(Math.max(0.36, scale), 'primary');
       state.fitted = true;
     }
 
     function actualSizeHardware() {
-      setHardwareScale(1);
+      if (isCompareArch()) {
+        setCompareHardwareScale();
+        return;
+      }
+      setHardwareScale(1, 'primary');
       state.fitted = false;
     }
 
-    function setHardwareScale(scale) {
-      const scaleEl = qs('#hardwareScale');
-      const frame = qs('#hardwareFrame');
-      const naturalWidth = state.frameSize.width;
-      const naturalHeight = state.frameSize.height;
-      state.scale = scale;
+    function setCompareHardwareScale() {
+      ['ascend950', 'ascend910b'].forEach((key) => setHardwareScale(0.35, key, false));
+      qs('#zoomReadout').textContent = '35%';
+    }
+
+    function setHardwareScale(scale, key = 'primary', updateReadout = true) {
+      const scaleEl = scaleForKey(key);
+      const frame = frameForKey(key);
+      if (!scaleEl || !frame) return;
+      const size = frameSizeForKey(key);
+      const naturalWidth = size.width;
+      const naturalHeight = size.height;
+      state.scales[key] = scale;
+      if (key === 'primary') state.scale = scale;
       scaleEl.style.width = `${Math.ceil(naturalWidth * scale)}px`;
       scaleEl.style.height = `${Math.ceil(naturalHeight * scale)}px`;
       frame.style.width = `${naturalWidth}px`;
       frame.style.height = `${naturalHeight}px`;
       frame.style.transform = `scale(${scale})`;
-      qs('#zoomReadout').textContent = `${Math.round(scale * 100)}%`;
+      if (updateReadout) qs('#zoomReadout').textContent = `${Math.round(scale * 100)}%`;
     }
 
-    function postHardwareFocus(selectors, routes) {
-      const frame = qs('#hardwareFrame');
-      if (!state.frameReady || !frame.contentWindow) return;
+    function renderHardwareMode() {
+      const compare = isCompareArch();
+      const viewport = qs('#hardwareViewport');
+      viewport?.classList.toggle('is-compare', compare);
+      const fitBtn = qs('#fitBtn');
+      const actualBtn = qs('#actualBtn');
+      if (fitBtn) fitBtn.disabled = compare;
+      if (actualBtn) actualBtn.disabled = compare;
+      if (compare) {
+        setCompareHardwareScale();
+      } else if (state.fitted) {
+        fitHardware();
+      } else {
+        setHardwareScale(state.scales.primary || 1, 'primary');
+      }
+    }
+
+    function postHardwareFocus(selectors, routes, key = 'primary') {
+      const frame = frameForKey(key);
+      if (!state.frameReady[key] || !frame?.contentWindow) return;
       frame.contentWindow.postMessage({
         type: 'hardware-focus',
         selectors,
         routes,
       }, '*');
+    }
+
+    function frameKeyFromWindow(source) {
+      const frame = qsa('[data-hardware-frame]').find((item) => item.contentWindow === source);
+      return frame?.dataset.hardwareFrame || 'primary';
     }
 
     function escapeHtml(value) {
@@ -2366,6 +3956,11 @@ int32_t main(int32_t argc, char *argv[])
     qsa('[data-path-kind]').forEach((button) => {
       button.addEventListener('click', () => selectPathKind(button.dataset.pathKind));
     });
+    qs('#sourceMarkToggle').addEventListener('click', () => {
+      state.annotationsVisible = !state.annotationsVisible;
+      renderKernelMeta();
+      renderSource();
+    });
     qsa('[data-tier]').forEach((button) => {
       button.addEventListener('click', () => {
         state.tier = button.dataset.tier;
@@ -2385,17 +3980,21 @@ int32_t main(int32_t argc, char *argv[])
     qs('#analyzeBtn').addEventListener('click', () => selectLine(state.selectedId));
     window.addEventListener('message', (event) => {
       if (!event.data || (event.data.type !== 'hardware-ready' && event.data.type !== 'hardware-size')) return;
-      state.frameSize = {
-        width: Math.max(1, Number(event.data.width) || state.frameSize.width),
-        height: Math.max(1, Number(event.data.height) || state.frameSize.height),
+      const key = frameKeyFromWindow(event.source);
+      const currentSize = frameSizeForKey(key);
+      state.frameSizes[key] = {
+        width: Math.max(1, Number(event.data.width) || currentSize.width),
+        height: Math.max(1, Number(event.data.height) || currentSize.height),
       };
-      state.frameReady = true;
-      if (state.fitted) fitHardware();
+      state.frameReady[key] = true;
+      if (isCompareArch()) setCompareHardwareScale();
+      else if (key === 'primary' && state.fitted) fitHardware();
       postHardwareArch();
       applyHardwareFocus();
     });
     window.addEventListener('resize', () => {
-      if (state.fitted) fitHardware();
+      if (isCompareArch()) setCompareHardwareScale();
+      else if (state.fitted) fitHardware();
     });
 
     renderArchSelector();
