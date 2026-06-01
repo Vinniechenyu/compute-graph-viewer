@@ -4,9 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>昇腾 950 算子开发者报告</title>
-  <link rel="stylesheet" href="../vendor/pto-design-system/css/style.css?v=20260601-950-report-v3">
-  <link rel="stylesheet" href="../vendor/pto-design-system/patterns/workbench-shell/pattern.css?v=20260601-950-report-v3">
-  <link rel="stylesheet" href="../vendor/pto-design-system/patterns/hardware-architecture-viewport/pattern.css?v=20260601-950-report-v3">
+  <link rel="stylesheet" href="../vendor/pto-design-system/css/style.css?v=20260601-950-report-v4">
+  <link rel="stylesheet" href="../vendor/pto-design-system/patterns/workbench-shell/pattern.css?v=20260601-950-report-v4">
+  <link rel="stylesheet" href="../vendor/pto-design-system/patterns/hardware-architecture-viewport/pattern.css?v=20260601-950-report-v4">
+  <link rel="stylesheet" href="../vendor/pto-design-system/patterns/floating-playback-control/pattern.css?v=20260601-950-report-v4">
   <style>
     * { box-sizing: border-box; }
 
@@ -34,8 +35,10 @@
       justify-content: space-between;
       min-width: 0;
       padding: 0 20px;
-      border-bottom: 1px solid var(--border-subtle);
+      border-bottom: 0;
       background: transparent;
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
     }
 
     .brand {
@@ -88,8 +91,8 @@
 
     .report-shell {
       height: 100%;
-      padding: var(--space-2) var(--space-3) var(--space-3);
-      gap: var(--space-2);
+      padding: 0 var(--space-3) var(--space-3);
+      gap: 0;
       background: var(--background);
     }
 
@@ -1128,9 +1131,10 @@
     }
 
     .arch-pane {
+      --pto-hw-viewport-bg: var(--surface-1);
+      --pto-hw-viewport-top-glow: transparent;
       display: flex;
       flex-direction: column;
-      background: var(--surface-1);
     }
 
     .arch-toolbar {
@@ -1191,127 +1195,54 @@
       display: block;
     }
 
-    .annotation-rail {
-      flex: 0 0 min(34%, 330px);
-      min-height: 40px;
-      border-top: 1px solid var(--border-subtle);
-      display: grid;
-      grid-template-rows: auto 1fr;
-      background: var(--surface-1);
-      transition: flex-basis 160ms ease;
+    .pto-floating-playback--report {
+      --floating-playback-expanded-width: 980px;
+      z-index: var(--z-overlay);
     }
 
-    .arch-pane.is-annotations-collapsed .annotation-rail {
-      flex-basis: 42px;
+    .pto-floating-playback--report .pto-floating-playback__group--timeline {
+      min-width: 0;
+      align-items: flex-start;
+      flex-direction: column;
+      gap: 4px;
     }
 
-    .arch-pane.is-annotations-collapsed .annotation-list {
+    .pto-floating-playback--report .pto-floating-playback__meta {
+      width: 100%;
+    }
+
+    .pto-floating-playback--report .pto-floating-playback__opname {
+      max-width: none;
+    }
+
+    .pto-floating-playback--report .pto-floating-playback__scrubber-wrap {
       display: none;
     }
 
-    .annotation-rail__head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: var(--space-3);
-      padding: var(--space-3);
-      border-bottom: 1px solid var(--border-subtle);
-    }
-
-    .arch-pane.is-annotations-collapsed .annotation-rail__head {
-      border-bottom: 0;
-    }
-
-    .annotation-rail__head strong {
-      color: var(--foreground);
-      font: var(--text-title-2);
-      letter-spacing: 0;
-    }
-
-    .annotation-toggle {
-      appearance: none;
-      min-height: 26px;
-      padding: 0 var(--space-2);
-      border: 1px solid var(--border-subtle);
-      border-radius: var(--radius-md);
-      background: var(--surface-2);
-      color: var(--foreground-secondary);
-      font: var(--text-label);
-      letter-spacing: 0;
-      cursor: pointer;
-    }
-
-    .annotation-toggle:hover {
-      border-color: var(--border-default);
-      background: var(--state-hover);
-      color: var(--foreground);
-    }
-
-    .annotation-list {
-      overflow: auto;
-      padding: var(--space-3);
-      display: grid;
-      gap: var(--space-2);
-      align-content: start;
-    }
-
-    .annotation-card {
-      border: 1px solid var(--border-subtle);
-      border-radius: var(--radius-md);
-      background: var(--surface-1);
-      padding: var(--space-3);
-      display: grid;
-      gap: var(--space-2);
-      cursor: pointer;
-    }
-
-    .annotation-card:hover,
-    .annotation-card.is-active {
-      border-color: var(--border-default);
-      background: var(--state-hover);
-    }
-
-    .annotation-card.is-active {
-      box-shadow: 0 0 0 3px var(--focus-ring);
-    }
-
-    .annotation-card__head {
-      display: flex;
-      align-items: center;
-      gap: var(--space-2);
+    .annotation-player-text {
+      width: 100%;
       min-width: 0;
+      display: grid;
+      gap: 2px;
     }
 
-    .annotation-card__tag {
-      min-height: var(--tag-height);
-      padding: 0 var(--space-2);
-      border-radius: var(--tag-radius);
-      background: var(--comp-tag-bg);
-      color: var(--comp-tag-fg);
-      font: var(--text-label);
-      letter-spacing: 0;
-      white-space: nowrap;
-    }
-
-    .annotation-card__title {
-      color: var(--foreground);
-      font: var(--text-body-sm);
-      font-weight: var(--font-weight-semibold);
-      white-space: nowrap;
+    .annotation-player-summary {
+      min-width: 0;
       overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .annotation-card__summary {
-      margin: 0;
       color: var(--foreground-secondary);
       font: var(--text-body-sm);
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
-    .annotation-card__targets {
+    .annotation-player-targets {
+      min-width: 0;
+      overflow: hidden;
       color: var(--foreground-muted);
       font: var(--text-label);
       letter-spacing: 0;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     @media (max-width: 1100px) {
@@ -3286,11 +3217,11 @@ msdebug \
       </article>
     </section>
 
-    <aside class="workbench-pane report-pane arch-pane pto-hw-viewport is-annotations-collapsed" id="archPane" aria-label="架构可视化与联动注释">
+    <aside class="workbench-pane report-pane arch-pane pto-hw-viewport" id="archPane" aria-label="架构可视化">
       <div class="arch-toolbar pto-hw-viewport__toolbar">
         <div class="arch-toolbar__title pto-hw-viewport__title">
           <strong>芯片架构图</strong>
-          <span id="activeAnnotationTitle">点击正文联动按钮或注释卡查看硬件路径</span>
+          <span id="activeAnnotationTitle">使用底部播放器逐步查看硬件路径</span>
         </div>
         <div class="pto-hw-viewport__controls">
           <div class="pto-hw-viewport__tools" aria-label="架构图缩放与细节控制">
@@ -3309,21 +3240,17 @@ msdebug \
       </div>
       <div class="arch-frame pto-hw-viewport__stage" id="hardwareViewport">
         <div class="pto-hw-viewport__scale" id="hardwareScale">
-          <iframe class="pto-hw-viewport__frame" id="hardwareFrame" src="hardware-frame.html?preset=ascend950b&theme=light&v=20260601-950-report-v3" title="Ascend 950 hardware architecture"></iframe>
+          <iframe class="pto-hw-viewport__frame" id="hardwareFrame" src="hardware-frame.html?preset=ascend950b&theme=light&v=20260601-950-report-v4" title="Ascend 950 hardware architecture"></iframe>
         </div>
       </div>
-      <section class="annotation-rail" aria-label="联动注释">
-        <div class="annotation-rail__head">
-          <strong>联动注释</strong>
-          <button class="annotation-toggle" type="button" id="annotationToggleBtn" aria-expanded="false">展开</button>
-        </div>
-        <div class="annotation-list" id="annotationList"></div>
-      </section>
     </aside>
   </main>
 
-  <script src="../vendor/pto-design-system/patterns/workbench-shell/pattern.js?v=20260601-950-report-v3"></script>
-  <script src="../vendor/pto-design-system/patterns/hardware-architecture-viewport/pattern.js?v=20260601-950-report-v3"></script>
+  <div id="annotationPlayerMount"></div>
+
+  <script src="../vendor/pto-design-system/patterns/workbench-shell/pattern.js?v=20260601-950-report-v4"></script>
+  <script src="../vendor/pto-design-system/patterns/hardware-architecture-viewport/pattern.js?v=20260601-950-report-v4"></script>
+  <script src="../vendor/pto-design-system/patterns/floating-playback-control/pattern.js?v=20260601-950-report-v4"></script>
   <script>
     const ANNOTATIONS = [
       {
@@ -3545,14 +3472,15 @@ msdebug \
       s8: 'migration-risk',
     };
 
-    const ASSET_VERSION = '20260601-950-report-v3';
+    const ASSET_VERSION = '20260601-950-report-v4';
 
     const state = {
       activeSectionId: 's1',
       activeAnnotationId: 'hardware-overview',
       archPreset: 'ascend950b',
       iframeReady: false,
-      annotationsOpen: false,
+      playing: false,
+      playbackIndex: 0,
       aivFolded: false,
     };
 
@@ -3560,27 +3488,17 @@ msdebug \
     const hardwareFrame = document.getElementById('hardwareFrame');
     const reportNav = document.getElementById('reportNav');
     const docPane = document.getElementById('docPane');
-    const annotationList = document.getElementById('annotationList');
-    const annotationToggleBtn = document.getElementById('annotationToggleBtn');
+    const annotationPlayerMount = document.getElementById('annotationPlayerMount');
     const archFoldAivToggle = document.getElementById('archFoldAivToggle');
     const archPresetButtons = Array.from(document.querySelectorAll('[data-arch-preset]'));
     const activeAnnotationTitle = document.getElementById('activeAnnotationTitle');
     const reportSections = Array.from(document.querySelectorAll('.report-section, .report-source .section[data-section-id]'));
     let hardwareViewportController = null;
     let pendingNavSync = 0;
-
-    function renderAnnotations() {
-      annotationList.innerHTML = ANNOTATIONS.map((item) => `
-        <button class="annotation-card ${state.activeAnnotationId === item.id ? 'is-active' : ''}" type="button" data-annotation-id="${item.id}">
-          <span class="annotation-card__head">
-            <span class="annotation-card__tag">${item.tag}</span>
-            <span class="annotation-card__title">${item.title}</span>
-          </span>
-          <span class="annotation-card__summary">${item.summary}</span>
-          <span class="annotation-card__targets">${item.targets}</span>
-        </button>
-      `).join('');
-    }
+    let floatingControl = null;
+    let playbackElements = null;
+    let playbackTimer = 0;
+    const PLAYBACK_INTERVAL_MS = 3600;
 
     function renderNav() {
       reportNav.querySelectorAll('.report-nav-item').forEach((item) => {
@@ -3588,10 +3506,134 @@ msdebug \
       });
     }
 
-    function renderAnnotationRail() {
-      archPane.classList.toggle('is-annotations-collapsed', !state.annotationsOpen);
-      annotationToggleBtn.textContent = state.annotationsOpen ? '收起' : '展开';
-      annotationToggleBtn.setAttribute('aria-expanded', state.annotationsOpen ? 'true' : 'false');
+    function playableAnnotations() {
+      return ANNOTATIONS;
+    }
+
+    function annotationIndexById(annotationId) {
+      return playableAnnotations().findIndex((item) => item.id === annotationId);
+    }
+
+    function currentPlaybackAnnotation() {
+      const list = playableAnnotations();
+      return list[Math.min(state.playbackIndex, Math.max(0, list.length - 1))] || list[0];
+    }
+
+    function syncPlaybackUi() {
+      if (!playbackElements) return;
+      const helper = window.PtoFloatingPlaybackControl;
+      const list = playableAnnotations();
+      const current = currentPlaybackAnnotation();
+      const visibleIndex = list.length > 0 ? Math.min(state.playbackIndex + 1, list.length) : 0;
+
+      playbackElements.label.textContent = `${visibleIndex} / ${list.length}`;
+      playbackElements.opname.textContent = current?.title || '未选择联动步骤';
+      playbackElements.summary.textContent = current?.summary || '点击播放后逐步联动架构图中的硬件路径。';
+      playbackElements.targets.textContent = current?.targets ? `硬件路径：${current.targets}` : '硬件路径：-';
+      playbackElements.playBtn.innerHTML = state.playing
+        ? `${helper.icons.pause}<span>暂停</span>`
+        : `${helper.icons.play}<span>播放</span>`;
+      floatingControl?.sync({ playing: state.playing });
+    }
+
+    function setupAnnotationPlayer() {
+      const helper = window.PtoFloatingPlaybackControl;
+      if (!helper?.createControl || !annotationPlayerMount) return;
+      const ids = {
+        shell: 'report-floating-shell',
+        toggle: 'report-floating-toggle',
+        collapsedButton: 'report-floating-collapsed-btn',
+        collapsedIcon: 'report-floating-collapsed-icon',
+        controls: 'report-controls-row',
+        stepBack: 'report-step-back-btn',
+        play: 'report-play-btn',
+        stepForward: 'report-step-fwd-btn',
+        replay: 'report-replay-btn',
+        scrubber: 'report-scrubber',
+        scrubberLabel: 'report-scrubber-label',
+        scrubberOpname: 'report-scrubber-opname',
+        scrubberHover: 'report-scrubber-hover',
+      };
+      const control = helper.createControl({ ids, className: 'pto-floating-playback--report' });
+      annotationPlayerMount.appendChild(control);
+      floatingControl = helper.init({ root: control, isPlaying: () => state.playing });
+
+      const timelineLabel = control.querySelector('.pto-floating-playback__label');
+      if (timelineLabel) timelineLabel.textContent = '联动步骤';
+      control.querySelector('.pto-floating-playback__scrubber-wrap')?.remove();
+
+      const description = document.createElement('div');
+      description.className = 'annotation-player-text';
+      description.innerHTML = `
+        <div class="annotation-player-summary" id="report-step-summary"></div>
+        <div class="annotation-player-targets" id="report-step-targets"></div>
+      `;
+      control.querySelector('.pto-floating-playback__group--timeline')?.appendChild(description);
+
+      const playBtn = document.getElementById(ids.play);
+      const stepBackBtn = document.getElementById(ids.stepBack);
+      const stepForwardBtn = document.getElementById(ids.stepForward);
+      const replayBtn = document.getElementById(ids.replay);
+      const label = document.getElementById(ids.scrubberLabel);
+      const opname = document.getElementById(ids.scrubberOpname);
+      const summary = document.getElementById('report-step-summary');
+      const targets = document.getElementById('report-step-targets');
+
+      stepBackBtn.title = '上一步';
+      stepForwardBtn.title = '下一步';
+      replayBtn.title = '回到第一步';
+      replayBtn.innerHTML = `${helper.icons.replay}<span>重播</span>`;
+
+      playBtn.addEventListener('click', () => {
+        if (state.playing) stopPlayback();
+        else startPlayback();
+      });
+      stepBackBtn.addEventListener('click', () => {
+        stopPlayback();
+        stepPlayback(-1);
+      });
+      stepForwardBtn.addEventListener('click', () => {
+        stopPlayback();
+        stepPlayback(1);
+      });
+      replayBtn.addEventListener('click', () => {
+        stopPlayback();
+        state.playbackIndex = 0;
+        applyPlaybackStep();
+      });
+
+      playbackElements = { playBtn, label, opname, summary, targets };
+      syncPlaybackUi();
+    }
+
+    function applyPlaybackStep() {
+      const annotation = currentPlaybackAnnotation();
+      if (annotation) applyAnnotation(annotation, { scroll: false });
+    }
+
+    function stepPlayback(delta) {
+      const list = playableAnnotations();
+      if (list.length === 0) return;
+      state.playbackIndex = (state.playbackIndex + delta + list.length) % list.length;
+      applyPlaybackStep();
+    }
+
+    function startPlayback() {
+      if (state.playing) return;
+      state.playing = true;
+      applyPlaybackStep();
+      playbackTimer = window.setInterval(() => stepPlayback(1), PLAYBACK_INTERVAL_MS);
+      syncPlaybackUi();
+    }
+
+    function stopPlayback() {
+      if (playbackTimer) {
+        window.clearInterval(playbackTimer);
+        playbackTimer = 0;
+      }
+      if (!state.playing) return;
+      state.playing = false;
+      syncPlaybackUi();
     }
 
     function renderAivFoldToggle() {
@@ -3628,6 +3670,8 @@ msdebug \
       if (!annotation) return;
       state.activeAnnotationId = annotation.id;
       state.activeSectionId = annotation.sectionId;
+      const nextIndex = annotationIndexById(annotation.id);
+      if (nextIndex >= 0) state.playbackIndex = nextIndex;
       activeAnnotationTitle.textContent = annotation.title;
       sendHardwareMessage({
         type: 'hardware-focus',
@@ -3639,7 +3683,7 @@ msdebug \
         document.getElementById(annotation.sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
       renderNav();
-      renderAnnotations();
+      syncPlaybackUi();
     }
 
     function jumpToSection(sectionId) {
@@ -3651,10 +3695,11 @@ msdebug \
     }
 
     function clearFocus() {
+      stopPlayback();
       state.activeAnnotationId = '';
-      activeAnnotationTitle.textContent = '点击正文联动按钮或注释卡查看硬件路径';
+      activeAnnotationTitle.textContent = '使用底部播放器逐步查看硬件路径';
       sendHardwareMessage({ type: 'hardware-focus', selectors: [], routes: [], foldAiv: state.aivFolded });
-      renderAnnotations();
+      syncPlaybackUi();
     }
 
     function syncNavToScroll() {
@@ -3685,19 +3730,14 @@ msdebug \
     reportNav.addEventListener('click', (event) => {
       const item = event.target.closest('[data-section-id]');
       if (!item) return;
+      stopPlayback();
       jumpToSection(item.dataset.sectionId);
-    });
-
-    annotationList.addEventListener('click', (event) => {
-      const card = event.target.closest('[data-annotation-id]');
-      if (!card) return;
-      const annotation = ANNOTATIONS.find((item) => item.id === card.dataset.annotationId);
-      applyAnnotation(annotation);
     });
 
     docPane.addEventListener('click', (event) => {
       const button = event.target.closest('[data-annotation-jump]');
       if (!button) return;
+      stopPlayback();
       const annotation = ANNOTATIONS.find((item) => item.id === button.dataset.annotationJump);
       applyAnnotation(annotation, { scroll: false });
     });
@@ -3722,10 +3762,6 @@ msdebug \
           foldAiv: state.aivFolded,
         });
       });
-    });
-    annotationToggleBtn.addEventListener('click', () => {
-      state.annotationsOpen = !state.annotationsOpen;
-      renderAnnotationRail();
     });
     archFoldAivToggle.addEventListener('click', () => {
       state.aivFolded = !state.aivFolded;
@@ -3780,6 +3816,8 @@ msdebug \
       window.setTimeout(markHardwareReady, 180);
     });
 
+    window.addEventListener('beforeunload', stopPlayback);
+
     window.PtoWorkbenchShell?.initResizablePanes?.({
       panes: ['#docPane', '#archPane'],
       direction: 'horizontal',
@@ -3791,8 +3829,7 @@ msdebug \
     });
 
     renderNav();
-    renderAnnotations();
-    renderAnnotationRail();
+    setupAnnotationPlayer();
     renderAivFoldToggle();
     renderArchPresetButtons();
     initScrollSync();
