@@ -642,6 +642,9 @@
       display: grid;
       grid-template-rows: minmax(0, 1fr) auto;
       grid-template-columns: minmax(0, 1fr);
+      cursor: grab;
+      touch-action: none;
+      user-select: none;
     }
 
     .hardware-single {
@@ -703,36 +706,6 @@
       color: var(--foreground-muted);
     }
 
-    .hardware-delta-tags {
-      position: absolute;
-      top: calc(var(--space-2) + 24px);
-      left: var(--space-2);
-      right: var(--space-2);
-      z-index: var(--z-raised);
-      display: flex;
-      gap: var(--space-2);
-      flex-wrap: wrap;
-      pointer-events: none;
-    }
-
-    .hardware-delta-tag {
-      display: inline-flex;
-      align-items: center;
-      min-height: 22px;
-      padding: 0 var(--space-2);
-      border-radius: var(--radius-pill);
-      border: 1px solid color-mix(in srgb, var(--warning) 42%, transparent);
-      background: color-mix(in srgb, var(--background-elevated) 88%, transparent);
-      color: var(--foreground-secondary);
-      font: var(--text-label);
-      letter-spacing: 0;
-      backdrop-filter: blur(8px);
-    }
-
-    .hardware-viewport:not(.is-compare) .hardware-delta-tags {
-      display: none;
-    }
-
     .hardware-compare-stage {
       min-width: 0;
       min-height: 0;
@@ -743,6 +716,13 @@
       place-items: center;
       border-radius: var(--radius-lg);
       background: color-mix(in srgb, var(--surface-2) 64%, transparent);
+      cursor: grab;
+      touch-action: none;
+    }
+
+    .hardware-viewport.is-panning,
+    .hardware-compare-stage.is-panning {
+      cursor: grabbing;
     }
 
     .hardware-scale {
@@ -760,6 +740,7 @@
       border: 0;
       background: transparent;
       transform-origin: top left;
+      pointer-events: none;
     }
 
     .hardware-frame-fallback {
@@ -2176,9 +2157,8 @@
             <section class="hardware-compare-pane" aria-label="Ascend 950 architecture">
               <div class="hardware-compare-head">
                 <span>Ascend 950</span>
-                <span class="wb-chip">40%</span>
+                <span class="wb-chip" data-hardware-scale-readout="ascend950">25%</span>
               </div>
-              <div class="hardware-delta-tags" data-delta-tags="ascend950"></div>
               <div class="hardware-compare-stage">
                 <div class="hardware-scale pto-hw-viewport__scale" data-hardware-scale="ascend950">
                   <iframe class="hardware-frame pto-hw-viewport__frame" data-hardware-frame="ascend950" data-src="./hardware-frame.html" loading="lazy" title="Ascend 950 architecture map"></iframe>
@@ -2188,9 +2168,8 @@
             <section class="hardware-compare-pane" aria-label="Ascend 910B architecture">
               <div class="hardware-compare-head">
                 <span>Ascend 910B</span>
-                <span class="wb-chip">40%</span>
+                <span class="wb-chip" data-hardware-scale-readout="ascend910b">25%</span>
               </div>
-              <div class="hardware-delta-tags" data-delta-tags="ascend910b"></div>
               <div class="hardware-compare-stage">
                 <div class="hardware-scale pto-hw-viewport__scale" data-hardware-scale="ascend910b">
                   <iframe class="hardware-frame pto-hw-viewport__frame" data-hardware-frame="ascend910b" data-src="./hardware-frame.html" loading="lazy" title="Ascend 910B architecture map"></iframe>
@@ -2441,15 +2420,22 @@
         ascend950: { width: 1200, height: 820 },
         ascend910b: { width: 1200, height: 820 }
       },
-      scales: { primary: 1, ascend950: 0.4, ascend910b: 0.4 },
+      scales: { primary: 1, ascend950: 0.25, ascend910b: 0.25 },
+      hardwarePan: {
+        primary: { x: 0, y: 0 },
+        ascend950: { x: 0, y: 0 },
+        ascend910b: { x: 0, y: 0 }
+      },
       scale: 1,
       hardwareDetailsVisible: true
     };
+    let activeHardwarePan = null;
 
     const qs = (selector, root = document) => root.querySelector(selector);
     const qsa = (selector, root = document) => Array.from(root.querySelectorAll(selector));
     const HARDWARE_FRAME_SRC = './hardware-frame.html';
-    const HARDWARE_ZOOM_LEVELS = [0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.2];
+    const HARDWARE_COMPARE_SCALE = 0.25;
+    const HARDWARE_ZOOM_LEVELS = [0.25, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.2];
     const WORKBENCH_SPLIT_KEY = 'ascend950-workbench-column-sizes-v1';
     const WORKBENCH_SPLIT_DEFAULT = [34, 42, 24];
     const WORKBENCH_SPLIT_MIN = [360, 480, 300];
@@ -2617,6 +2603,35 @@
       return qs(`[data-hardware-scale="${key}"]`);
     }
 
+    function panForKey(key = 'primary') {
+      if (!state.hardwarePan[key]) state.hardwarePan[key] = { x: 0, y: 0 };
+      return state.hardwarePan[key];
+    }
+
+    function applyHardwarePan(key = 'primary') {
+      const scaleEl = scaleForKey(key);
+      if (!scaleEl) return;
+      const pan = panForKey(key);
+      scaleEl.style.transform = `translate3d(${Math.round(pan.x)}px, ${Math.round(pan.y)}px, 0)`;
+    }
+
+    function syncHardwareScaleReadout(key, scale, updatePrimaryReadout = true) {
+      const text = `${Math.round(scale * 100)}%`;
+      const compareReadout = qs(`[data-hardware-scale-readout="${key}"]`);
+      if (compareReadout) compareReadout.textContent = text;
+      if (updatePrimaryReadout) qs('#zoomReadout').textContent = text;
+    }
+
+    function hardwarePanKeyFromTarget(target) {
+      const comparePane = target?.closest?.('.hardware-compare-pane');
+      if (!comparePane) return 'primary';
+      return comparePane.querySelector('[data-hardware-scale]')?.dataset.hardwareScale || 'primary';
+    }
+
+    function hardwareStageFromTarget(target) {
+      return target?.closest?.('.hardware-compare-stage') || qs('#hardwareViewport');
+    }
+
     function closestHardwareZoomLevel(scale) {
       const clamped = Math.max(HARDWARE_ZOOM_LEVELS[0], Math.min(HARDWARE_ZOOM_LEVELS[HARDWARE_ZOOM_LEVELS.length - 1], Number(scale) || 1));
       return HARDWARE_ZOOM_LEVELS.reduce((closest, level) => (
@@ -2627,6 +2642,12 @@
     function hardwareZoomIndex(scale) {
       const level = closestHardwareZoomLevel(scale);
       return Math.max(0, HARDWARE_ZOOM_LEVELS.indexOf(level));
+    }
+
+    function nextHardwareZoomLevel(scale, direction) {
+      const currentIndex = hardwareZoomIndex(scale);
+      const nextIndex = Math.max(0, Math.min(HARDWARE_ZOOM_LEVELS.length - 1, currentIndex + direction));
+      return HARDWARE_ZOOM_LEVELS[nextIndex];
     }
 
     function ensureHardwareFrameLoaded(key) {
@@ -4256,7 +4277,6 @@
 
     function renderPathChips() {
       const baseLine = selectedAnnotation();
-      renderHardwareDeltaTags(baseLine);
       if (!baseLine) return;
       const chips = qs('#pathChips');
       chips.innerHTML = '';
@@ -4275,15 +4295,6 @@
           chip.textContent = item;
           chips.appendChild(chip);
         });
-      });
-    }
-
-    function renderHardwareDeltaTags(baseLine = selectedAnnotation()) {
-      qsa('[data-delta-tags]').forEach((host) => {
-        const archId = host.dataset.deltaTags;
-        const line = baseLine ? lineForArch(baseLine, archId) : null;
-        const tags = line?.deltaTags || baseLine?.deltaTags || [];
-        host.innerHTML = tags.map((tag) => `<span class="hardware-delta-tag">${escapeHtml(tag)}</span>`).join('');
       });
     }
 
@@ -4430,6 +4441,88 @@
       renderHardwareMode();
     }
 
+    function initHardwarePan() {
+      const viewport = qs('#hardwareViewport');
+      if (!viewport) return;
+
+      const finishPan = (event) => {
+        if (!activeHardwarePan || event.pointerId !== activeHardwarePan.pointerId) return;
+        activeHardwarePan.stage?.classList.remove('is-panning');
+        viewport.classList.remove('is-panning');
+        try {
+          activeHardwarePan.stage?.releasePointerCapture?.(event.pointerId);
+        } catch (error) {
+          // The browser may have already released capture after a cancel/lost event.
+        }
+        activeHardwarePan = null;
+      };
+
+      const zoomAroundCursor = (event) => {
+        if (!event.metaKey) return;
+        const target = event.target instanceof Element ? event.target : null;
+        if (!target || target.closest('button, input, textarea, select, a, .hardware-status')) return;
+        const dominantDelta = Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX;
+        if (!dominantDelta) return;
+        event.preventDefault();
+        const key = hardwarePanKeyFromTarget(target);
+        const direction = dominantDelta < 0 ? 1 : -1;
+        const currentScale = state.scales[key] || 1;
+        const nextScale = nextHardwareZoomLevel(currentScale, direction);
+        if (nextScale === currentScale) return;
+        const scaleEl = scaleForKey(key);
+        if (!scaleEl) return;
+        const beforeRect = scaleEl.getBoundingClientRect();
+        const anchorX = (event.clientX - beforeRect.left) / currentScale;
+        const anchorY = (event.clientY - beforeRect.top) / currentScale;
+        const updateReadout = !isCompareArch() || key === 'primary';
+
+        setHardwareScale(nextScale, key, updateReadout);
+        const afterRect = scaleEl.getBoundingClientRect();
+        const pan = panForKey(key);
+        pan.x += event.clientX - (afterRect.left + anchorX * nextScale);
+        pan.y += event.clientY - (afterRect.top + anchorY * nextScale);
+        applyHardwarePan(key);
+        if (isCompareArch()) syncHardwareScaleReadout(key, nextScale, true);
+        if (!isCompareArch() || key === 'primary') state.fitted = false;
+      };
+
+      viewport.addEventListener('pointerdown', (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        if (!target || event.button !== 0) return;
+        if (target.closest('button, input, textarea, select, a, .hardware-status')) return;
+        const stage = hardwareStageFromTarget(target);
+        const key = hardwarePanKeyFromTarget(target);
+        const pan = panForKey(key);
+        activeHardwarePan = {
+          pointerId: event.pointerId,
+          key,
+          stage,
+          startX: event.clientX,
+          startY: event.clientY,
+          originX: pan.x,
+          originY: pan.y,
+        };
+        stage.classList.add('is-panning');
+        viewport.classList.add('is-panning');
+        stage.setPointerCapture?.(event.pointerId);
+        event.preventDefault();
+      });
+
+      viewport.addEventListener('pointermove', (event) => {
+        if (!activeHardwarePan || event.pointerId !== activeHardwarePan.pointerId) return;
+        const pan = panForKey(activeHardwarePan.key);
+        pan.x = activeHardwarePan.originX + event.clientX - activeHardwarePan.startX;
+        pan.y = activeHardwarePan.originY + event.clientY - activeHardwarePan.startY;
+        applyHardwarePan(activeHardwarePan.key);
+        event.preventDefault();
+      });
+
+      viewport.addEventListener('pointerup', finishPan);
+      viewport.addEventListener('pointercancel', finishPan);
+      viewport.addEventListener('lostpointercapture', finishPan);
+      viewport.addEventListener('wheel', zoomAroundCursor, { passive: false });
+    }
+
     function fitHardware() {
       if (isCompareArch()) {
         setCompareHardwareScale();
@@ -4456,8 +4549,8 @@
     }
 
     function setCompareHardwareScale() {
-      ['ascend950', 'ascend910b'].forEach((key) => setHardwareScale(0.4, key, false));
-      qs('#zoomReadout').textContent = '40%';
+      ['ascend950', 'ascend910b'].forEach((key) => setHardwareScale(HARDWARE_COMPARE_SCALE, key, false));
+      syncHardwareScaleReadout('primary', HARDWARE_COMPARE_SCALE, true);
       updateHardwareZoomButtons();
     }
 
@@ -4485,15 +4578,14 @@
       scaleEl.style.width = `${Math.ceil(naturalWidth * nextScale)}px`;
       scaleEl.style.height = `${Math.ceil(naturalHeight * nextScale)}px`;
       frame.style.transform = `scale(${nextScale})`;
-      if (updateReadout) qs('#zoomReadout').textContent = `${Math.round(nextScale * 100)}%`;
+      applyHardwarePan(key);
+      syncHardwareScaleReadout(key, nextScale, updateReadout);
       updateHardwareZoomButtons();
     }
 
     function stepHardwareZoom(direction) {
       if (isCompareArch()) return;
-      const currentIndex = hardwareZoomIndex(state.scales.primary || 1);
-      const nextIndex = Math.max(0, Math.min(HARDWARE_ZOOM_LEVELS.length - 1, currentIndex + direction));
-      setHardwareScale(HARDWARE_ZOOM_LEVELS[nextIndex], 'primary');
+      setHardwareScale(nextHardwareZoomLevel(state.scales.primary || 1, direction), 'primary');
       state.fitted = false;
     }
 
@@ -4610,6 +4702,7 @@
 
     syncHardwareDetailToggle();
     updateHardwareZoomButtons();
+    initHardwarePan();
     initWorkbenchSplit();
     renderArchSelector();
     selectKernel(state.selectedKernelId);
