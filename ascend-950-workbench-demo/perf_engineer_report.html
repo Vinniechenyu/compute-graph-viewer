@@ -79,7 +79,7 @@
 
     .title-sub {
       color: var(--foreground-muted);
-      font: var(--text-label);
+      font: var(--text-body-sm);
       letter-spacing: 0;
       white-space: nowrap;
     }
@@ -121,14 +121,19 @@
     .report-nav h2 {
       margin: 4px 8px 12px;
       color: var(--foreground-muted);
-      font: var(--text-label);
+      font: var(--text-body-sm);
       letter-spacing: var(--letter-spacing-label);
       text-transform: uppercase;
     }
 
     .report-nav-list {
       display: grid;
-      gap: 2px;
+      gap: 8px;
+    }
+
+    .report-nav-group {
+      display: grid;
+      gap: 4px;
     }
 
     .report-nav-item {
@@ -191,9 +196,46 @@
 
     .report-nav-sub {
       color: var(--foreground-muted);
-      font: var(--text-label);
+      font: var(--text-body-sm);
       letter-spacing: 0;
       line-height: 1.3;
+    }
+
+    .report-nav-sublist {
+      display: grid;
+      gap: 2px;
+      padding-left: 44px;
+    }
+
+    .report-nav-subitem {
+      min-height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 4px 8px;
+      border: 0;
+      border-radius: var(--radius-sm);
+      background: transparent;
+      color: var(--foreground-muted);
+      font: var(--text-body-sm);
+      letter-spacing: 0;
+      text-align: left;
+      cursor: pointer;
+      appearance: none;
+    }
+
+    .report-nav-subitem::after {
+      content: '↗';
+      color: var(--foreground-disabled);
+      font: var(--text-body-sm);
+      letter-spacing: 0;
+    }
+
+    .report-nav-subitem:hover,
+    .report-nav-subitem.is-active {
+      background: var(--state-hover);
+      color: var(--foreground);
     }
 
     .report-doc {
@@ -225,7 +267,7 @@
       border-radius: var(--tag-radius);
       background: color-mix(in srgb, var(--primary) 8%, var(--surface-1));
       color: var(--primary);
-      font: var(--text-label);
+      font: var(--text-body-sm);
       letter-spacing: 0;
     }
 
@@ -260,7 +302,7 @@
       align-items: center;
       gap: 8px;
       color: var(--foreground-muted);
-      font: var(--text-label);
+      font: var(--text-body-sm);
       letter-spacing: 0;
     }
 
@@ -345,9 +387,8 @@
     .src-ref,
     .step-card,
     .code-case {
-      border: 1px solid var(--border-subtle);
       border-radius: var(--radius-md);
-      background: var(--surface-1);
+      background: var(--surface-2);
     }
 
     .card,
@@ -378,13 +419,11 @@
     .callout {
       margin: var(--space-4) 0;
       background: color-mix(in srgb, var(--primary) 8%, var(--surface-1));
-      border-color: transparent;
     }
 
     .pain-hook {
       margin-bottom: var(--space-4);
       background: color-mix(in srgb, var(--warning) 10%, var(--surface-1));
-      border-color: transparent;
     }
 
     .pain-hook-q {
@@ -425,134 +464,108 @@
       align-items: center;
       min-height: var(--tag-height);
       padding: 0 var(--space-2);
-      border: 1px solid var(--comp-tag-border);
       border-radius: var(--tag-radius);
-      background: var(--comp-tag-bg);
       color: var(--foreground-secondary);
-      font: var(--text-label);
+      font: var(--text-body-sm);
       letter-spacing: 0;
+    }
+
+    .chip,
+    .tag {
+      min-height: auto;
+      padding: 0;
+      border-radius: 0;
+      background: transparent;
     }
 
     .annotation-link {
       cursor: pointer;
       color: var(--primary);
       background: color-mix(in srgb, var(--primary) 8%, var(--surface-1));
-      border-color: color-mix(in srgb, var(--primary) 24%, var(--border-subtle));
+      border: 0;
     }
 
     .annotation-link:hover {
       background: color-mix(in srgb, var(--primary) 13%, var(--surface-1));
     }
 
+    .jump-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: var(--tag-height);
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      color: var(--foreground-secondary);
+      font: var(--text-body-sm);
+      letter-spacing: 0;
+      cursor: pointer;
+    }
+
+    .jump-link::after {
+      content: '↗';
+      color: var(--foreground-muted);
+      font: var(--text-body-sm);
+      letter-spacing: 0;
+    }
+
+    .jump-link:hover {
+      color: var(--foreground);
+      background: transparent;
+    }
+
     .tag-green {
-      border-color: color-mix(in srgb, var(--success) 26%, var(--border-subtle));
-      background: color-mix(in srgb, var(--success) 8%, var(--surface-1));
-      color: var(--success);
+      color: var(--foreground-secondary);
     }
 
     .tag-orange {
-      border-color: color-mix(in srgb, var(--warning) 28%, var(--border-subtle));
-      background: color-mix(in srgb, var(--warning) 10%, var(--surface-1));
-      color: var(--warning);
+      color: var(--foreground-secondary);
     }
 
     .tag-red {
-      border-color: color-mix(in srgb, var(--danger) 26%, var(--border-subtle));
-      background: color-mix(in srgb, var(--danger) 8%, var(--surface-1));
-      color: var(--danger);
+      color: var(--foreground-secondary);
     }
 
     .report-table {
       width: 100%;
       margin: var(--space-4) 0 var(--space-5);
-      border-collapse: collapse;
-      border: 1px solid var(--border-subtle);
-      border-radius: var(--radius-md);
-      overflow: hidden;
-      background: var(--surface-1);
+      border-collapse: separate;
+      border-spacing: 0 6px;
+      background: transparent;
       font: var(--text-body-sm);
     }
 
     .report-table th,
     .report-table td {
       padding: 10px 12px;
-      border-bottom: 1px solid var(--border-subtle);
       text-align: left;
       vertical-align: top;
     }
 
     .report-table th {
       color: var(--foreground);
-      background: var(--surface-2);
+      background: var(--surface-3);
       font-weight: var(--font-weight-semibold);
     }
 
-    .report-table tr:last-child td {
-      border-bottom: 0;
+    .report-table td {
+      background: var(--surface-2);
+    }
+
+    .report-table th:first-child,
+    .report-table td:first-child {
+      border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+    }
+
+    .report-table th:last-child,
+    .report-table td:last-child {
+      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
     }
 
     .report-table tr:hover td {
-      background: var(--state-hover);
-    }
-
-    .before-after {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) 36px minmax(0, 1fr);
-      align-items: stretch;
-      margin: var(--space-4) 0;
-    }
-
-    .ba-old,
-    .ba-new {
-      padding: var(--space-4);
-      border: 1px solid var(--border-subtle);
       background: var(--surface-1);
-    }
-
-    .ba-old {
-      border-right: 0;
-      border-radius: var(--radius-md) 0 0 var(--radius-md);
-    }
-
-    .ba-new {
-      border-left: 0;
-      border-radius: 0 var(--radius-md) var(--radius-md) 0;
-    }
-
-    .ba-mid {
-      display: grid;
-      place-items: center;
-      border-top: 1px solid var(--border-subtle);
-      border-bottom: 1px solid var(--border-subtle);
-      background: var(--surface-2);
-      color: var(--foreground-muted);
-    }
-
-    .ba-header {
-      margin-bottom: var(--space-3);
-      padding-bottom: var(--space-2);
-      border-bottom: 1px solid var(--border-subtle);
-      color: var(--foreground);
-      font: var(--text-label);
-      letter-spacing: 0;
-    }
-
-    .ba-point {
-      display: flex;
-      gap: 8px;
-      margin-bottom: var(--space-2);
-      color: var(--foreground-secondary);
-      font: var(--text-body-sm);
-      line-height: 1.6;
-    }
-
-    .ba-point:last-child {
-      margin-bottom: 0;
-    }
-
-    .ba-dot {
-      flex: 0 0 auto;
-      color: var(--primary);
     }
 
     .workflow {
@@ -563,7 +576,123 @@
     }
 
     .step-card {
+      background: color-mix(in srgb, var(--primary) 7%, var(--surface-1));
+    }
+
+    .method-map,
+    .scenario-matrix {
+      display: grid;
+      gap: var(--space-3);
+      margin: var(--space-4) 0;
+    }
+
+    .method-layer {
+      display: grid;
+      grid-template-columns: 36px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: var(--space-3);
+      padding: var(--space-3);
+      border-radius: var(--radius-md);
       background: var(--surface-2);
+    }
+
+    .method-num {
+      width: 32px;
+      height: 32px;
+      display: grid;
+      place-items: center;
+      border-radius: var(--radius-sm);
+      background: color-mix(in srgb, var(--foreground) 8%, transparent);
+      color: var(--foreground);
+      font: var(--text-mono);
+      font-weight: 700;
+    }
+
+    .method-title,
+    .scenario-title,
+    .pitfall-title {
+      color: var(--foreground);
+      font: var(--text-title-2);
+      letter-spacing: 0;
+    }
+
+    .method-detail,
+    .scenario-detail,
+    .pitfall-desc,
+    .pitfall-fix {
+      color: var(--foreground-secondary);
+      font: var(--text-body-sm);
+      line-height: 1.65;
+    }
+
+    .method-target {
+      color: var(--foreground-muted);
+      font: var(--text-body-sm);
+      white-space: nowrap;
+    }
+
+    .scenario-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: var(--space-3);
+      margin: var(--space-4) 0;
+    }
+
+    .scenario-card {
+      display: grid;
+      gap: var(--space-2);
+      padding: var(--space-4);
+      border-radius: var(--radius-md);
+      background: var(--surface-2);
+    }
+
+    .scenario-card--vector { background: color-mix(in srgb, var(--success) 7%, var(--surface-1)); }
+    .scenario-card--cube { background: color-mix(in srgb, var(--warning) 8%, var(--surface-1)); }
+    .scenario-card--fusion { background: color-mix(in srgb, var(--primary) 8%, var(--surface-1)); }
+
+    .scenario-kicker {
+      color: var(--foreground-muted);
+      font: var(--text-body-sm);
+    }
+
+    .pitfall-fix {
+      width: fit-content;
+      margin-top: var(--space-2);
+      padding: 4px 8px;
+      border-radius: var(--radius-sm);
+      background: color-mix(in srgb, var(--success) 8%, var(--surface-1));
+      color: color-mix(in srgb, var(--success) 78%, var(--foreground));
+    }
+
+    .pitfall-case-list {
+      display: grid;
+      gap: var(--space-4);
+      margin: var(--space-4) 0;
+    }
+
+    .pitfall-case {
+      display: grid;
+      grid-template-columns: minmax(220px, 0.8fr) minmax(0, 1.2fr);
+      gap: var(--space-4);
+      padding: var(--space-4);
+      border-radius: var(--radius-md);
+      background: var(--surface-2);
+    }
+
+    .pitfall-case__issue,
+    .pitfall-case__practice {
+      min-width: 0;
+    }
+
+    .pitfall-case__label {
+      margin-bottom: var(--space-2);
+      color: var(--foreground-muted);
+      font: var(--text-body-sm);
+      letter-spacing: 0;
+    }
+
+    .pitfall-case .pitfall-title {
+      margin-bottom: var(--space-2);
     }
 
     .step-num {
@@ -581,25 +710,72 @@
 
     .code-case {
       margin: var(--space-4) 0;
-      background: var(--surface-1);
+      background: color-mix(in srgb, var(--surface-2) 88%, var(--surface-1));
     }
 
     pre {
       margin: var(--space-3) 0;
-      padding: var(--space-3);
+      padding: var(--space-4);
       overflow-x: auto;
-      border: 1px solid var(--border-subtle);
       border-radius: var(--radius-md);
-      background: var(--surface-2);
-      color: var(--foreground-secondary);
-      font: var(--text-mono);
+      background: #101114;
+      color: rgba(255, 255, 255, 0.88);
+      font: 500 12px / 1.65 var(--font-mono);
       line-height: 1.7;
     }
 
-    pre .kw { color: var(--primary); }
-    pre .cm { color: var(--foreground-muted); }
-    pre .fn { color: var(--success); }
-    pre .warn { color: var(--warning); }
+    pre .kw { color: #7aa2ff; }
+    pre .cm { color: rgba(255, 255, 255, 0.48); }
+    pre .fn { color: #7ee0b2; }
+    pre .warn { color: #ffbd70; }
+
+    .is-reading-target {
+      position: relative;
+      z-index: 1;
+      isolation: isolate;
+      background: color-mix(in srgb, var(--primary) 14%, var(--surface-1)) !important;
+      box-shadow:
+        0 0 0 8px color-mix(in srgb, var(--primary) 13%, transparent),
+        0 16px 34px color-mix(in srgb, var(--primary) 16%, transparent);
+      transition: background 160ms ease, box-shadow 160ms ease;
+    }
+
+    .is-reading-target::before {
+      content: '';
+      position: absolute;
+      inset: -8px;
+      z-index: -1;
+      border-radius: inherit;
+      background: color-mix(in srgb, var(--primary) 8%, transparent);
+      pointer-events: none;
+    }
+
+    .is-reading-target::after {
+      content: '';
+      position: absolute;
+      left: -8px;
+      top: 8px;
+      bottom: 8px;
+      width: 4px;
+      border-radius: 999px;
+      background: var(--primary);
+      box-shadow: 0 0 18px color-mix(in srgb, var(--primary) 42%, transparent);
+      pointer-events: none;
+    }
+
+    pre.is-reading-target {
+      background: #101114 !important;
+    }
+
+    .cards.is-reading-target .card,
+    .method-map.is-reading-target .method-layer,
+    .scenario-grid.is-reading-target .scenario-card,
+    .pitfall-case-list.is-reading-target .pitfall-case,
+    .pitfall-case.is-reading-target .pitfall-case__issue,
+    .pitfall-case.is-reading-target .pitfall-case__practice,
+    .report-table.is-reading-target tbody td {
+      background: color-mix(in srgb, var(--primary) 9%, var(--surface-1)) !important;
+    }
 
     .src-ref {
       overflow: hidden;
@@ -614,7 +790,7 @@
       cursor: pointer;
       background: var(--surface-2);
       color: var(--foreground-muted);
-      font: var(--text-label);
+      font: var(--text-body-sm);
       letter-spacing: 0;
       list-style: none;
     }
@@ -625,7 +801,7 @@
 
     .src-ref summary::before {
       content: '>';
-      font-size: 10px;
+      font-size: 12px;
       opacity: 0.65;
       transition: transform 120ms ease;
     }
@@ -660,7 +836,7 @@
       padding-top: var(--space-4);
       border-top: 1px solid var(--border-subtle);
       color: var(--foreground-muted);
-      font: var(--text-label);
+      font: var(--text-body-sm);
       letter-spacing: 0;
       text-align: center;
       line-height: 1.8;
@@ -701,7 +877,7 @@
       display: block;
       margin-top: 2px;
       color: var(--foreground-muted);
-      font: var(--text-label);
+      font: var(--text-body-sm);
       letter-spacing: 0;
       white-space: nowrap;
       overflow: hidden;
@@ -783,7 +959,7 @@
       min-width: 0;
       overflow: hidden;
       color: var(--foreground-muted);
-      font: var(--text-label);
+      font: var(--text-body-sm);
       letter-spacing: 0;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -814,12 +990,9 @@
       .cards-3,
       .cards-4,
       .workflow,
-      .before-after {
+      .scenario-grid,
+      .pitfall-case {
         grid-template-columns: 1fr;
-      }
-
-      .ba-mid {
-        display: none;
       }
 
       .arch-pane {
@@ -848,22 +1021,59 @@
     <nav class="workbench-pane report-pane report-nav left-nav" id="reportNavPane" aria-label="报告目录">
       <h2>报告目录</h2>
       <div class="report-nav-list" id="reportNav">
-        <button class="report-nav-item is-active" type="button" data-section-id="part1">
-          <span class="report-nav-num">1</span>
-          <span class="report-nav-meta"><span class="report-nav-label">Part 1 架构认知</span><span class="report-nav-sub">950 架构有什么更新</span></span>
-        </button>
-        <button class="report-nav-item" type="button" data-section-id="part21">
-          <span class="report-nav-num">2.1</span>
-          <span class="report-nav-meta"><span class="report-nav-label">从 0-1 开发算子</span><span class="report-nav-sub">Vector / Cube / 融合</span></span>
-        </button>
-        <button class="report-nav-item" type="button" data-section-id="part22">
-          <span class="report-nav-num">2.2</span>
-          <span class="report-nav-meta"><span class="report-nav-label">910 迁移到 950</span><span class="report-nav-sub">旧路径改为新通路</span></span>
-        </button>
-        <button class="report-nav-item" type="button" data-section-id="part3">
-          <span class="report-nav-num">3</span>
-          <span class="report-nav-meta"><span class="report-nav-label">代码化注意事项</span><span class="report-nav-sub">第 7 章实例化</span></span>
-        </button>
+        <div class="report-nav-group">
+          <button class="report-nav-item is-active" type="button" data-section-id="part1">
+            <span class="report-nav-num">1</span>
+            <span class="report-nav-meta"><span class="report-nav-label">Part 1 架构认知</span><span class="report-nav-sub">AIC/AIV/SIU、片上通路、低比特、RegBase/SIMT</span></span>
+          </button>
+          <div class="report-nav-sublist">
+            <button class="report-nav-subitem" type="button" data-anchor-id="part1-subsystem">AI Core 子系统</button>
+            <button class="report-nav-subitem" type="button" data-anchor-id="part1-paths">数据通路地图</button>
+            <button class="report-nav-subitem" type="button" data-anchor-id="part1-lowbit">低比特主路径</button>
+            <button class="report-nav-subitem" type="button" data-anchor-id="part1-dtypes">低比特数据类型</button>
+            <button class="report-nav-subitem" type="button" data-anchor-id="part1-memory">片上存储层次</button>
+            <button class="report-nav-subitem" type="button" data-anchor-id="part1-generation-diff">代际差异速查</button>
+          </div>
+        </div>
+        <div class="report-nav-group">
+          <button class="report-nav-item" type="button" data-section-id="part21">
+            <span class="report-nav-num">2.1</span>
+            <span class="report-nav-meta"><span class="report-nav-label">Part 2.1 从 0-1 开发</span><span class="report-nav-sub">开发流程、优化分层、Vector(SIMD/SIMT)/Cube/融合</span></span>
+          </button>
+          <div class="report-nav-sublist">
+            <button class="report-nav-subitem" type="button" data-anchor-id="part21-method-map">优化分层图</button>
+            <button class="report-nav-subitem" type="button" data-anchor-id="part21-scenario-matrix">场景判断矩阵</button>
+            <button class="report-nav-subitem" type="button" data-anchor-id="part21-vector">Vector 场景</button>
+            <button class="report-nav-subitem" type="button" data-anchor-id="part21-cube">Cube 场景</button>
+            <button class="report-nav-subitem" type="button" data-anchor-id="part21-fusion">融合场景</button>
+            <button class="report-nav-subitem" type="button" data-anchor-id="part21-simt">Vector SIMT 范式</button>
+          </div>
+        </div>
+        <div class="report-nav-group">
+          <button class="report-nav-item" type="button" data-section-id="part22">
+            <span class="report-nav-num">2.2</span>
+            <span class="report-nav-meta"><span class="report-nav-label">Part 2.2 910 迁移到 950</span><span class="report-nav-sub">旧 GM 中转、RegBase、低比特 scale、API 差异</span></span>
+          </button>
+          <div class="report-nav-sublist">
+            <button class="report-nav-subitem" type="button" data-anchor-id="part22-l0c-ub">旧 GM 中转</button>
+            <button class="report-nav-subitem" type="button" data-anchor-id="part22-regbase">Vector RegBase</button>
+            <button class="report-nav-subitem" type="button" data-anchor-id="part22-lowbit">低比特 scale</button>
+          </div>
+        </div>
+        <div class="report-nav-group">
+          <button class="report-nav-item" type="button" data-section-id="part3">
+            <span class="report-nav-num">3</span>
+            <span class="report-nav-meta"><span class="report-nav-label">Part 3 代码化注意事项</span><span class="report-nav-sub">第 7 章风险清单、迁移伪代码、debug preset</span></span>
+          </button>
+          <div class="report-nav-sublist">
+            <button class="report-nav-subitem" type="button" data-anchor-id="part3-pitfalls">迁移风险清单</button>
+            <button class="report-nav-subitem" type="button" data-anchor-id="part3-l0c-ub">融合旧路径</button>
+            <button class="report-nav-subitem" type="button" data-anchor-id="part3-scale">低比特 scale</button>
+            <button class="report-nav-subitem" type="button" data-anchor-id="part3-simt-simd">Vector 范式</button>
+            <button class="report-nav-subitem" type="button" data-anchor-id="part3-api-scan">API / Profiler</button>
+            <button class="report-nav-subitem" type="button" data-anchor-id="part3-pipeline-tail">Pipeline / 尾块</button>
+          </div>
+        </div>
       </div>
     </nav>
 
@@ -872,17 +1082,13 @@
         <div class="hero">
           <div class="hero-badge">Operator Developer Guide</div>
           <h1>昇腾 <span>950</span> 算子开发者速成指南</h1>
-          <p>评审后，本页只保留原报告中更贴近新手开发者目标的 1 / 3 / 4 / 7 章，并重组为“先理解 950 架构变化，再从 0-1 写算子，再迁移 910 算子，最后用代码块固化避坑点”的学习路径。右侧芯片架构图默认收起，只有用户主动展开时才展示。</p>
+          <p>昇腾 950 的算子开发重点不只是“换一代芯片重编译”，而是重新判断数据停留的位置、执行单元的分工、低比特 scale 的生命周期，以及 Cube 与 Vector 是否可以在片上直接交接。</p>
           <div class="hero-meta">
-            <div class="hero-meta-item"><span class="dot"></span>Part 1 架构更新</div>
-            <div class="hero-meta-item"><span class="dot"></span>Part 2.1 0-1 开发</div>
-            <div class="hero-meta-item"><span class="dot"></span>Part 2.2 910 迁移</div>
-            <div class="hero-meta-item"><span class="dot"></span>Part 3 代码避坑</div>
+            <div class="hero-meta-item"><span class="dot"></span>Part 1 先补架构心智</div>
+            <div class="hero-meta-item"><span class="dot"></span>Part 2.1 从数据流写到 Tiling</div>
+            <div class="hero-meta-item"><span class="dot"></span>Part 2.2 重画 910 旧路径</div>
+            <div class="hero-meta-item"><span class="dot"></span>Part 3 用代码固化检查项</div>
           </div>
-        </div>
-
-        <div class="callout">
-          <p><strong>校对口径：</strong>本页以 <code>950-operator-developer-guide.md</code> 为准。直接保留 PR/DT 场景划分、低比特、C-V 直连、RegBase、SIMT/SIMD、NDDMA、CCU 与迁移检查清单；外部案例、精确收益百分比和具体 msprof 参数不作为本页主线。</p>
         </div>
 
         <div class="section" id="part1" data-section-id="part1">
@@ -891,24 +1097,6 @@
           <div class="pain-hook">
             <div class="pain-hook-q">新手最容易犯的错：把 950 当成 910B 的算力增强版。</div>
             <div class="pain-hook-sub">950 的关键变化在数据通路、低比特、RegBase、SIMT/SIMD、C-V 直连和通信硬化资源。写算子前，要先知道数据到底停在哪一层、被哪类执行单元消费。</div>
-          </div>
-
-          <div class="before-after">
-            <div class="ba-old">
-              <div class="ba-header">910 / A3 常见心智</div>
-              <div class="ba-point"><span class="ba-dot">-</span><span>Vector 多按 Memory-based 路径理解，核心是 GM、UB、LocalTensor 和流水隐藏。</span></div>
-              <div class="ba-point"><span class="ba-dot">-</span><span>Cube 主循环和 Vector 后处理容易拆成多个算子，中间结果经 GM 或 workspace 过渡。</span></div>
-              <div class="ba-point"><span class="ba-dot">-</span><span>低比特通常被看成 dtype 替换，scale、layout、搬运接口容易后置考虑。</span></div>
-              <div class="ba-point"><span class="ba-dot">-</span><span>离散访存、分支和线程模型不是大多数 Ascend C 新手的第一关注点。</span></div>
-            </div>
-            <div class="ba-mid">-&gt;</div>
-            <div class="ba-new">
-              <div class="ba-header">950 必须补上的心智</div>
-              <div class="ba-point"><span class="ba-dot">+</span><span>Vector 从 Memory-based 延展到 RegBase + SIMD/SIMT：连续规则数据看 SIMD Reg，离散索引数据看 SIMT Reg File。</span></div>
-              <div class="ba-point"><span class="ba-dot">+</span><span>Cube 与 Vector 可以通过 L0C2UB、UB2L1、DualDest、SSBuf 减少 GM 往返。</span></div>
-              <div class="ba-point"><span class="ba-dot">+</span><span>HiF8、FP8、MXFP8、MXFP4 会影响 MatMul、量化、scale 缓存、搬运和端到端精度。</span></div>
-              <div class="ba-point"><span class="ba-dot">+</span><span>PR / DT 面向不同场景，Prefill、Decode、训练、推荐、多模态不能套同一套 Tiling 和 Fusion 策略。</span></div>
-            </div>
           </div>
 
           <div class="cards cards-3">
@@ -954,6 +1142,46 @@
             </tbody>
           </table>
 
+          <h3 id="part1-dtypes">低比特数据类型速览</h3>
+          <table class="report-table">
+            <thead>
+              <tr><th>类型</th><th>950 上的关注点</th><th>写算子时先检查什么</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>HiF8 / FP8</td><td>进入 MatMul、量化、反量化和端到端精度验证路径。</td><td>确认输入输出 dtype、round / saturate 策略、与上游模型导出格式是否一致。</td></tr>
+              <tr><td>MXFP8</td><td>主数据变窄后，scale 张量的搬运和复用会直接影响收益。</td><td>把 scale 的 GM、UB、L1 生命周期写进 Tiling，而不是只改 LoadData 类型。</td></tr>
+              <tr><td>MXFP4</td><td>压缩收益更明显，但 scale / layout / 伪量化误差也更敏感。</td><td>先做 Golden 对齐和极值样本验证，再决定 scale 预取粒度与 tile group。</td></tr>
+              <tr><td>混合类型</td><td>Cube 主计算、Vector 后处理和 Store 阶段可能使用不同精度。</td><td>明确 cast、anti-quant、quant、activation 是否能融合，避免多次 GM 往返。</td></tr>
+            </tbody>
+          </table>
+
+          <h3 id="part1-memory">片上存储层次速查</h3>
+          <table class="report-table">
+            <thead>
+              <tr><th>层级</th><th>开发者心智</th><th>容易踩坑</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>GM / L2</td><td>外层数据入口和跨核共享视角；不是所有中间结果都应该回到这里。</td><td>把 workspace 当默认中转，导致 C-V 融合收益消失。</td></tr>
+              <tr><td>L1 / L0A / L0B</td><td>Cube 主计算前的数据组织，低比特 layout 和 Bank 访问会影响吞吐。</td><td>沿用 910 Tiling 时忽略 L1 bank conflict、尾块和低比特 scale 对齐。</td></tr>
+              <tr><td>L0C</td><td>Cube 结果停留点；融合场景优先检查能否直接给 AIV。</td><td>仍按 L0C - GM - UB 写旧路径，增加一次大块 GM 往返。</td></tr>
+              <tr><td>UB / Vector Reg File</td><td>AIV 侧 staging 与 SIMD Reg 计算路径；连续规则表达式尽量减少 UB 反复读写。</td><td>RegBase 临时变量过多导致 spill，把寄存器优化变成 stall 来源。</td></tr>
+              <tr><td>SIMT Reg File</td><td>离散索引、分支、Gather/Scatter 和线程式表达的寄存器路径。</td><td>把离散数据硬套 SIMD，导致访存合并差、同步和边界问题难排查。</td></tr>
+            </tbody>
+          </table>
+
+          <h3 id="part1-generation-diff">代际差异速查</h3>
+          <table class="report-table">
+            <thead>
+              <tr><th>主题</th><th>910 / A3 代码里常见的隐含假设</th><th>950 上要补的判断</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Vector</td><td>多按 Memory-based 路径理解，核心是 GM、UB、LocalTensor 和流水隐藏。</td><td>连续规则数据看 SIMD Reg / RegBase；离散索引数据看 SIMT Reg File。</td></tr>
+              <tr><td>Cube + Vector</td><td>Cube 主循环和 Vector 后处理容易拆成多个算子，靠 GM 或 workspace 过渡。</td><td>先检查 L0C2UB、UB2L1、DualDest、SSBuf，判断能否减少 GM 往返。</td></tr>
+              <tr><td>低比特</td><td>常被当成 dtype 替换，scale、layout、搬运接口放到后面考虑。</td><td>把 HiF8、FP8、MXFP8、MXFP4 当作主路径能力，提前设计 scale cache。</td></tr>
+              <tr><td>线程模型</td><td>离散访存、分支和线程模型不是大多数 Ascend C 新手的第一关注点。</td><td>SIMT 场景按 Thread Block / Warp / Lane 设计，并把 sanitizer 放进调试预设。</td></tr>
+            </tbody>
+          </table>
+
           <details class="src-ref">
             <summary>信息来源</summary>
             <div class="src-ref-body">
@@ -993,6 +1221,80 @@
               <p>看 pipe bubble、片上带宽、PC stall、寄存器压力和尾块负载，而不是只看总耗时。</p>
             </div>
           </div>
+
+          <h3 id="part21-method-map">优化分层图：从功能跑通到系统级融合</h3>
+          <div class="method-map">
+            <div class="method-layer">
+              <div class="method-num">5</div>
+              <div>
+                <div class="method-title">系统优化</div>
+                <div class="method-detail">减少 Kernel Launch 次数，把可融合的 Cube 主计算与 Vector 后处理收进一个更短的数据路径。</div>
+              </div>
+              <div class="method-target">Fusion / Stream</div>
+            </div>
+            <div class="method-layer">
+              <div class="method-num">4</div>
+              <div>
+                <div class="method-title">指令调优</div>
+                <div class="method-detail">控制 GPR 占用、防止 spill；合并 SIMD VF / SIMT VF 指令；减少重复 scalar 控制。</div>
+              </div>
+              <div class="method-target">Reg / VF</div>
+            </div>
+            <div class="method-layer">
+              <div class="method-num">3</div>
+              <div>
+                <div class="method-title">访存优化</div>
+                <div class="method-detail">合并小粒度访存，复用 UB/L1/L0 数据；低比特场景同步规划 scale 缓存与 NDDMA 搬运。</div>
+              </div>
+              <div class="method-target">GM / UB / L1</div>
+            </div>
+            <div class="method-layer">
+              <div class="method-num">2</div>
+              <div>
+                <div class="method-title">资源利用</div>
+                <div class="method-detail">用 Tiling、Block 切分、Double Buffer 和尾块均衡，让 AIC/AIV 的计算和搬运稳定重叠。</div>
+              </div>
+              <div class="method-target">Block / Pipe</div>
+            </div>
+            <div class="method-layer">
+              <div class="method-num">1</div>
+              <div>
+                <div class="method-title">功能基线</div>
+                <div class="method-detail">先对齐 Golden 输出和边界 shape，再做性能假设；任何低比特路径都要先过精度校验。</div>
+              </div>
+              <div class="method-target">Correctness</div>
+            </div>
+          </div>
+
+          <h3 id="part21-scenario-matrix">三类算子场景 × 编程判断矩阵</h3>
+          <div class="scenario-grid">
+            <div class="scenario-card scenario-card--vector">
+              <div class="scenario-kicker">AIV 侧数据处理</div>
+              <div class="scenario-title">Vector / SIMD + SIMT</div>
+              <div class="scenario-detail">连续规则数据走 SIMD Reg / Vector Reg File；离散索引、分支、Gather/Scatter 走 SIMT Reg File 和 Thread Block。</div>
+            </div>
+            <div class="scenario-card scenario-card--cube">
+              <div class="scenario-kicker">矩阵主计算</div>
+              <div class="scenario-title">Cube / 低比特</div>
+              <div class="scenario-detail">MatMul、GEMM、GMM、qbmm、MoE。除了 MMAD，还要设计 scale、layout、L0A/B、L0C 和尾块。</div>
+            </div>
+            <div class="scenario-card scenario-card--fusion">
+              <div class="scenario-kicker">Cube + Vector</div>
+              <div class="scenario-title">融合 / C-V 直连</div>
+              <div class="scenario-detail">MatMul+Add、RmsNormQuant、FIA、Attention 后处理。先判断 L0C→UB、DualDest、UB2L1 是否能减少 GM 中转。</div>
+            </div>
+          </div>
+
+          <table class="report-table">
+            <thead>
+              <tr><th>场景</th><th>数据形态</th><th>910 典型实现</th><th>950 关键变化</th><th>优先联动路径</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Vector</td><td>连续规则表达式；离散索引、分支、Gather/Scatter</td><td>UB / LocalTensor 上反复读写；离散逻辑容易退化成低效循环</td><td>SIMD Reg、RegBase、SIMT Thread Block、SIMD/SIMT VF 指令</td><td>GM - UB - Vector Reg File；GM - UB - SIMT Reg File；GM - SIMT Reg File</td></tr>
+              <tr><td>Cube</td><td>矩阵乘、低比特矩阵计算</td><td>L0A/L0B/L0C + MMAD 主循环</td><td>HiF8 / FP8 / MXFP8 / MXFP4、scale cache、低比特 layout</td><td>GM - L0A/B - Cube - L0C</td></tr>
+              <tr><td>融合</td><td>Cube 主计算 + Vector 后处理</td><td>Cube 写 GM/workspace，Vector 再读回</td><td>MIX、AIC+AIV 协同、L0C→UB、UB2L1、DualDest</td><td>L0C - UB；UB - L1；SSBuf</td></tr>
+            </tbody>
+          </table>
 
           <h3 id="part21-vector">Vector 算子：连续规则数据走 SIMD Reg</h3>
           <div class="cards cards-2">
@@ -1079,7 +1381,7 @@
             </div>
           </div>
 
-          <h3 id="part21-simt">SIMT 场景：离散数据走线程式表达</h3>
+          <h3 id="part21-simt">Vector 算子补充：SIMT 处理离散数据</h3>
           <div class="cards cards-2">
             <div class="card">
               <div class="card-title">适合场景</div>
@@ -1164,10 +1466,18 @@ migrate_to_950() {
             <div class="pain-hook-sub">下面代码块是迁移示意和 review checklist，不直接替代具体 CANN API 调用。真实接口名、参数、产品支持边界以安装的 CANN Toolkit、SoC 和头文件为准。</div>
           </div>
 
-          <div class="code-case" id="part3-l0c-ub">
-            <div class="code-case-title">案例 1：把 L0C -&gt; GM -&gt; UB 改成 L0C -&gt; UB</div>
-            <p>适用 MatMul 后处理、RmsNormQuant、FIA 等融合场景。核心检查是：Cube 输出布局是否能被 AIV 侧消费，DualDest 的 M/N 对齐约束是否满足。</p>
-            <pre><span class="cm">// 910 / A3 常见路径：中间结果绕 GM 或 workspace</span>
+          <div class="pitfall-case-list" id="part3-pitfalls">
+            <div class="pitfall-case" id="part3-l0c-ub">
+              <div class="pitfall-case__issue">
+                <div class="pitfall-case__label">坑点 01 / 融合路径</div>
+                <div class="pitfall-title">仍按 L0C→GM→UB 旧路径实现融合</div>
+                <div class="pitfall-desc">910/A3 代码常把 AIC 输出写到 GM 或 workspace，再由 AIV 读回。950 上 MatMul 后处理、RmsNormQuant、FIA 等融合场景要优先评估 L0C→UB、DualDest、UB2L1 和 SSBuf。</div>
+                <div class="pitfall-fix">对应动作：先画 C-V 数据流，再判断 Cube 输出布局和 DualDest M/N 对齐约束。</div>
+                <button class="annotation-link" type="button" data-annotation-jump="code-l0c-ub">联动 L0C2UB</button>
+              </div>
+              <div class="pitfall-case__practice">
+                <div class="pitfall-case__label">代码模板</div>
+                <pre><span class="cm">// 910 / A3 常见路径：中间结果绕 GM 或 workspace</span>
 AIC: Mmad(a_l0a, b_l0b, c_l0c);
 AIC: Copy(c_l0c, workspace_gm);      <span class="cm">// L0C -&gt; GM</span>
 AIV: Copy(workspace_gm, x_ub);       <span class="cm">// GM -&gt; UB</span>
@@ -1177,13 +1487,20 @@ AIV: VectorEpilogue(x_ub, out_gm);
 AIC: Mmad(a_l0a, b_l0b, c_l0c);
 AIC: CopyL0CToUB(c_l0c, x_ub);       <span class="cm">// L0C -&gt; UB，或使用 DualDest</span>
 AIV: VectorEpilogue(x_ub, out_gm);   <span class="cm">// UB -&gt; Vector Reg / GM</span></pre>
-            <button class="annotation-link" type="button" data-annotation-jump="code-l0c-ub">联动 L0C2UB</button>
-          </div>
+              </div>
+            </div>
 
-          <div class="code-case" id="part3-scale">
-            <div class="code-case-title">案例 2：MXFP4 / MXFP8 scale 先进入 UB 再复用</div>
-            <p>低比特场景不要只看矩阵数据本身。scale 如果每个 inner loop 都从 GM 读取，会把量化收益抵消掉。</p>
-            <pre><span class="cm">// 风险写法：scale 随每个 tile 重复从 GM 读取</span>
+            <div class="pitfall-case" id="part3-scale">
+              <div class="pitfall-case__issue">
+                <div class="pitfall-case__label">坑点 02 / 低比特</div>
+                <div class="pitfall-title">MXFP4 / MXFP8 scale 没有预存到 UB</div>
+                <div class="pitfall-desc">低比特节省的是主数据带宽，但 scale 如果在 inner loop 中反复从 GM 读取，会把收益抵消掉。矩阵步长还要同步检查 L1 bank conflict。</div>
+                <div class="pitfall-fix">对应动作：把 scale 生命周期写进 Tiling；优先在 prologue 加载到 UB，并对 layout、padding、swizzle 做 review。</div>
+                <button class="annotation-link" type="button" data-annotation-jump="code-scale">联动 scale 缓存</button>
+              </div>
+              <div class="pitfall-case__practice">
+                <div class="pitfall-case__label">代码模板</div>
+                <pre><span class="cm">// 风险写法：scale 随每个 tile 重复从 GM 读取</span>
 for (tile in k_tiles) {
   LoadA(tile);
   LoadB(tile);
@@ -1199,13 +1516,20 @@ for (tile in k_tiles) {
   UseScaleFromUB(scale_ub);
   MmadLowBitWithScale();
 }</pre>
-            <button class="annotation-link" type="button" data-annotation-jump="code-scale">联动 scale 缓存</button>
-          </div>
+              </div>
+            </div>
 
-          <div class="code-case" id="part3-simt-simd">
-            <div class="code-case-title">案例 3：先判断 SIMD 还是 SIMT，不要混用心智</div>
-            <p>规则表达式走 SIMD Reg；离散访存、复杂分支、Gather/Scatter 类场景优先看 SIMT。两者共享 UB，但 Register File 组织和调试方式不同。</p>
-            <pre><span class="cm">// 规则连续数据：SIMD / RegBase</span>
+            <div class="pitfall-case" id="part3-simt-simd">
+              <div class="pitfall-case__issue">
+                <div class="pitfall-case__label">坑点 03 / Vector 范式</div>
+                <div class="pitfall-title">SIMD / SIMT 范式选错</div>
+                <div class="pitfall-desc">连续规则表达式适合 SIMD Reg；Gather/Scatter、Hash/Atomic、复杂分支更适合 SIMT。两者都属于 AIV/Vector 侧编程，但寄存器组织和调试方式不同。</div>
+                <div class="pitfall-fix">对应动作：先按数据形态选范式，再决定是否用 MIX 组合 AIC/AIV。</div>
+                <button class="annotation-link" type="button" data-annotation-jump="code-simt-simd">联动 SIMD/SIMT</button>
+              </div>
+              <div class="pitfall-case__practice">
+                <div class="pitfall-case__label">判断模板</div>
+                <pre><span class="cm">// 规则连续数据：SIMD / RegBase</span>
 if (access_pattern == contiguous &amp;&amp; expression_is_regular) {
   CopyGMToUB();
   LoadUBToVectorReg();
@@ -1220,22 +1544,60 @@ if (access_pattern == gather_scatter || has_branch_divergence) {
   RunSimtVf();
   CheckSyncAndBounds();
 }</pre>
-            <button class="annotation-link" type="button" data-annotation-jump="code-simt-simd">联动 SIMD/SIMT</button>
-          </div>
+              </div>
+            </div>
 
-          <div class="code-case" id="part3-api-scan">
-            <div class="code-case-title">案例 4：迁移前扫描跨代敏感点</div>
-            <p>旧代码里凡是绑定具体硬件路径、低比特类型、L0/L1 格式和 Cube-only 模式的地方，都要纳入 migration review。</p>
-            <pre><span class="cm"># 示例：先找高风险关键字，再逐项查当前 CANN 文档和头文件</span>
+            <div class="pitfall-case" id="part3-api-scan">
+              <div class="pitfall-case__issue">
+                <div class="pitfall-case__label">坑点 04 / 跨代接口</div>
+                <div class="pitfall-title">跨代 API / layout 敏感点没有扫描</div>
+                <div class="pitfall-desc">L1Buffer、L0A/B/C、DataCopy、LoadData、DumpTensor、低比特类型和 cube-only 模式都可能绑定旧硬件假设；Profiling 脚本也不能沿用旧 SoC 参数。</div>
+                <div class="pitfall-fix">对应动作：迁移前先做关键字扫描，再逐项回到当前 CANN 头文件和工具链参数确认。</div>
+              </div>
+              <div class="pitfall-case__practice">
+                <div class="pitfall-case__label">扫描模板</div>
+                <pre><span class="cm"># 示例：先找高风险关键字，再逐项查当前 CANN 文档和头文件</span>
 rg "L1Buffer|L0A|L0B|L0C|int4b_t|cube_only|LoadData|DataCopy|DumpTensor" ./operator_src
 rg "GM.*UB|workspace|LocalTensor|RegTensor|MaskReg|AddrReg" ./operator_src
 rg "MXFP|HiF8|FP8|scale|AntiQuant|Quant" ./operator_src</pre>
-          </div>
+              </div>
+            </div>
 
-          <div class="code-case" id="part3-sanitizer">
-            <div class="code-case-title">案例 5：SIMT 调试必须把 sanitizer 放进 Debug preset</div>
-            <p>SIMT 范式更容易出现越界、未初始化访问、同步遗漏。编译时要保留调试信息，并按当前工具链启用 sanitizer 能力。</p>
-            <pre><span class="cm"># 具体参数以当前 CANN 版本为准；这里表达的是检查项</span>
+            <div class="pitfall-case" id="part3-pipeline-tail">
+              <div class="pitfall-case__issue">
+                <div class="pitfall-case__label">坑点 05 / 调优闭环</div>
+                <div class="pitfall-title">Pipeline stage、寄存器压力和尾块只凭经验调</div>
+                <div class="pitfall-desc">Double Buffer、Pipeline stage、cross interval、GPR spill 和尾块均衡都会影响 bubble；只看总耗时很难定位是哪一级失效。</div>
+                <div class="pitfall-fix">对应动作：用 Pipe 流水图、核间负载图、PC stall 和 register pressure 一起闭环。</div>
+              </div>
+              <div class="pitfall-case__practice">
+                <div class="pitfall-case__label">检查模板</div>
+                <pre><span class="cm"># 迁移 review 里固定这几个观测点</span>
+profile_pipeline() {
+  collect_pipe_view();              <span class="cm"># 看 MTE / Cube / Vector 是否存在长 bubble</span>
+  collect_core_load();              <span class="cm"># 看尾块或 block 切分是否让少数核拖尾</span>
+  collect_pc_sampling();            <span class="cm"># 看 stall 来自访存、取指还是寄存器压力</span>
+}
+
+retile_for_950(shape) {
+  choose_block_shape(shape);
+  enable_double_buffer_when_memory_allows();
+  balance_tail_block_or_pad();
+  recheck_l1_bank_and_register_pressure();
+}</pre>
+              </div>
+            </div>
+
+            <div class="pitfall-case" id="part3-sanitizer">
+              <div class="pitfall-case__issue">
+                <div class="pitfall-case__label">坑点 06 / SIMT 调试</div>
+                <div class="pitfall-title">SIMT 调试没有启用 sanitizer</div>
+                <div class="pitfall-desc">SIMT 引入 Thread Block / Warp 后，越界、未初始化访问和同步遗漏更难靠日志定位。</div>
+                <div class="pitfall-fix">对应动作：Debug preset 固化 sanitizer 与调试符号，先跑 memcheck / synccheck 再看性能。</div>
+              </div>
+              <div class="pitfall-case__practice">
+                <div class="pitfall-case__label">Debug preset</div>
+                <pre><span class="cm"># 具体参数以当前 CANN 版本为准；这里表达的是检查项</span>
 ascendc_compile \
   --npu-arch=dav-3510 \
   --sanitizer \
@@ -1247,6 +1609,8 @@ run_memcheck();
 run_synccheck();
 run_tracecheck();
 profile_pipe_and_gpr();</pre>
+              </div>
+            </div>
           </div>
 
           <details class="src-ref">
@@ -1260,7 +1624,7 @@ profile_pipe_and_gpr();</pre>
 
         <div class="footer-note">
           校对基准：/Users/yin/CANNvisual/950 ppt/导出md/950-operator-developer-guide.md<br>
-          保留章节：原 1 / 3 / 4 / 7；移除主线：Profiling 工作流、框架选型、工具链、大模型案例。
+          具体 API、SoC 支持边界与工具链参数以当前 CANN Toolkit、芯片规格和头文件为准。
         </div>
       </article>
     </section>
@@ -1307,7 +1671,7 @@ profile_pipe_and_gpr();</pre>
       {
         id: 'hardware-overview',
         sectionId: 'part1',
-        anchorId: 'part1',
+        anchorId: 'part1-subsystem',
         tag: '总图',
         title: 'AI Core 子系统升级总图',
         summary: '先把 GM、L2、AIC、AIV、Cube、SIMD/SIMT 和寄存器文件放到同一张图里。',
@@ -1554,6 +1918,7 @@ profile_pipe_and_gpr();</pre>
       playing: false,
       playbackIndex: 0,
       aivFolded: false,
+      activeAnchorId: '',
     };
 
     const reportShell = document.getElementById('reportShell');
@@ -1574,11 +1939,15 @@ profile_pipe_and_gpr();</pre>
     let floatingControl = null;
     let playbackElements = null;
     let playbackTimer = 0;
+    let activeReadingElements = [];
     const PLAYBACK_INTERVAL_MS = 3600;
 
     function renderNav() {
       reportNav.querySelectorAll('.report-nav-item').forEach((item) => {
         item.classList.toggle('is-active', item.dataset.sectionId === state.activeSectionId);
+      });
+      reportNav.querySelectorAll('.report-nav-subitem').forEach((item) => {
+        item.classList.toggle('is-active', item.dataset.anchorId === state.activeAnchorId);
       });
     }
 
@@ -1595,6 +1964,66 @@ profile_pipe_and_gpr();</pre>
       return list[Math.min(state.playbackIndex, Math.max(0, list.length - 1))] || list[0];
     }
 
+    function readingAnchorLabel(anchorId) {
+      const anchor = anchorId ? document.getElementById(anchorId) : null;
+      if (!anchor) return '';
+      if (anchor.matches('h3, .section-title')) return anchor.textContent.trim();
+      const title = anchor.querySelector?.('.card-title, .code-case-title, .pitfall-title, .step-title, .section-title, h3');
+      if (title) return title.textContent.trim();
+      return anchor.getAttribute('aria-label') || anchor.textContent.trim().split(/\s+/).slice(0, 12).join(' ');
+    }
+
+    function readingTargetFor(anchorId) {
+      const anchor = anchorId ? document.getElementById(anchorId) : null;
+      if (!anchor) return null;
+      if (anchor.matches('h3')) {
+        const nextBlock = anchor.nextElementSibling;
+        if (nextBlock?.matches('.cards, .code-case, .pitfall-case-list, .pitfall-case, .report-table, .method-map, .scenario-grid, .pitfall-list, pre')) return nextBlock;
+      }
+      if (anchor.matches('.section')) {
+        return anchor.querySelector('.pain-hook, .cards, .report-table') || anchor;
+      }
+      return anchor.closest('.card, .cards, .code-case, .pitfall-case, .pitfall-case-list, .step-card, .pain-hook, .callout, .report-table, .method-map, .scenario-grid, .pitfall-list, .src-ref') || anchor;
+    }
+
+    function isReadableSibling(element) {
+      return element.matches('.cards, .card, .code-case, .pitfall-case-list, .pitfall-case, .report-table, .method-map, .scenario-grid, .pitfall-list, pre, .callout');
+    }
+
+    function readingTargetsFor(anchorId) {
+      const anchor = anchorId ? document.getElementById(anchorId) : null;
+      const primary = readingTargetFor(anchorId);
+      if (!anchor || !primary) return [];
+
+      const targets = new Set([primary]);
+      if (anchor.matches('h3')) {
+        targets.add(anchor);
+        let sibling = anchor.nextElementSibling;
+        while (sibling && !sibling.matches('h3, .section-title, details.src-ref')) {
+          if (isReadableSibling(sibling)) targets.add(sibling);
+          sibling = sibling.nextElementSibling;
+        }
+      }
+
+      return Array.from(targets);
+    }
+
+    function clearReadingHighlight() {
+      activeReadingElements.forEach((element) => element.classList.remove('is-reading-target'));
+      activeReadingElements = [];
+      state.activeAnchorId = '';
+    }
+
+    function highlightReadingTarget(anchorId) {
+      clearReadingHighlight();
+      const targets = readingTargetsFor(anchorId);
+      if (!targets.length) return;
+      targets.forEach((target) => target.classList.add('is-reading-target'));
+      activeReadingElements = targets;
+      state.activeAnchorId = anchorId || '';
+      renderNav();
+    }
+
     function syncPlaybackUi() {
       if (!playbackElements) return;
       const helper = window.PtoFloatingPlaybackControl;
@@ -1605,7 +2034,10 @@ profile_pipe_and_gpr();</pre>
       playbackElements.label.textContent = `${visibleIndex} / ${list.length}`;
       playbackElements.opname.textContent = current?.title || '未选择联动步骤';
       playbackElements.summary.textContent = current?.summary || '点击播放后逐步联动正文与硬件路径。';
-      playbackElements.targets.textContent = current?.targets ? `硬件路径：${current.targets}` : '硬件路径：-';
+      const readingLabel = current ? readingAnchorLabel(current.anchorId || current.sectionId) : '';
+      playbackElements.targets.textContent = readingLabel
+        ? `正文定位：${readingLabel} ↗`
+        : '正文定位：-';
       playbackElements.playBtn.innerHTML = state.playing
         ? `${helper.icons.pause}<span>暂停</span>`
         : `${helper.icons.play}<span>播放</span>`;
@@ -1822,6 +2254,7 @@ profile_pipe_and_gpr();</pre>
       if (!annotation) return;
       state.activeAnnotationId = annotation.id;
       state.activeSectionId = annotation.sectionId;
+      if (options.scrollContent) state.activeAnchorId = annotation.anchorId || annotation.sectionId;
       const nextIndex = annotationIndexById(annotation.id);
       if (nextIndex >= 0) state.playbackIndex = nextIndex;
       if (activeAnnotationTitle) activeAnnotationTitle.textContent = annotation.title;
@@ -1833,7 +2266,9 @@ profile_pipe_and_gpr();</pre>
         foldAiv: annotation.foldAiv ?? state.aivFolded,
       });
       if (options.scrollContent) {
-        scrollDocTo(annotation.anchorId || annotation.sectionId);
+        const anchorId = annotation.anchorId || annotation.sectionId;
+        scrollDocTo(anchorId);
+        highlightReadingTarget(anchorId);
       }
       renderNav();
       syncPlaybackUi();
@@ -1841,10 +2276,21 @@ profile_pipe_and_gpr();</pre>
 
     function jumpToSection(sectionId) {
       state.activeSectionId = sectionId;
+      state.activeAnchorId = '';
       renderNav();
       scrollDocTo(sectionId);
       const annotation = ANNOTATIONS.find((item) => item.id === SECTION_DEFAULT[sectionId]);
       if (annotation) applyAnnotation(annotation, { scrollContent: false });
+    }
+
+    function jumpToAnchor(anchorId) {
+      const target = anchorId ? document.getElementById(anchorId) : null;
+      if (!target) return;
+      const section = target.closest('.section[data-section-id]');
+      state.activeSectionId = section?.dataset.sectionId || state.activeSectionId;
+      scrollDocTo(anchorId);
+      highlightReadingTarget(anchorId);
+      renderNav();
     }
 
     function clearFocus() {
@@ -1852,6 +2298,8 @@ profile_pipe_and_gpr();</pre>
       state.activeAnnotationId = '';
       if (activeAnnotationTitle) activeAnnotationTitle.textContent = '使用底部播放器逐步查看硬件路径';
       sendHardwareMessage({ type: 'hardware-focus', selectors: [], routes: [], instructionTags: [], foldAiv: state.aivFolded });
+      clearReadingHighlight();
+      renderNav();
       syncPlaybackUi();
     }
 
@@ -1881,6 +2329,12 @@ profile_pipe_and_gpr();</pre>
     }
 
     reportNav.addEventListener('click', (event) => {
+      const subitem = event.target.closest('[data-anchor-id]');
+      if (subitem) {
+        stopPlayback();
+        jumpToAnchor(subitem.dataset.anchorId);
+        return;
+      }
       const item = event.target.closest('[data-section-id]');
       if (!item) return;
       stopPlayback();
@@ -1892,7 +2346,8 @@ profile_pipe_and_gpr();</pre>
       if (!button) return;
       stopPlayback();
       const annotation = ANNOTATIONS.find((item) => item.id === button.dataset.annotationJump);
-      applyAnnotation(annotation, { scrollContent: true });
+      openArchPane();
+      applyAnnotation(annotation, { scrollContent: false });
     });
 
     archPaneToggle.addEventListener('click', () => {
