@@ -453,6 +453,8 @@ function renderGraph(graph, layout, nodesLayer, edgesSvg, onNodeClick, colorMap,
   // Build nodeMap for edge routing
   const nodeMap = new Map(nodes.map(n => [n.id, n]));
   const edgeElementsByNodeId = new Map();
+  const edgeElementsById = new Map();
+  const nodeElementsById = new Map();
 
   // ── Render edges (behind nodes) ────────────────────────────
   const edgeGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
@@ -508,6 +510,10 @@ function renderGraph(graph, layout, nodesLayer, edgesSvg, onNodeClick, colorMap,
     path.setAttribute('class', `edge ${edgeClass}`);
 
     edgeGroup.appendChild(path);
+
+    const renderedEdgeId = `${edge.source}->${edge.target}`;
+    if (!edgeElementsById.has(renderedEdgeId)) edgeElementsById.set(renderedEdgeId, []);
+    edgeElementsById.get(renderedEdgeId).push(path);
 
     if (edge.tensorLabels && edge.tensorLabels.length > 0) {
       const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
@@ -665,9 +671,10 @@ function renderGraph(graph, layout, nodesLayer, edgesSvg, onNodeClick, colorMap,
     }
 
     fragment.appendChild(el);
+    nodeElementsById.set(node.id, el);
   }
   nodesLayer.appendChild(fragment);
-  return { edgeElementsByNodeId };
+  return { edgeElementsByNodeId, edgeElementsById, nodeElementsById };
 }
 
 // ── Selection handling ────────────────────────────────────────────────────

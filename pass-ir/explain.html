@@ -523,6 +523,11 @@ body.pass-explain-page {
   filter: grayscale(1) saturate(0.08);
 }
 
+.graph-root.is-step-dim-mode .node-card:not(.cause-node-highlight) {
+  opacity: 0.18;
+  filter: grayscale(1) saturate(0.08);
+}
+
 .node-card.cause-node-remove {
   outline-color: color-mix(in srgb, var(--danger) 82%, white 10%);
 }
@@ -577,7 +582,17 @@ body.pass-explain-page {
   filter: grayscale(0.75) saturate(0.38);
 }
 
+.graph-root.is-after-diff-dim .node-card:not(.cause-diff-emphasis):not(.cause-node-highlight) {
+  opacity: 0.38;
+  filter: grayscale(0.75) saturate(0.38);
+}
+
 .edge.cause-edge-dim-unchanged:not(.cause-edge-highlight) {
+  stroke-opacity: 0.10 !important;
+  filter: grayscale(1);
+}
+
+.graph-root.is-after-diff-dim .edge:not(.cause-diff-emphasis):not(.cause-edge-highlight) {
   stroke-opacity: 0.10 !important;
   filter: grayscale(1);
 }
@@ -590,6 +605,12 @@ body.pass-explain-page {
 .edge.cause-diff-emphasis {
   stroke-opacity: 0.82 !important;
   stroke-width: 2.4px !important;
+}
+
+.huge-graph-mode .graph-root.is-step-dim-mode .node-card:not(.cause-node-highlight),
+.huge-graph-mode .graph-root.is-after-diff-dim .node-card:not(.cause-diff-emphasis):not(.cause-node-highlight),
+.huge-graph-mode .graph-root.is-after-diff-dim .edge:not(.cause-diff-emphasis):not(.cause-edge-highlight) {
+  filter: none;
 }
 
 @media (max-width: 980px) {

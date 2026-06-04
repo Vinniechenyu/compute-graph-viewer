@@ -10,7 +10,9 @@
     currentGraph: null,
     currentLayout: null,
     currentLoadInfo: null,
+    currentColorMap: null,
     localFileRefs: new Map(),
+    graphCache: new Map(),
     tx: 0,
     ty: 0,
     scale: 1,
@@ -19,7 +21,23 @@
     panning: false,
     panStart: null,
     renderCache: null,
+    renderedGraph: null,
+    virtualRenderWindow: null,
+    viewportRenderRaf: 0,
+    viewportRenderForce: false,
+    lastVirtualRenderScale: 1,
+    hugeGraphMode: false,
+    edgesHiddenByScale: false,
+    diffEmphasisNodes: new Set(),
+    diffEmphasisEdges: new Set(),
   };
+
+  const HUGE_GRAPH_NODE_THRESHOLD = 1200;
+  const HUGE_GRAPH_EDGE_THRESHOLD = 2400;
+  const HUGE_EDGE_HIDE_SCALE = 0.18;
+  const VIRTUAL_BUFFER_SCREEN_PX = 460;
+  const VIRTUAL_SCALE_FORCE_DELTA = 0.12;
+  const MAX_AUTOSTART_SCAN = 36;
 
   const AUTOSTART = [
     { passName: 'RemoveRedundantOp', pathId: 'PATH0_6' },
@@ -89,6 +107,129 @@
     return `${edge.source}->${edge.target}`;
   }
 
+  function isHugeGraph(graph) {
+    const nodeCount = graph?.nodes?.length || 0;
+    const edgeCount = graph?.edges?.length || 0;
+    return nodeCount >= HUGE_GRAPH_NODE_THRESHOLD || edgeCount >= HUGE_GRAPH_EDGE_THRESHOLD;
+  }
+
+  function updateHugeGraphMode(graph) {
+    const next = isHugeGraph(graph);
+    state.hugeGraphMode = next;
+    document.body.classList.toggle('huge-graph-mode', next);
+  }
+
+  function updateEdgeVisibilityByScale() {
+    if (!els.edgesSvg) return false;
+    const shouldHide = state.hugeGraphMode && state.scale < HUGE_EDGE_HIDE_SCALE;
+    if (shouldHide === state.edgesHiddenByScale) return false;
+    state.edgesHiddenByScale = shouldHide;
+    els.edgesSvg.classList.toggle('is-hidden', shouldHide);
+    return true;
+  }
+
+  function shouldVirtualizeGraph() {
+    return !!(state.hugeGraphMode && state.currentGraph && state.currentLayout && els.viewport);
+  }
+
+  function getViewportGraphRect() {
+    const safeScale = Math.max(state.scale, 1e-6);
+    const left = -state.tx / safeScale;
+    const top = -state.ty / safeScale;
+    const width = els.viewport.clientWidth / safeScale;
+    const height = els.viewport.clientHeight / safeScale;
+    return {
+      left,
+      top,
+      right: left + width,
+      bottom: top + height,
+      width,
+      height,
+    };
+  }
+
+  function expandRect(rect, pad) {
+    return {
+      left: rect.left - pad,
+      top: rect.top - pad,
+      right: rect.right + pad,
+      bottom: rect.bottom + pad,
+    };
+  }
+
+  function rectContainsRect(outer, inner) {
+    if (!outer || !inner) return false;
+    return inner.left >= outer.left
+      && inner.top >= outer.top
+      && inner.right <= outer.right
+      && inner.bottom <= outer.bottom;
+  }
+
+  function buildVirtualizedGraph(force = false) {
+    if (!shouldVirtualizeGraph()) {
+      state.renderedGraph = state.currentGraph;
+      state.virtualRenderWindow = null;
+      return state.currentGraph;
+    }
+
+    const viewportRect = getViewportGraphRect();
+    const scaleDelta = Math.abs(state.scale - state.lastVirtualRenderScale) / Math.max(1e-6, state.lastVirtualRenderScale);
+    if (!force && state.virtualRenderWindow && rectContainsRect(state.virtualRenderWindow, viewportRect) && scaleDelta < VIRTUAL_SCALE_FORCE_DELTA) {
+      return null;
+    }
+
+    const pad = VIRTUAL_BUFFER_SCREEN_PX / Math.max(state.scale, 1e-6);
+    const renderWindow = expandRect(viewportRect, pad);
+    const visibleNodes = [];
+    const visibleNodeIds = new Set();
+    const positions = state.currentLayout.positions;
+
+    for (const node of state.currentGraph.nodes || []) {
+      const pos = positions.get(node.id);
+      if (!pos) continue;
+      const intersects = pos.x <= renderWindow.right
+        && pos.x + pos.w >= renderWindow.left
+        && pos.y <= renderWindow.bottom
+        && pos.y + pos.h >= renderWindow.top;
+      if (!intersects) continue;
+      visibleNodes.push(node);
+      visibleNodeIds.add(node.id);
+    }
+
+    const visibleEdges = [];
+    if (!state.edgesHiddenByScale) {
+      for (const edge of state.currentGraph.edges || []) {
+        if (!visibleNodeIds.has(edge.source) || !visibleNodeIds.has(edge.target)) continue;
+        visibleEdges.push(edge);
+      }
+    }
+
+    state.renderedGraph = {
+      nodes: visibleNodes,
+      edges: visibleEdges,
+      meta: state.currentGraph.meta,
+    };
+    state.virtualRenderWindow = renderWindow;
+    state.lastVirtualRenderScale = state.scale;
+    return state.renderedGraph;
+  }
+
+  function clearDiffDimming() {
+    els.graphRoot?.classList.remove('is-after-diff-dim');
+    state.diffEmphasisNodes.forEach(el => el.classList.remove('cause-diff-emphasis'));
+    state.diffEmphasisEdges.forEach(el => el.classList.remove('cause-diff-emphasis'));
+    state.diffEmphasisNodes.clear();
+    state.diffEmphasisEdges.clear();
+  }
+
+  function nodeElementById(nodeId) {
+    return state.renderCache?.nodeElementsById?.get(nodeId) || null;
+  }
+
+  function edgeElementsById(id) {
+    return state.renderCache?.edgeElementsById?.get(id) || [];
+  }
+
   function semanticColorMap(graph) {
     if (window.PtoPassCauseSemantic?.buildNodeColorMap) {
       return window.PtoPassCauseSemantic.buildNodeColorMap(graph);
@@ -153,22 +294,62 @@
   }
 
   function applyDiffDimming(side) {
-    els.nodesLayer?.querySelectorAll('.cause-node-dim-unchanged, .cause-diff-emphasis')
-      .forEach(el => el.classList.remove('cause-node-dim-unchanged', 'cause-diff-emphasis'));
-    els.edgesSvg?.querySelectorAll('.cause-edge-dim-unchanged, .cause-diff-emphasis')
-      .forEach(el => el.classList.remove('cause-edge-dim-unchanged', 'cause-diff-emphasis'));
+    clearDiffDimming();
 
     if (side !== 'after' || !state.activeResult?.diff) return;
     const { changedNodes, changedEdges } = afterChangedSets(state.activeResult);
 
-    els.nodesLayer?.querySelectorAll('.node-card[data-node-id]').forEach(el => {
-      if (changedNodes.has(el.dataset.nodeId)) el.classList.add('cause-diff-emphasis');
-      else el.classList.add('cause-node-dim-unchanged');
+    els.graphRoot?.classList.add('is-after-diff-dim');
+    changedNodes.forEach(nodeId => {
+      const el = nodeElementById(nodeId);
+      if (!el) return;
+      el.classList.add('cause-diff-emphasis');
+      state.diffEmphasisNodes.add(el);
     });
-    els.edgesSvg?.querySelectorAll('.edge[data-source][data-target]').forEach(el => {
-      const id = `${el.dataset.source}->${el.dataset.target}`;
-      if (changedEdges.has(id)) el.classList.add('cause-diff-emphasis');
-      else el.classList.add('cause-edge-dim-unchanged');
+    changedEdges.forEach(id => {
+      edgeElementsById(id).forEach(el => {
+        el.classList.add('cause-diff-emphasis');
+        state.diffEmphasisEdges.add(el);
+      });
+    });
+  }
+
+  function renderViewportGraph({ force = false, dispatch = true } = {}) {
+    if (!state.currentGraph || !state.currentLayout) return;
+    if (state.viewportRenderRaf) {
+      cancelAnimationFrame(state.viewportRenderRaf);
+      state.viewportRenderRaf = 0;
+      state.viewportRenderForce = false;
+    }
+    const graphToRender = shouldVirtualizeGraph() ? buildVirtualizedGraph(force) : state.currentGraph;
+    if (!graphToRender) return;
+    state.renderCache = renderGraph(
+      graphToRender,
+      state.currentLayout,
+      els.nodesLayer,
+      els.edgesSvg,
+      () => {},
+      state.currentColorMap,
+      state.colorMode,
+      { compact: !!state.currentLayout.compact, delegateEvents: true }
+    );
+    applyDiffDimming(state.currentSide);
+    if (dispatch) {
+      window.dispatchEvent(new CustomEvent('pto-pass-ir:graph-rendered', {
+        detail: { side: state.currentSide, loadInfo: state.currentLoadInfo },
+      }));
+    }
+  }
+
+  function scheduleViewportRender(force = false) {
+    if (!shouldVirtualizeGraph()) return;
+    if (force) state.viewportRenderForce = true;
+    if (state.viewportRenderRaf) return;
+    state.viewportRenderRaf = requestAnimationFrame(() => {
+      const forceNow = state.viewportRenderForce;
+      state.viewportRenderForce = false;
+      state.viewportRenderRaf = 0;
+      renderViewportGraph({ force: forceNow });
     });
   }
 
@@ -177,30 +358,36 @@
     state.currentGraph = graph;
     state.currentLoadInfo = loadInfo;
     state.currentSide = loadInfo.side || sideForRef(loadInfo.fileRef) || state.currentSide;
+    state.renderedGraph = null;
+    state.virtualRenderWindow = null;
+    state.lastVirtualRenderScale = state.scale || 1;
+    state.edgesHiddenByScale = false;
+    els.edgesSvg?.classList.remove('is-hidden');
+    updateHugeGraphMode(graph);
     updateSideButtons(state.currentSide);
     if (els.emptyState) els.emptyState.hidden = true;
-    state.currentLayout = computeLayout(graph, { nodeWidth: 225 });
-    state.renderCache = renderGraph(
-      graph,
-      state.currentLayout,
-      els.nodesLayer,
-      els.edgesSvg,
-      () => {},
-      buildNodeColorMap(graph),
-      state.colorMode,
-      { delegateEvents: true }
-    );
-    applyDiffDimming(state.currentSide);
+    const compact = isHugeGraph(graph);
+    state.currentLayout = computeLayout(graph, { nodeWidth: 225, compact });
+    state.currentLayout.compact = compact;
+    state.currentColorMap = buildNodeColorMap(graph);
     fitGraph();
-    window.dispatchEvent(new CustomEvent('pto-pass-ir:graph-rendered', {
-      detail: { side: state.currentSide, loadInfo: state.currentLoadInfo },
-    }));
-    requestAnimationFrame(() => window.PtoPassCausePlayback?.applyHighlight?.());
+    renderViewportGraph({ force: true });
   }
 
   function displayGraphRef(fileRef) {
+    const cachedGraph = state.graphCache.get(fileRef);
+    if (cachedGraph) {
+      displayGraph(cachedGraph, {
+        fileRef,
+        fileName: graphRefName(fileRef),
+        side: sideForRef(fileRef),
+        loadedAt: Date.now(),
+      });
+      return Promise.resolve(cachedGraph);
+    }
     return readJsonRef(fileRef).then(data => {
       const graph = parseGraph(data);
+      state.graphCache.set(fileRef, graph);
       displayGraph(graph, {
         fileRef,
         fileName: graphRefName(fileRef),
@@ -218,7 +405,9 @@
     state.scale = Math.max(0.12, state.scale);
     state.tx = els.viewport.clientWidth / 2 - (pos.x + pos.w / 2) * state.scale;
     state.ty = els.viewport.clientHeight / 2 - (pos.y + pos.h / 2) * state.scale;
-    applyTransform(true);
+    applyTransform(true, { scheduleRender: false });
+    updateEdgeVisibilityByScale();
+    renderViewportGraph({ force: true, dispatch: false });
     return true;
   }
 
@@ -228,15 +417,18 @@
     getCurrentGraph: () => state.currentGraph,
     getCurrentLoadInfo: () => state.currentLoadInfo ? { ...state.currentLoadInfo } : null,
     getCurrentSide: () => state.currentSide,
+    getRenderCache: () => state.renderCache,
     focusNodeById,
     showStepGhost,
   };
 
-  function applyTransform(animate = false) {
+  function applyTransform(animate = false, options = {}) {
     if (!els.graphRoot) return;
     els.graphRoot.style.transition = animate ? 'transform 180ms var(--easing-default)' : '';
     els.graphRoot.style.transform = `translate(${state.tx}px, ${state.ty}px) scale(${state.scale})`;
     if (animate) setTimeout(() => { els.graphRoot.style.transition = ''; }, 200);
+    const edgeVisibilityChanged = updateEdgeVisibilityByScale();
+    if (options.scheduleRender !== false) scheduleViewportRender(!!edgeVisibilityChanged);
   }
 
   function fitGraph() {
@@ -248,7 +440,8 @@
     state.scale = Math.max(0.08, Math.min(1.1, Math.min(vw / w, vh / h) * 0.86));
     state.tx = (vw - w * state.scale) / 2;
     state.ty = (vh - h * state.scale) / 2;
-    applyTransform(false);
+    applyTransform(false, { scheduleRender: false });
+    updateEdgeVisibilityByScale();
   }
 
   function collectPairs(navIndex) {
@@ -398,7 +591,8 @@
   async function findAutoStartResult() {
     const candidates = preferredCandidates();
     let best = null;
-    for (const pair of candidates) {
+    const scanList = candidates.slice(0, MAX_AUTOSTART_SCAN);
+    for (const pair of scanList) {
       setStatus(`扫描结构变化：${pairLabel(pair)}`);
       const result = await explainPair(pair);
       if (structuralScore(result) > 0 && (result.explanations || []).length > 0) {
@@ -408,6 +602,7 @@
     }
     if (best) return best;
     if (!candidates.length) return null;
+    setStatus(`未在前 ${scanList.length} 组内找到明显结构变化，先打开第一组 ready 配对`);
     return explainPair(candidates[0]);
   }
 
@@ -468,6 +663,8 @@
     state.activeResult = result;
     const pair = result?.pair;
     if (!pair) return;
+    if (pair.beforeRef?.ref && result.beforeGraph) state.graphCache.set(pair.beforeRef.ref, result.beforeGraph);
+    if (pair.afterRef?.ref && result.afterGraph) state.graphCache.set(pair.afterRef.ref, result.afterGraph);
     if (els.current) els.current.textContent = pairLabel(pair);
     if (els.passFilterSelect && els.passFilterSelect.value !== 'all') {
       els.passFilterSelect.value = pair.passName;
@@ -517,6 +714,7 @@
     }
     state.navIndex = window.buildNavIndexFromFileEntries(builderEntries, { basePath: sourceLabel || 'local' });
     state.pairResults.clear();
+    state.graphCache.clear();
     state.pairs = collectPairs(state.navIndex);
     populatePassFilter();
     populatePairSelect();
@@ -533,7 +731,7 @@
     const stats = coverageStats();
     setStatus(`已解析 ${stats.dumpPasses} 个 Pass，正在自动选择有结构变化的配对`);
     const result = await findAutoStartResult();
-    if (result) setActiveResult(result, { autoplay: true });
+    if (result) setActiveResult(result, { autoplay: false });
   }
 
   function colorModeLabel(mode) {
@@ -662,7 +860,10 @@
       choosePair(firstPairId, { autoplay: false });
     });
     els.pairSelect?.addEventListener('change', () => choosePair(els.pairSelect.value, { autoplay: false }));
-    els.fitBtn?.addEventListener('click', fitGraph);
+    els.fitBtn?.addEventListener('click', () => {
+      fitGraph();
+      renderViewportGraph({ force: true });
+    });
     els.beforeBtn?.addEventListener('click', () => {
       const pair = state.activeResult?.pair;
       if (pair?.beforeRef?.ref) {
@@ -697,6 +898,7 @@
     });
     window.addEventListener('resize', () => {
       fitGraph();
+      renderViewportGraph({ force: true });
       if (els.colorModeMenu && !els.colorModeMenu.hidden) positionColorModeMenu();
     });
   }

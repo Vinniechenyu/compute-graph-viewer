@@ -10,6 +10,9 @@
   let playTimer = 0;
   let splitTimer = 0;
   let loadingRef = null;
+  const touchedNodes = new Set();
+  const touchedEdges = new Set();
+  const badges = new Set();
 
   function escAttr(value) {
     if (window.CSS?.escape) return CSS.escape(String(value));
@@ -52,11 +55,13 @@
   }
 
   function clearHighlights() {
-    document.querySelectorAll('.node-card.cause-node-highlight, .node-card.cause-node-muted, .node-card.cause-node-remove, .node-card.cause-node-add, .node-card.cause-node-rewire')
-      .forEach(el => el.classList.remove('cause-node-highlight', 'cause-node-muted', 'cause-node-remove', 'cause-node-add', 'cause-node-rewire'));
-    document.querySelectorAll('.edge.cause-edge-highlight, .edge.cause-edge-removed, .edge.cause-edge-added, .edge.cause-edge-rewire')
-      .forEach(el => el.classList.remove('cause-edge-highlight', 'cause-edge-removed', 'cause-edge-added', 'cause-edge-rewire'));
-    document.querySelectorAll('.cause-node-badge').forEach(el => el.remove());
+    document.getElementById('explainGraphRoot')?.classList.remove('is-step-dim-mode');
+    touchedNodes.forEach(el => el.classList.remove('cause-node-highlight', 'cause-node-muted', 'cause-node-remove', 'cause-node-add', 'cause-node-rewire'));
+    touchedEdges.forEach(el => el.classList.remove('cause-edge-highlight', 'cause-edge-removed', 'cause-edge-added', 'cause-edge-rewire'));
+    badges.forEach(el => el.remove());
+    touchedNodes.clear();
+    touchedEdges.clear();
+    badges.clear();
   }
 
   function currentSide() {
@@ -92,9 +97,30 @@
     badge.className = 'cause-node-badge';
     badge.textContent = text;
     nodeEl.appendChild(badge);
+    badges.add(badge);
   }
 
-  function applyHighlight() {
+  function domIndex() {
+    return window.PtoPassIrState?.getRenderCache?.() || {};
+  }
+
+  function nodeElementById(nodeId) {
+    const cache = domIndex();
+    if (cache.nodeElementsById?.has(nodeId)) return cache.nodeElementsById.get(nodeId);
+    const nodesLayer = document.getElementById('nodesLayer');
+    return nodesLayer?.querySelector?.(`[data-node-id="${escAttr(nodeId)}"]`) || null;
+  }
+
+  function edgeElementsById(id) {
+    const cache = domIndex();
+    if (cache.edgeElementsById?.has(id)) return cache.edgeElementsById.get(id);
+    const edgesSvg = document.getElementById('edgesSvg');
+    const parts = String(id).split('->');
+    if (parts.length !== 2 || !edgesSvg) return [];
+    return [...edgesSvg.querySelectorAll(`[data-source="${escAttr(parts[0])}"][data-target="${escAttr(parts[1])}"]`)];
+  }
+
+  function applyHighlight(options = {}) {
     clearHighlights();
     if (!activeStep) return;
     const payload = stepPayloadForCurrentSide(activeStep) || {};
@@ -105,39 +131,36 @@
     ]);
     const primaryNodeIds = new Set(payload.primaryNodeIds || activeStep.nodeIds || []);
     const edgeIds = new Set(payload.edgeIds || activeStep.edgeIds || []);
-    const nodesLayer = document.getElementById('nodesLayer');
-    const edgesSvg = document.getElementById('edgesSvg');
-    if (!nodesLayer || !edgesSvg) return;
+    const graphRoot = document.getElementById('explainGraphRoot');
     const nodeClass = highlightClassFor(activeStep);
     const edgeClass = edgeClassForStep(activeStep);
+    const focusId = [...primaryNodeIds][0] || [...nodeIds][0];
+
+    if (options.focus !== false && focusId) {
+      window.PtoPassIrState?.focusNodeById?.(focusId);
+    }
 
     if (payload.dimOthers) {
-      nodesLayer.querySelectorAll('.node-card[data-node-id]').forEach(nodeEl => {
-        if (!nodeIds.has(nodeEl.dataset.nodeId)) nodeEl.classList.add('cause-node-muted');
-      });
+      graphRoot?.classList.add('is-step-dim-mode');
     }
 
     nodeIds.forEach(nodeId => {
-      const nodeEl = nodesLayer.querySelector(`[data-node-id="${escAttr(nodeId)}"]`);
+      const nodeEl = nodeElementById(nodeId);
       if (nodeEl) {
         nodeEl.classList.add('cause-node-highlight');
         if (primaryNodeIds.has(nodeId)) nodeEl.classList.add(nodeClass);
         addBadge(nodeEl, payload.badges?.[nodeId]);
+        touchedNodes.add(nodeEl);
       }
     });
 
     edgeIds.forEach(id => {
-      const parts = String(id).split('->');
-      if (parts.length !== 2) return;
-      edgesSvg.querySelectorAll(`[data-source="${escAttr(parts[0])}"][data-target="${escAttr(parts[1])}"]`)
-        .forEach(edgeEl => {
-          edgeEl.classList.add('cause-edge-highlight');
-          edgeEl.classList.add(edgeClass);
-        });
+      edgeElementsById(id).forEach(edgeEl => {
+        edgeEl.classList.add('cause-edge-highlight');
+        edgeEl.classList.add(edgeClass);
+        touchedEdges.add(edgeEl);
+      });
     });
-
-    const focusId = [...primaryNodeIds][0] || [...nodeIds][0];
-    if (focusId) window.PtoPassIrState?.focusNodeById?.(focusId);
   }
 
   function stepTargetRef(step, side = null) {
@@ -150,19 +173,19 @@
   function loadStepSide(step, side) {
     const targetRef = stepTargetRef(step, side);
     if (!targetRef || !window.PtoPassIrState?.loadGraphRef) {
-      requestAnimationFrame(applyHighlight);
+      requestAnimationFrame(() => applyHighlight());
       return Promise.resolve();
     }
     const currentRef = window.PtoPassIrState.getCurrentLoadInfo?.()?.fileRef || null;
     if (currentRef === targetRef || loadingRef === targetRef) {
-      requestAnimationFrame(applyHighlight);
+      requestAnimationFrame(() => applyHighlight());
       return Promise.resolve();
     }
     loadingRef = targetRef;
     return window.PtoPassIrState.loadGraphRef(targetRef)
       .finally(() => {
         loadingRef = null;
-        requestAnimationFrame(applyHighlight);
+        requestAnimationFrame(() => applyHighlight());
       });
   }
 
@@ -246,7 +269,7 @@
     render();
     dispatchStep();
     if (options.load !== false) syncGraphForStep(activeStep);
-    else requestAnimationFrame(applyHighlight);
+    else requestAnimationFrame(() => applyHighlight());
   }
 
   function setResult(nextResult) {
@@ -297,7 +320,7 @@
   }
 
   window.addEventListener('pto-pass-ir:graph-rendered', () => {
-    if (activeStep) applyHighlight();
+    if (activeStep) applyHighlight({ focus: false });
   });
 
   window.PtoPassCausePlayback = {
