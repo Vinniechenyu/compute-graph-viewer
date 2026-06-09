@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Training Run Explainable Twin</title>
+  <script>
+    (() => {
+      const theme = new URLSearchParams(window.location.search).get("theme");
+      if (theme === "dark" || theme === "light") {
+        document.documentElement.dataset.theme = theme;
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="../../pto-design-system/tokens/foundation.css">
+  <link rel="stylesheet" href="../../pto-design-system/tokens/semantic.css">
+  <link rel="stylesheet" href="../../pto-design-system/tokens/components.css">
+  <link rel="stylesheet" href="../../pto-design-system/css/style.css">
+  <link rel="stylesheet" href="./training-run-twin.css?v=20260609-light-blue">
+</head>
+<body class="train-twin-page" data-theme="light" data-model="qwen7b" data-task="pretrain" data-hardware="cluster512">
+  <header class="twin-topbar">
+    <div class="twin-title-block">
+      <span class="twin-kicker">PTO Train · Training Developer Twin</span>
+      <h1>Training Run Explainable Twin</h1>
+    </div>
+    <div class="twin-topbar-actions">
+      <span class="twin-status"><span class="twin-dot"></span>TRAINING</span>
+      <button class="btn btn-ghost twin-theme-toggle" id="themeToggle" type="button" aria-pressed="false" title="切换浅色模式">
+        <span class="twin-theme-toggle-icon" aria-hidden="true"></span>
+        <span id="themeToggleLabel">浅色模式</span>
+      </button>
+      <a class="btn btn-ghost" href="./TRAIN_PRODUCT_PRD.md">PRD</a>
+      <a class="btn btn-ghost" href="./training-mental-model.html">心智模型</a>
+    </div>
+  </header>
+
+  <main class="twin-shell">
+    <aside class="panel-shell twin-side-pane" aria-label="训练对象选择">
+      <div class="panel-shell-header twin-pane-header">
+        <div>
+          <div class="panel-shell-title">训练对象</div>
+          <div class="panel-shell-meta">选择模型、任务和硬件规模</div>
+        </div>
+      </div>
+      <div class="twin-pane-scroll">
+        <section class="twin-control-section" aria-label="模型选择">
+          <h2>Model</h2>
+          <div class="twin-option-list">
+            <button class="twin-option" type="button" data-model-option="qwen3">
+              <span>Qwen3-8B</span>
+              <small>官方快速训练路径</small>
+            </button>
+            <button class="twin-option is-selected" type="button" data-model-option="qwen7b">
+              <span>Qwen7B</span>
+              <small>本地源码证据闭环</small>
+            </button>
+            <button class="twin-option" type="button" data-model-option="qwenmoe">
+              <span>Qwen3-MoE</span>
+              <small>Router / Expert / EP</small>
+            </button>
+            <button class="twin-option" type="button" data-model-option="deepseek">
+              <span>DeepSeek V3.2</span>
+              <small>MoE + DSA + 多维并行</small>
+            </button>
+          </div>
+        </section>
+
+        <section class="twin-control-section" aria-label="任务选择">
+          <h2>Task</h2>
+          <div class="segmented-control segmented-control-muted twin-segment">
+            <button class="btn btn-sm is-selected" type="button" data-task-option="pretrain">Pretrain</button>
+            <button class="btn btn-sm" type="button" data-task-option="sft">SFT</button>
+            <button class="btn btn-sm" type="button" data-task-option="dpo">DPO</button>
+            <button class="btn btn-sm" type="button" data-task-option="grpo">GRPO</button>
+          </div>
+        </section>
+
+        <section class="twin-control-section" aria-label="硬件规模选择">
+          <h2>Hardware</h2>
+          <div class="twin-option-list">
+            <button class="twin-option" type="button" data-hardware-option="single8">
+              <span>8 × Ascend 910B</span>
+              <small>单节点验证</small>
+            </button>
+            <button class="twin-option" type="button" data-hardware-option="cluster64">
+              <span>64 × Ascend 910B</span>
+              <small>8 节点训练</small>
+            </button>
+            <button class="twin-option is-selected" type="button" data-hardware-option="cluster512">
+              <span>512 × Ascend NPU</span>
+              <small>多机大规模推演</small>
+            </button>
+          </div>
+        </section>
+
+        <section class="twin-control-section" aria-label="启动前检查">
+          <h2>启动前体检</h2>
+          <div class="twin-checklist" id="scriptChecks"></div>
+        </section>
+      </div>
+    </aside>
+
+    <section class="panel-shell twin-center-pane" aria-label="架构与脚本解释">
+      <div class="panel-shell-header twin-pane-header">
+        <div>
+          <div class="panel-shell-title" id="architectureTitle">Qwen7B 本地源码闭环</div>
+          <div class="panel-shell-meta" id="architectureMeta">Dense decoder · 32 layers · hidden 4096 · source verified</div>
+        </div>
+        <span class="stat-chip" id="runId">run qwen7b-source-r03</span>
+      </div>
+
+      <div class="twin-center-scroll">
+        <section class="twin-graph-card" aria-label="模型架构图">
+          <div class="twin-architecture-stage">
+            <iframe
+              id="modelGraphFrame"
+              class="twin-model-graphviz-frame"
+              src="../../pto-design-system/patterns/model-graphviz/assets/qwen7b_modelviz.html?theme=dark&embed=1"
+              title="Model Graphviz architecture"
+            ></iframe>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <section class="panel-shell twin-monitor-pane" aria-label="实时数据监控">
+      <div class="panel-shell-header twin-pane-header">
+        <div>
+          <div class="panel-shell-title">Run Twin</div>
+          <div class="panel-shell-meta">训练动态、硬件多卡、风险归因</div>
+        </div>
+        <span class="stat-chip" id="syncLag">sync 12ms</span>
+      </div>
+
+      <div class="twin-monitor-scroll">
+        <section class="twin-vitals" aria-label="训练状态摘要">
+          <article>
+            <span>Step</span>
+            <strong id="vStep">--</strong>
+            <small id="vStepSub">--</small>
+          </article>
+          <article>
+            <span>Train loss</span>
+            <strong id="vLoss">--</strong>
+            <small id="vLossSub">--</small>
+          </article>
+          <article>
+            <span>MFU</span>
+            <strong id="vMfu">--</strong>
+            <small>model flops util</small>
+          </article>
+          <article>
+            <span>ETA</span>
+            <strong id="vEta">--</strong>
+            <small>to target tokens</small>
+          </article>
+        </section>
+
+        <section class="twin-monitor-card twin-phase-card" aria-label="训练步骤联动">
+          <div class="twin-card-heading">
+            <div>
+              <h2>训练步骤 · 架构联动</h2>
+              <p id="phaseSummary">当前 token 正在进入 Embedding Lookup。</p>
+            </div>
+            <span class="twin-dim" id="phaseNode">Embedding</span>
+          </div>
+          <div class="twin-phase-rail" id="phaseRail"></div>
+        </section>
+
+        <section class="twin-monitor-card" aria-label="训练动态曲线">
+          <div class="twin-card-heading">
+            <div>
+              <h2>训练动态 · 模型层</h2>
+              <p>loss / 梯度 / 学习率 / MFU 实时曲线，用于判断收敛健康度并捕捉 loss spike。</p>
+            </div>
+            <span class="twin-dim">DIM 3</span>
+          </div>
+          <div class="twin-chart-row">
+            <div class="twin-chart-box twin-chart-box-wide">
+              <div class="twin-chart-label"><span>Train / Val loss</span><strong id="lossNow">--</strong></div>
+              <svg class="twin-chart" id="lossChart" viewBox="0 0 320 116" preserveAspectRatio="none"></svg>
+            </div>
+            <div class="twin-chart-box">
+              <div class="twin-chart-label"><span>MFU %</span><strong id="mfuNow">--</strong></div>
+              <svg class="twin-chart" id="mfuChart" viewBox="0 0 160 116" preserveAspectRatio="none"></svg>
+            </div>
+            <div class="twin-chart-box">
+              <div class="twin-chart-label"><span>Grad norm</span><strong id="gnNow">--</strong></div>
+              <svg class="twin-chart" id="gnChart" viewBox="0 0 160 116" preserveAspectRatio="none"></svg>
+            </div>
+          </div>
+        </section>
+
+        <section class="twin-monitor-card" aria-label="硬件多卡热力图">
+          <div class="twin-card-heading">
+            <div>
+              <h2>算力占用 · 基础设施层</h2>
+              <p id="hardwareSummary">512 × Ascend NPU · 64 节点，每格为NPU 卡槽，底色表示算力占用率，角标表示温度/异常风险。</p>
+            </div>
+            <span class="twin-dim">DIM 1</span>
+          </div>
+          <div class="twin-hardware-kpis" aria-label="硬件操作摘要">
+            <div><span>Avg util</span><strong id="hwUtil">--</strong></div>
+            <div><span>Low util</span><strong id="hwLow">--</strong></div>
+            <div><span>Thermal risk</span><strong id="hwThermal">--</strong></div>
+            <div><span>Action</span><strong id="hwAction">--</strong></div>
+          </div>
+          <div class="twin-heat" id="heat"></div>
+          <div class="twin-legend">
+            <span><i class="twin-swatch twin-swatch-util-low"></i>&lt;70% util</span>
+            <span><i class="twin-swatch twin-swatch-util-mid"></i>70-92% util</span>
+            <span><i class="twin-swatch twin-swatch-util-high"></i>&gt;92% util</span>
+            <span><i class="twin-swatch twin-swatch-thermal"></i>温度/异常</span>
+            <strong id="heatStat">util -- · peak -- · 异常 --</strong>
+          </div>
+        </section>
+
+        <section class="twin-monitor-grid" aria-label="风险和事件">
+          <article class="twin-monitor-card">
+            <div class="twin-card-heading">
+              <div>
+                <h2>风险归因</h2>
+                <p>规则引擎先给方向，后续可接真实日志和 profiling。</p>
+              </div>
+            </div>
+            <div class="twin-risk">
+              <strong id="riskNum">--</strong>
+              <div>
+                <span id="riskLabel">--</span>
+                <small>30 分钟中断概率</small>
+              </div>
+            </div>
+            <div class="twin-factors" id="factors"></div>
+          </article>
+
+          <article class="twin-monitor-card">
+            <div class="twin-card-heading">
+              <div>
+                <h2>事件流</h2>
+                <p>checkpoint、HCCL、straggler 和 dataloader 事件。</p>
+              </div>
+            </div>
+            <div class="twin-feed" id="feed"></div>
+          </article>
+        </section>
+
+        <section class="twin-monitor-card" aria-label="What-if 推演">
+          <div class="twin-card-heading">
+            <div>
+              <h2>What-if · 配置推演</h2>
+              <p>调整并行和 batch，查看吞吐、MFU、时长与风险方向。</p>
+            </div>
+            <span class="twin-dim">SIM</span>
+          </div>
+          <div class="twin-whatif">
+            <label>TP <b id="lTP">2</b><input type="range" id="rTP" min="0" max="3" value="1"></label>
+            <label>PP <b id="lPP">1</b><input type="range" id="rPP" min="0" max="4" value="0"></label>
+            <label>MBS <b id="lMB">1</b><input type="range" id="rMB" min="0" max="3" value="0"></label>
+            <label>GA <b id="lGA">64</b><input type="range" id="rGA" min="0" max="5" value="5"></label>
+          </div>
+          <div class="twin-outgrid">
+            <div><span>预测 MFU</span><strong id="oMfu">--</strong><small id="dMfu">--</small></div>
+            <div><span>预测吞吐</span><strong id="oTok">--</strong><small id="dTok">--</small></div>
+            <div><span>剩余时长</span><strong id="oEta">--</strong><small id="dEta">--</small></div>
+            <div><span>流水 bubble</span><strong id="oBub">--</strong><small>PP 占比</small></div>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <script src="./training-run-twin.js"></script>
+</body>
+</html>
