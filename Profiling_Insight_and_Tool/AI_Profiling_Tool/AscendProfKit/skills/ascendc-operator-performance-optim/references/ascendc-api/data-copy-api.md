@@ -101,6 +101,7 @@ blockCount=2, blockLen=8, srcGap=0, dstGap=1
 
 ## 切片数据搬运 (SliceInfo)
 
+{% raw %}
 ```cpp
 AscendC::SliceInfo srcSliceInfo[] = {{16, 70, 7, 3, 87}, {0, 2, 1, 1, 3}};
 AscendC::SliceInfo dstSliceInfo[] = {{0, 47, 0, 3, 48}, {0, 1, 0, 1, 2}};
@@ -108,6 +109,7 @@ uint32_t dimValue = 2;
 
 AscendC::DataCopy(dstLocal, srcGlobal, dstSliceInfo, srcSliceInfo, dimValue);
 ```
+{% endraw %}
 
 **SliceInfo 结构**：
 | 参数 | 含义 |
