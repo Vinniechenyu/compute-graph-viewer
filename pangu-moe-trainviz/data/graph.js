@@ -1,40 +1,66 @@
-/* Pangu Pro MoE 架构图（model-training-graphviz schema）。
-   故障锚点：Layer47 Gate 路由坍缩。x=节点中心, y=节点中心。
-   坐标给簇标签留 ~34px 顶部 headroom，避免标签压节点。 */
+/* Pangu Pro MoE 架构图（model-training-graphviz schema）。三栏布局：
+   左列权重 tensor (x290) · 中央算子脊柱 (x600) · 右列权重 tensor (x910)。
+   旁挂 param tensor 与其算子同 y，用虚线 parameter 边连入。
+   故障锚点：Layer47 Gate 路由坍缩，W_gate 旁挂在 Gate 左侧。x/y=节点中心。 */
 window.PANGU_GRAPH = {
-  width: 720,
+  width: 1100,
   height: 1210,
   clusters: [
-    { id: 'transformer', label: 'Transformer', x: 110, y: 114, width: 500, height: 915, colorKey: 'module:transformer' },
-    { id: 'decoder', label: 'Decoder Layer × 48', x: 146, y: 239, width: 428, height: 688, colorKey: 'module:decoder', repeat: 48 },
-    { id: 'moe', label: 'MoE FFN · MoGE 分组专家', x: 180, y: 534, width: 360, height: 393, colorKey: 'module:moe' },
+    { id: 'transformer', label: 'Transformer', x: 400, y: 114, width: 400, height: 915, colorKey: 'module:transformer' },
+    { id: 'decoder', label: 'Decoder Layer × 48', x: 430, y: 239, width: 340, height: 688, colorKey: 'module:decoder', repeat: 48 },
+    { id: 'moe', label: 'MoE FFN · MoGE 分组专家', x: 455, y: 534, width: 290, height: 393, colorKey: 'module:moe' },
   ],
   nodes: [
-    { id: 'token_ids', label: 'Token IDs', typeLabel: 'Input', kind: 'tensor', x: 360, y: 44, width: 190, height: 48, colorKey: 'io:input' },
-    { id: 'embedding', label: 'Parallel Embedding', typeLabel: 'Op', kind: 'op', x: 360, y: 176, width: 300, height: 56, colorKey: 'sem:embedding' },
-    { id: 'attn_norm', label: 'Attention RMSNorm', typeLabel: 'Op', kind: 'op', x: 360, y: 300, width: 240, height: 54, colorKey: 'sem:norm' },
-    { id: 'attention', label: 'Grouped Attention', typeLabel: 'Op', kind: 'op', x: 360, y: 392, width: 250, height: 54, colorKey: 'sem:attention' },
-    { id: 'moe_norm', label: 'MoE RMSNorm', typeLabel: 'Op', kind: 'op', x: 360, y: 486, width: 240, height: 54, colorKey: 'sem:norm' },
-    { id: 'gate', label: 'Layer47 Gate (Router)', typeLabel: 'Op', kind: 'op', x: 360, y: 596, width: 250, height: 56, colorKey: 'sem:gate' },
-    { id: 'a2a_dispatch', label: 'All-to-All Dispatch', typeLabel: 'Comm', kind: 'op', x: 360, y: 688, width: 264, height: 54, colorKey: 'sem:comm' },
-    { id: 'experts', label: 'MoGE Experts × N', typeLabel: 'Op', kind: 'op', x: 360, y: 782, width: 300, height: 60, colorKey: 'sem:moe' },
-    { id: 'a2a_combine', label: 'All-to-All Combine', typeLabel: 'Comm', kind: 'op', x: 360, y: 876, width: 264, height: 54, colorKey: 'sem:comm' },
-    { id: 'final_norm', label: 'Final RMSNorm', typeLabel: 'Op', kind: 'op', x: 360, y: 978, width: 220, height: 54, colorKey: 'sem:norm' },
-    { id: 'lm_head', label: 'LM Head Linear', typeLabel: 'Op', kind: 'op', x: 360, y: 1070, width: 244, height: 54, colorKey: 'sem:linear' },
-    { id: 'logits', label: 'Logits', typeLabel: 'Output', kind: 'tensor', x: 360, y: 1162, width: 190, height: 48, colorKey: 'io:output' },
+    // ── 中央算子脊柱 (x=600) ──
+    { id: 'token_ids', label: 'Token IDs', typeLabel: 'Input', kind: 'tensor', x: 600, y: 44, width: 190, height: 48, colorKey: 'io:input' },
+    { id: 'embedding', label: 'Parallel Embedding', typeLabel: 'Op', kind: 'op', x: 600, y: 176, width: 300, height: 56, colorKey: 'sem:embedding' },
+    { id: 'attn_norm', label: 'Attention RMSNorm', typeLabel: 'Op', kind: 'op', x: 600, y: 300, width: 240, height: 54, colorKey: 'sem:norm' },
+    { id: 'attention', label: 'Grouped Attention', typeLabel: 'Op', kind: 'op', x: 600, y: 392, width: 250, height: 54, colorKey: 'sem:attention' },
+    { id: 'moe_norm', label: 'MoE RMSNorm', typeLabel: 'Op', kind: 'op', x: 600, y: 486, width: 240, height: 54, colorKey: 'sem:norm' },
+    { id: 'gate', label: 'Layer47 Gate (Router)', typeLabel: 'Op', kind: 'op', x: 600, y: 596, width: 250, height: 56, colorKey: 'sem:gate' },
+    { id: 'a2a_dispatch', label: 'All-to-All Dispatch', typeLabel: 'Comm', kind: 'op', x: 600, y: 688, width: 264, height: 54, colorKey: 'sem:comm' },
+    { id: 'experts', label: 'MoGE Experts × N', typeLabel: 'Op', kind: 'op', x: 600, y: 782, width: 270, height: 60, colorKey: 'sem:moe' },
+    { id: 'a2a_combine', label: 'All-to-All Combine', typeLabel: 'Comm', kind: 'op', x: 600, y: 876, width: 264, height: 54, colorKey: 'sem:comm' },
+    { id: 'final_norm', label: 'Final RMSNorm', typeLabel: 'Op', kind: 'op', x: 600, y: 978, width: 220, height: 54, colorKey: 'sem:norm' },
+    { id: 'lm_head', label: 'LM Head Linear', typeLabel: 'Op', kind: 'op', x: 600, y: 1070, width: 244, height: 54, colorKey: 'sem:linear' },
+    { id: 'logits', label: 'Logits', typeLabel: 'Output', kind: 'tensor', x: 600, y: 1162, width: 190, height: 48, colorKey: 'io:output' },
+    // ── 左列权重 tensor (x=290) ──
+    { id: 'embedding_weight', label: 'Embedding Weight', typeLabel: 'Parameter', kind: 'tensor', x: 290, y: 176, width: 188, height: 50, colorKey: 'io:parameter' },
+    { id: 'qkv_weight', label: 'QKV Weight', typeLabel: 'Parameter', kind: 'tensor', x: 290, y: 392, width: 180, height: 50, colorKey: 'io:parameter' },
+    { id: 'w_gate', label: 'W_gate (Router)', typeLabel: 'Parameter', kind: 'tensor', x: 290, y: 596, width: 184, height: 50, colorKey: 'io:parameter' },
+    { id: 'expert_up_weight', label: 'Expert Up Weight', typeLabel: 'Parameter', kind: 'tensor', x: 290, y: 782, width: 188, height: 50, colorKey: 'io:parameter' },
+    { id: 'lm_head_weight', label: 'LM Head Weight', typeLabel: 'Parameter', kind: 'tensor', x: 290, y: 1070, width: 188, height: 50, colorKey: 'io:parameter' },
+    // ── 右列权重 tensor (x=910) ──
+    { id: 'attn_norm_gamma', label: 'Attn Norm γ', typeLabel: 'Parameter', kind: 'tensor', x: 910, y: 300, width: 176, height: 50, colorKey: 'io:parameter' },
+    { id: 'oproj_weight', label: 'O-Proj Weight', typeLabel: 'Parameter', kind: 'tensor', x: 910, y: 392, width: 184, height: 50, colorKey: 'io:parameter' },
+    { id: 'moe_norm_gamma', label: 'MoE Norm γ', typeLabel: 'Parameter', kind: 'tensor', x: 910, y: 486, width: 176, height: 50, colorKey: 'io:parameter' },
+    { id: 'expert_down_weight', label: 'Expert Down Weight', typeLabel: 'Parameter', kind: 'tensor', x: 910, y: 782, width: 192, height: 50, colorKey: 'io:parameter' },
+    { id: 'final_norm_gamma', label: 'Final Norm γ', typeLabel: 'Parameter', kind: 'tensor', x: 910, y: 978, width: 184, height: 50, colorKey: 'io:parameter' },
   ],
   edges: [
+    // 主干 activation（实线）
     { source: 'token_ids', target: 'embedding', tag: 'ACT', edgeType: 'activation' },
     { source: 'embedding', target: 'attn_norm', tag: 'ACT', edgeType: 'activation' },
-    { source: 'attn_norm', target: 'attention', tag: 'QKV', edgeType: 'parameter' },
+    { source: 'attn_norm', target: 'attention', tag: 'ACT', edgeType: 'activation' },
     { source: 'attention', target: 'moe_norm', tag: 'ACT', edgeType: 'activation' },
-    { source: 'moe_norm', target: 'gate', tag: 'ROUTE', edgeType: 'parameter' },
+    { source: 'moe_norm', target: 'gate', tag: 'ACT', edgeType: 'activation' },
     { source: 'gate', target: 'a2a_dispatch', tag: 'DISPATCH', edgeType: 'communication' },
     { source: 'a2a_dispatch', target: 'experts', tag: 'TOKENS', edgeType: 'communication' },
     { source: 'experts', target: 'a2a_combine', tag: 'COMBINE', edgeType: 'communication' },
     { source: 'a2a_combine', target: 'final_norm', tag: 'ACT', edgeType: 'activation' },
-    { source: 'final_norm', target: 'lm_head', tag: 'W', edgeType: 'parameter' },
+    { source: 'final_norm', target: 'lm_head', tag: 'ACT', edgeType: 'activation' },
     { source: 'lm_head', target: 'logits', tag: 'LOSS', edgeType: 'gradient' },
+    // 旁挂权重 parameter（虚线）
+    { source: 'embedding_weight', target: 'embedding', tag: 'W', edgeType: 'parameter', dashed: true },
+    { source: 'qkv_weight', target: 'attention', tag: 'W', edgeType: 'parameter', dashed: true },
+    { source: 'oproj_weight', target: 'attention', tag: 'W', edgeType: 'parameter', dashed: true },
+    { source: 'attn_norm_gamma', target: 'attn_norm', tag: 'γ', edgeType: 'parameter', dashed: true },
+    { source: 'moe_norm_gamma', target: 'moe_norm', tag: 'γ', edgeType: 'parameter', dashed: true },
+    { source: 'w_gate', target: 'gate', tag: 'W', edgeType: 'parameter', dashed: true },
+    { source: 'expert_up_weight', target: 'experts', tag: 'W', edgeType: 'parameter', dashed: true },
+    { source: 'expert_down_weight', target: 'experts', tag: 'W', edgeType: 'parameter', dashed: true },
+    { source: 'final_norm_gamma', target: 'final_norm', tag: 'γ', edgeType: 'parameter', dashed: true },
+    { source: 'lm_head_weight', target: 'lm_head', tag: 'W', edgeType: 'parameter', dashed: true },
   ],
   trainingEvidence: {
     gate: {
@@ -42,7 +68,14 @@ window.PANGU_GRAPH = {
       what: 'Layer47 Gate 路由坍缩——dispatch 形状跨 rank 不一致。',
       evidence: ['Rank2 dispatch [2048,1] vs 其余 [2048,4]', 'W_gate Rank2 分片出现 -inf（混合精度下溢）', 'Load Balance Loss 骤降≈0'],
       action: '右键「追溯梯度流」→ 定位 Step1997 混合精度写越界。',
-      relatedNodeIds: ['a2a_dispatch', 'experts', 'a2a_combine'],
+      relatedNodeIds: ['w_gate', 'a2a_dispatch', 'experts', 'a2a_combine'],
+    },
+    w_gate: {
+      dimension: '混合精度 / 权重', metric: 'W_gate 分片',
+      what: 'Router 权重 W_gate 是故障源头：Rank2 分片混合精度写越界。',
+      evidence: ['Rank2 分片 [4096,256]→[4096,64]', '数值出现 -inf 下溢'],
+      action: '看右栏 Weight Diff 与路由热图 Rank2 列空白。',
+      relatedNodeIds: ['gate', 'a2a_dispatch', 'experts'],
     },
     a2a_dispatch: {
       dimension: '分布式通信', metric: 'All-to-All bytes',
@@ -56,7 +89,27 @@ window.PANGU_GRAPH = {
       what: 'MoGE 分组专家收不到 token，负载塌陷、梯度暴涨。',
       evidence: ['Rank2 专家组 0 token', 'MoE 分支梯度范数暴涨'],
       action: '结合右栏路由热图看 Rank2 列空白。',
-      relatedNodeIds: ['a2a_dispatch', 'a2a_combine', 'gate'],
+      relatedNodeIds: ['expert_up_weight', 'expert_down_weight', 'a2a_dispatch', 'a2a_combine', 'gate'],
     },
+    // ── 旁挂权重 / 参数：功能说明 ──
+    embedding_weight: { dimension: '参数 · 词嵌入', metric: '[vocab, hidden]', what: '词嵌入矩阵：把 token id 查表成 hidden 向量；按 TP 在词表维切分，各 rank 持一片。', evidence: ['形状随词表大小、hidden_size 增长'], action: '本次故障无关，作对照。' },
+    qkv_weight: { dimension: '参数 · 注意力', metric: '[hidden, 3·head·dim]', what: 'Q/K/V 投影权重：把 hidden 投到查询/键/值三组子空间；TP 在 head 维切分，须与输出投影对齐。', evidence: ['切分必须与 O-Proj 对齐，否则注意力错位'], action: '正常。' },
+    oproj_weight: { dimension: '参数 · 注意力', metric: '[head·dim, hidden]', what: '注意力输出投影：把多头拼接结果投回 hidden；与 QKV 的 TP 切分互为转置关系。', evidence: ['TP all-reduce 在此汇合各 head 分片'], action: '正常。' },
+    attn_norm_gamma: { dimension: '参数 · 归一化', metric: '[hidden]', what: 'Attention 前 RMSNorm 的缩放参数 γ：逐通道缩放归一化后的激活，稳定注意力输入分布。', evidence: ['逐元素、不切分，各 rank 复制一份'], action: '正常。' },
+    moe_norm_gamma: { dimension: '参数 · 归一化', metric: '[hidden]', what: 'MoE 前 RMSNorm 的缩放参数 γ：归一化进入 Gate 的 hidden，影响路由打分的数值尺度。', evidence: ['若 γ 异常会间接放大/压低 router logits'], action: '本次正常，畸变在 W_gate。' },
+    expert_up_weight: { dimension: '参数 · 专家 FFN', metric: '[hidden, ffn]', what: 'MoGE 专家的上投影（gate/up）：把分到本组的 token 升维到 FFN 中间维做非线性。', evidence: ['Rank2 专家组 0 token 时，这片权重收不到梯度'], action: '看路由热图 Rank2 列空白。' },
+    expert_down_weight: { dimension: '参数 · 专家 FFN', metric: '[ffn, hidden]', what: 'MoGE 专家的下投影：把 FFN 中间结果投回 hidden，随后 All-to-All 汇聚回原 token 位置。', evidence: ['Rank2 专家未激活 → 该片梯度为 0'], action: '看路由热图 Rank2 列空白。' },
+    final_norm_gamma: { dimension: '参数 · 归一化', metric: '[hidden]', what: '最终 RMSNorm 的缩放参数 γ：输出送入 LM Head 前的逐通道缩放。', evidence: ['逐元素、不切分'], action: '正常。' },
+    lm_head_weight: { dimension: '参数 · 输出头', metric: '[hidden, vocab]', what: 'LM Head 投影权重：把 hidden 投到词表 logits 算交叉熵；词表越大越是显存/通信压力点。', evidence: ['常与 embedding 权重共享（tie weights）'], action: '正常。' },
+    // ── 主干算子：功能说明 ──
+    token_ids: { dimension: '输入', metric: '[batch, seq]', what: '输入 token id 序列，进入并行词嵌入。' },
+    embedding: { dimension: '算子 · 词嵌入', metric: 'lookup', what: '并行词嵌入查表：token id → hidden 向量，按 TP 在词表维切分后 all-reduce 汇总。' },
+    attn_norm: { dimension: '算子 · 归一化', metric: 'RMSNorm', what: 'Attention 前 RMSNorm：用 γ 逐通道缩放，稳定注意力输入。' },
+    attention: { dimension: '算子 · 注意力', metric: 'GQA', what: '分组注意力：QK^T 打分、softmax、加权 V；TP 在 head 维并行。' },
+    moe_norm: { dimension: '算子 · 归一化', metric: 'RMSNorm', what: 'MoE 前 RMSNorm：归一化进入 Gate 的 hidden。' },
+    a2a_combine: { dimension: '算子 · 通信', metric: 'All-to-All', what: 'All-to-All 汇聚：把各 rank 专家算完的 token 交换回原始位置。Rank2 因黑洞汇聚量同样异常。', relatedNodeIds: ['experts', 'gate'] },
+    final_norm: { dimension: '算子 · 归一化', metric: 'RMSNorm', what: '最终 RMSNorm：送入 LM Head 前的归一化缩放。' },
+    lm_head: { dimension: '算子 · 输出头', metric: 'Linear', what: 'LM Head 线性层：hidden → 词表 logits，进入 loss 与反向传播。' },
+    logits: { dimension: '输出', metric: '[batch, seq, vocab]', what: '词表 logits：交叉熵 loss 的输入；本次 loss 在此爆炸。' },
   },
 };

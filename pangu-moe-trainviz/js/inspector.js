@@ -118,7 +118,10 @@ window.Inspector = (function () {
     const hb = document.createElement('div'); hb.className = 'insp-block';
     hb.innerHTML = `<div class="insp-title">路由热图 <span class="insp-hint" title="${TIPS.heatmap}">行=专家组 · 列=TP rank</span></div>`;
     const grid = document.createElement('div'); grid.className = 'insp-heat';
-    grid.style.gridTemplateColumns = `28px repeat(${hm.cols}, var(--insp-heat-cell))`;
+    // 格子尺寸用字面值写死在 JS，避免被 app.css 的 --insp-heat-cell 反复改小
+    const CELL = 48;
+    grid.style.gridTemplateColumns = `36px repeat(${hm.cols}, ${CELL}px)`;
+    grid.style.gap = '6px';
     grid.appendChild(label('组', 'insp-heat-label', '每一行是一组 MoGE 专家。'));
     for (let c = 0; c < hm.cols; c++) {
       grid.appendChild(label(`TP${c}`, 'insp-heat-label insp-heat-col', `TP rank ${c}` + (c === hm.anomalyCol ? '：异常空白列。' : '：正常参与路由。')));
@@ -127,6 +130,7 @@ window.Inspector = (function () {
       grid.appendChild(label(`G${r}`, 'insp-heat-label insp-heat-row', `专家组${r}`));
       row.forEach((v, c) => {
         const cell = document.createElement('div'); cell.className = 'insp-heat-cell';
+        cell.style.width = cell.style.height = CELL + 'px';
         cell.tabIndex = 0;
         const text = heatTitle(r, c, v, hm.anomalyCol);
         cell.title = text;

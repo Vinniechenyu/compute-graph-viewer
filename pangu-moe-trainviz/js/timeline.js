@@ -16,6 +16,12 @@ window.TimelineView = (function () {
       cursor: initialStep,
       options: { width: 1040, height: 160 },
       onBrush: (w) => Bus.emit('interestWindow', w),
+      tooltip: (step) => {
+        if (step < ts.faultStep) return 'train/val 平稳下降、eval 缓升——健康区。';
+        if (step === ts.faultStep) return `混合精度权重更新内存 stride 算错 → 写越界（根因）。`;
+        if (step <= ts.collapseStep + 1) return `Step ${ts.collapseStep} 路由坍缩起点：val loss 开始爆炸、eval 跳水。`;
+        return 'val loss 高频振荡、eval 持续下滑——路由坍缩后的崩溃区。';
+      },
     });
     Bus.on('stepCursor', s => ctrl.setCursor(s));
     Bus.on('interestWindow', w => ctrl.setInterestWindow(w));
