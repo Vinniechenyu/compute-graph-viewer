@@ -76,6 +76,25 @@ window.Inspector = (function () {
     return TOPOLOGY_STEPS[((index % len) + len) % len];
   }
 
+  function topologyStepIndexForNode(nodeId) {
+    const aliases = {
+      embedding_weight: 'embedding',
+      attn_norm: 'attention',
+      attn_norm_gamma: 'attention',
+      qkv_weight: 'attention',
+      oproj_weight: 'attention',
+      moe_norm_gamma: 'moe_norm',
+      w_gate: 'gate',
+      moe_block: 'gate',
+      expert_up_weight: 'experts',
+      expert_down_weight: 'experts',
+      final_norm_gamma: 'final_norm',
+      lm_head_weight: 'lm_head',
+    };
+    const target = aliases[nodeId] || nodeId;
+    return TOPOLOGY_STEPS.findIndex(step => step.id === target || step.nodeId === target);
+  }
+
   function emitTopologySelect(step) {
     if (!step || !step.nodeId) return;
     const m = window.CrossMap ? CrossMap.resolve(step.nodeId) : { relatedNodeIds: [], cols: [], weightKey: null };
@@ -394,8 +413,17 @@ window.Inspector = (function () {
     host = el;
     render('gate');
     Bus.on('select', p => {
-      if (!p || !p.weightKey || p.source === 'topology-playback' || p.weightKey === currentWeightKey) return;
-      render(p.weightKey);
+      if (!p || p.source === 'topology-playback') return;
+      const stepIndex = topologyStepIndexForNode(p.id);
+      if (stepIndex >= 0) {
+        stopTopologyPlayback();
+        topologyStepIndex = stepIndex;
+      }
+      if (p.weightKey && p.weightKey !== currentWeightKey) {
+        render(p.weightKey);
+      } else if (stepIndex >= 0) {
+        setTopologyStep(stepIndex, false);
+      }
     });
   }
   return { init };
