@@ -38,9 +38,31 @@ body { background: var(--background); color: var(--foreground); font-family: var
 .pane-body { padding: var(--space-3); }
 .graph-body { padding: 0; }
 
-/* 架构图：保证白字、避免暗文字 */
-.ts-root .pto-model-graphviz-node-label { fill: var(--foreground); }
-.ts-root .pto-model-graphviz-node-type { fill: var(--foreground-secondary); }
+/* 架构图：model-graphviz 的 --model-graphviz-* 变量本只定义在
+   .pto-model-graphviz-pattern-page（pattern 自带 demo 页）上；消费页不带该类，
+   变量会落到黑色默认值 → 边/箭头/连线/簇标签全黑不可见。在 .ts-root 补齐。 */
+.ts-root {
+  --model-graphviz-bg: var(--background);
+  --model-graphviz-stage-bg: var(--background);
+  --model-graphviz-line: var(--foreground);
+  --model-graphviz-line-soft: var(--border-strong);
+  --model-graphviz-node-label: var(--foreground);
+  --model-graphviz-node-type: var(--foreground-secondary);
+  --model-graphviz-cluster-label: color-mix(in srgb, var(--foreground) 86%, transparent);
+  --model-graphviz-toggle-bg: var(--state-focus);
+  --model-graphviz-toggle-border: var(--border-strong);
+  --model-graphviz-toggle-icon: var(--foreground);
+  --model-graphviz-tensor-fill: color-mix(in srgb, var(--surface-4) 72%, var(--foreground));
+  --model-graphviz-tensor-stroke: var(--border-strong);
+  --model-graphviz-report-p0: #ff2d7a;
+  --model-graphviz-report-p1: #ff9d00;
+  --model-graphviz-report-p2: #ffe600;
+  --model-graphviz-report-priority-on-dark: var(--foreground);
+  --model-graphviz-report-priority-on-light: var(--background);
+  --model-graphviz-node-shadow: none;
+  --model-graphviz-parent-shadow: none;
+  --model-graphviz-panel-shadow: none;
+}
 
 #trace-btn { font-size: var(--font-size-label-xs); }
 
