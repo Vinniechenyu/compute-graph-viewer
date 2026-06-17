@@ -419,17 +419,44 @@
 
           <rect x="818" y="40" width="324" height="500" rx="14" fill="#fff7ed" stroke="#fdba74" stroke-width="2"/>
           <text x="980" y="80" text-anchor="middle" font-size="22" font-weight="800" fill="#c2410c">并行坐标层</text>
-          <g font-size="15" font-weight="700" fill="#0f172a">
-            <use href="#chip-shell-compact" x="838" y="118" width="144" height="108"/>
-            <text x="910" y="180" text-anchor="middle">PP5</text>
-            <use href="#chip-shell-compact" x="990" y="118" width="144" height="108"/>
-            <text x="1062" y="180" text-anchor="middle">TP2</text>
-            <use href="#chip-shell-compact" x="838" y="268" width="144" height="108"/>
-            <text x="910" y="330" text-anchor="middle">DP7</text>
-            <use href="#chip-shell-compact" x="990" y="268" width="144" height="108"/>
-            <text x="1062" y="330" text-anchor="middle">CP1</text>
-            <use href="#chip-shell-compact" x="914" y="418" width="144" height="108"/>
-            <text x="986" y="480" text-anchor="middle">EP19</text>
+          <text x="980" y="104" text-anchor="middle" font-size="12" font-weight="700" fill="#9a3412">同一 rank/device 上叠加五层语义标签</text>
+          <path d="M858 116 L858 496" stroke="#fdba74" stroke-width="1.5" stroke-dasharray="6 8"/>
+          <g font-size="12" font-weight="700">
+            <g opacity="0.98">
+              <path d="M858 134 L1074 134 L1102 118 L886 118 Z" fill="#ffedd5" stroke="#fdba74" stroke-width="1.4"/>
+              <path d="M1074 134 L1102 118 L1102 156 L1074 172 Z" fill="#fed7aa" stroke="#fdba74" stroke-width="1.4"/>
+              <rect x="858" y="134" width="216" height="38" rx="8" fill="#fff7ed" stroke="#fdba74" stroke-width="2"/>
+              <text x="966" y="150" text-anchor="middle" font-size="14" font-weight="800" fill="#c2410c">PP5</text>
+              <text x="966" y="165" text-anchor="middle" font-size="11" fill="#7c2d12">layers 36-42</text>
+            </g>
+            <g opacity="0.98">
+              <path d="M858 206 L1074 206 L1102 190 L886 190 Z" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1.4"/>
+              <path d="M1074 206 L1102 190 L1102 228 L1074 244 Z" fill="#ddd6fe" stroke="#c4b5fd" stroke-width="1.4"/>
+              <rect x="858" y="206" width="216" height="38" rx="8" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="2"/>
+              <text x="966" y="222" text-anchor="middle" font-size="14" font-weight="800" fill="#6d28d9">TP2</text>
+              <text x="966" y="237" text-anchor="middle" font-size="11" fill="#4c1d95">QKV shard 2/8</text>
+            </g>
+            <g opacity="0.98">
+              <path d="M858 278 L1074 278 L1102 262 L886 262 Z" fill="#dbeafe" stroke="#93c5fd" stroke-width="1.4"/>
+              <path d="M1074 278 L1102 262 L1102 300 L1074 316 Z" fill="#bfdbfe" stroke="#93c5fd" stroke-width="1.4"/>
+              <rect x="858" y="278" width="216" height="38" rx="8" fill="#eff6ff" stroke="#93c5fd" stroke-width="2"/>
+              <text x="966" y="294" text-anchor="middle" font-size="14" font-weight="800" fill="#1d4ed8">DP7</text>
+              <text x="966" y="309" text-anchor="middle" font-size="11" fill="#1e3a8a">replica group</text>
+            </g>
+            <g opacity="0.98">
+              <path d="M858 350 L1074 350 L1102 334 L886 334 Z" fill="#cffafe" stroke="#67e8f9" stroke-width="1.4"/>
+              <path d="M1074 350 L1102 334 L1102 372 L1074 388 Z" fill="#a5f3fc" stroke="#67e8f9" stroke-width="1.4"/>
+              <rect x="858" y="350" width="216" height="38" rx="8" fill="#ecfeff" stroke="#67e8f9" stroke-width="2"/>
+              <text x="966" y="366" text-anchor="middle" font-size="14" font-weight="800" fill="#0e7490">CP1</text>
+              <text x="966" y="381" text-anchor="middle" font-size="11" fill="#155e75">token 2048-4095</text>
+            </g>
+            <g opacity="0.98">
+              <path d="M858 422 L1074 422 L1102 406 L886 406 Z" fill="#fee2e2" stroke="#fca5a5" stroke-width="1.4"/>
+              <path d="M1074 422 L1102 406 L1102 444 L1074 460 Z" fill="#fecaca" stroke="#fca5a5" stroke-width="1.4"/>
+              <rect x="858" y="422" width="216" height="38" rx="8" fill="#fef2f2" stroke="#fca5a5" stroke-width="2"/>
+              <text x="966" y="438" text-anchor="middle" font-size="14" font-weight="800" fill="#b91c1c">EP19</text>
+              <text x="966" y="453" text-anchor="middle" font-size="11" fill="#7f1d1d">experts 152-159</text>
+            </g>
           </g>
           <rect x="848" y="552" width="264" height="38" rx="10" fill="#fff" stroke="#fdba74"/>
           <text x="980" y="576" text-anchor="middle" font-size="13" font-weight="700" fill="#9a3412">同一个 rank 会同时落在多个并行维度中</text>
