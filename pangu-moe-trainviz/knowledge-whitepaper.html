@@ -492,15 +492,19 @@
           <text x="590" y="50" text-anchor="middle" font-size="26" font-weight="800" fill="#0f172a">所有 rank 都有同一份模型参数 tensor，但输入的样本 / mini-batch shard 不同</text>
           <rect x="96" y="84" width="988" height="84" rx="22" fill="#eff6ff" stroke="#93c5fd" stroke-width="2"/>
           <text x="590" y="112" text-anchor="middle" font-size="18" font-weight="800" fill="#1d4ed8">全局训练数据集 / 本 step 的大 batch</text>
-          <g font-size="14" font-weight="700">
-            <rect x="132" y="122" width="208" height="24" rx="10" fill="#dbeafe" stroke="#93c5fd"/>
-            <text x="236" y="139" text-anchor="middle" fill="#1d4ed8">样本 shard A · 例如 samples 0-511</text>
-            <rect x="362" y="122" width="208" height="24" rx="10" fill="#dbeafe" stroke="#93c5fd"/>
-            <text x="466" y="139" text-anchor="middle" fill="#1d4ed8">样本 shard B · 例如 samples 512-1023</text>
-            <rect x="592" y="122" width="208" height="24" rx="10" fill="#dbeafe" stroke="#93c5fd"/>
-            <text x="696" y="139" text-anchor="middle" fill="#1d4ed8">样本 shard C · 例如 samples 1024-1535</text>
-            <rect x="822" y="122" width="226" height="24" rx="10" fill="#dbeafe" stroke="#93c5fd"/>
-            <text x="935" y="139" text-anchor="middle" fill="#1d4ed8">样本 shard D · 例如 samples 1536-2047</text>
+          <g font-size="13" font-weight="700">
+            <rect x="132" y="122" width="198" height="34" rx="10" fill="#dbeafe" stroke="#93c5fd"/>
+            <text x="231" y="137" text-anchor="middle" fill="#1d4ed8">样本 shard A</text>
+            <text x="231" y="151" text-anchor="middle" font-size="11" fill="#1e40af">samples 0-511</text>
+            <rect x="362" y="122" width="198" height="34" rx="10" fill="#dbeafe" stroke="#93c5fd"/>
+            <text x="461" y="137" text-anchor="middle" fill="#1d4ed8">样本 shard B</text>
+            <text x="461" y="151" text-anchor="middle" font-size="11" fill="#1e40af">samples 512-1023</text>
+            <rect x="592" y="122" width="198" height="34" rx="10" fill="#dbeafe" stroke="#93c5fd"/>
+            <text x="691" y="137" text-anchor="middle" fill="#1d4ed8">样本 shard C</text>
+            <text x="691" y="151" text-anchor="middle" font-size="11" fill="#1e40af">samples 1024-1535</text>
+            <rect x="822" y="122" width="198" height="34" rx="10" fill="#dbeafe" stroke="#93c5fd"/>
+            <text x="921" y="137" text-anchor="middle" fill="#1d4ed8">样本 shard D</text>
+            <text x="921" y="151" text-anchor="middle" font-size="11" fill="#1e40af">samples 1536-2047</text>
           </g>
 
           <g transform="translate(70,202)" class="svg-chip">
@@ -548,13 +552,14 @@
             <text x="110" y="246" text-anchor="middle" font-size="12" fill="#526070">参数副本仍然相同</text>
           </g>
 
-          <path d="M236 146 L180 202" stroke="#2563eb" stroke-width="2.5" fill="none" marker-end="url(#dpArrow)"/>
-          <path d="M466 146 L450 202" stroke="#2563eb" stroke-width="2.5" fill="none" marker-end="url(#dpArrow)"/>
-          <path d="M696 146 L720 202" stroke="#2563eb" stroke-width="2.5" fill="none" marker-end="url(#dpArrow)"/>
-          <path d="M935 146 L990 202" stroke="#2563eb" stroke-width="2.5" fill="none" marker-end="url(#dpArrow)"/>
+          <path d="M231 156 L180 202" stroke="#2563eb" stroke-width="2.5" fill="none" marker-end="url(#dpArrow)"/>
+          <path d="M461 156 L450 202" stroke="#2563eb" stroke-width="2.5" fill="none" marker-end="url(#dpArrow)"/>
+          <path d="M691 156 L720 202" stroke="#2563eb" stroke-width="2.5" fill="none" marker-end="url(#dpArrow)"/>
+          <path d="M921 156 L990 202" stroke="#2563eb" stroke-width="2.5" fill="none" marker-end="url(#dpArrow)"/>
 
-          <path d="M180 518 C320 548, 860 548, 1000 518" fill="none" stroke="#2563eb" stroke-width="4" stroke-dasharray="10 8"/>
-          <text x="590" y="540" text-anchor="middle" font-size="15" font-weight="800" fill="#1d4ed8">backward 后做 gradient all-reduce，同步的是模型更新，不是把各自的数据再拼回去</text>
+          <path d="M180 548 C320 588, 860 588, 1000 548" fill="none" stroke="#2563eb" stroke-width="4" stroke-dasharray="10 8"/>
+          <rect x="246" y="510" width="688" height="44" rx="14" fill="#ffffff" stroke="#93c5fd" stroke-width="1.5"/>
+          <text x="590" y="537" text-anchor="middle" font-size="15" font-weight="800" fill="#1d4ed8">backward 后做 gradient all-reduce：同步模型更新，不把各自的数据再拼回去</text>
         </svg>
       </div>
       <div class="evidence-caption">类比：多个老师拿着同一本答案标准批不同学生作业。这里“数据不同”指的是每个人拿到的样本集合不同，例如不同 mini-batch shard；不是说模型参数 tensor 长得不一样。</div>
