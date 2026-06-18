@@ -1,0 +1,248 @@
+@import '../../vendor/pto-design-system/tokens/foundation.css';
+@import '../../vendor/pto-design-system/tokens/semantic.css';
+@import '../../vendor/pto-design-system/tokens/components.css';
+@import '../../vendor/pto-design-system/css/style.css';
+
+:root {
+  color-scheme: dark;
+  --rs-page-bg:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--primary) 12%, transparent) 0%, transparent 32%),
+    radial-gradient(circle at top right, color-mix(in srgb, var(--warning) 8%, transparent) 0%, transparent 28%),
+    linear-gradient(180deg, #111215 0%, #090a0d 100%);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  font: var(--text-body);
+  color: var(--foreground);
+  background: var(--background);
+}
+
+button {
+  font: inherit;
+}
+
+.rs-page {
+  min-height: 100vh;
+  background: var(--rs-page-bg);
+}
+
+.rs-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: var(--comp-toolbar-height);
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--comp-toolbar-border);
+  background: color-mix(in srgb, var(--comp-toolbar-bg) 88%, black 12%);
+  backdrop-filter: var(--surface-backdrop-filter-soft);
+  -webkit-backdrop-filter: var(--surface-backdrop-filter-soft);
+}
+
+.rs-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.rs-title strong {
+  font: var(--text-title-2);
+  color: var(--foreground);
+}
+
+.rs-title span {
+  color: var(--foreground-secondary);
+  font: var(--text-body-sm);
+}
+
+.rs-toolbar-tags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rs-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--stat-chip-height);
+  padding: 0 var(--stat-chip-padding-x);
+  border-radius: var(--stat-chip-radius);
+  border: 1px solid var(--stat-chip-border);
+  background: var(--stat-chip-bg);
+  color: var(--stat-chip-fg);
+  font: var(--text-label);
+  white-space: nowrap;
+}
+
+.rs-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  padding: 18px;
+  min-width: 0;
+}
+
+.rs-card {
+  display: grid;
+  gap: 12px;
+  padding: var(--card-padding);
+  border-radius: var(--card-radius);
+  border: 1px solid var(--card-border);
+  background: color-mix(in srgb, var(--card-bg) 92%, black 8%);
+  min-width: 0;
+}
+
+.rs-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.rs-card-head h2 {
+  margin: 0;
+  color: var(--foreground);
+  font: var(--text-title-2);
+}
+
+.rs-card-copy {
+  margin: 6px 0 0;
+  color: var(--foreground-secondary);
+  font: var(--text-body-sm);
+  line-height: 1.55;
+}
+
+.rs-head-controls {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rs-seg {
+  display: inline-flex;
+  gap: var(--segmented-control-gap);
+  padding: var(--segmented-control-padding);
+  border-radius: var(--segmented-control-radius);
+  background: var(--segmented-control-bg);
+  border: 1px solid var(--segmented-control-border);
+}
+
+.rs-seg button {
+  min-width: 52px;
+  height: var(--button-height-sm);
+  padding: 0 var(--button-padding-x-sm);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--foreground-secondary);
+  cursor: pointer;
+}
+
+.rs-seg button:hover {
+  background: var(--state-hover);
+  color: var(--foreground);
+}
+
+.rs-seg button.is-active {
+  border-color: var(--border-default);
+  background: var(--state-selected);
+  color: var(--foreground);
+}
+
+.rs-state {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--background-elevated) 70%, transparent);
+  color: var(--foreground-muted);
+  font: var(--text-label);
+  letter-spacing: 0.06em;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.rs-state-hover {
+  border-color: color-mix(in srgb, var(--primary) 50%, var(--border-default));
+  color: color-mix(in srgb, var(--primary) 84%, white 16%);
+}
+
+.rs-state-selected {
+  border-color: color-mix(in srgb, var(--success) 56%, var(--border-default));
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+  color: color-mix(in srgb, var(--success) 86%, white 14%);
+}
+
+.rs-preview {
+  position: relative;
+  overflow: hidden;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--border-subtle) 80%, transparent);
+  min-height: 380px;
+}
+
+.rs-preview canvas {
+  display: block;
+}
+
+/* per-style frame tint so each panel reads as its own render target */
+.rs-preview-flat,
+.rs-preview-clay {
+  border-color: color-mix(in srgb, #ffffff 16%, transparent);
+}
+
+.rs-preview-clay[data-theme='dark'] {
+  border-color: color-mix(in srgb, #ffffff 8%, transparent);
+}
+
+.rs-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.rs-clear {
+  height: var(--button-height-sm);
+  padding: 0 var(--button-padding-x-sm);
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: var(--state-selected);
+  color: var(--foreground);
+  cursor: pointer;
+}
+
+.rs-clear:hover {
+  background: var(--state-hover);
+}
+
+@media (max-width: 1280px) {
+  .rs-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .rs-toolbar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
