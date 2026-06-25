@@ -563,6 +563,8 @@ function baseDsMap(keys){
 }
 const hexInt=hex=>parseInt(hex.slice(1),16);
 let SEM_COLOR={}, LINE={}, GRAY=0x7a7f88;
+const isWeightNode=n=>!!n&&(n.colorKey==='io:parameter'||/_weight$/i.test(n.id||'')||/^w_/.test(n.id||''));
+const weightFillColor=()=>hexInt((document.documentElement.dataset.theme||savedTheme)==='light'?'#cbd5e1':'#64748b');
 function applySemanticPalette(){
   const id=SELECTED_PALETTE_ID;
   const lightVariantId=SELECTED_LIGHT_VARIANT_ID;
@@ -575,6 +577,7 @@ function applySemanticPalette(){
   LINE={tp:SEM_COLOR['sem:attention'],ep:SEM_COLOR['sem:comm'],pp:SEM_COLOR['sem:mlp']};
 }
 function colorForNode(n){
+  if(isWeightNode(n))return weightFillColor();
   return (n.colorKey&&SEM_COLOR[n.colorKey]!=null)?SEM_COLOR[n.colorKey]:GRAY;
 }
 const toHex=n=>'#'+((n>>>0)&0xffffff).toString(16).padStart(6,'0');
@@ -776,24 +779,30 @@ zoomSlider?.addEventListener('input',()=>{
 });
 syncZoomControl();
 let viewTween=null;
-function setCameraView(view,theta,phi){
+function setCameraView(view,theta,phi,opts={}){
   if(viewTween)cancelAnimationFrame(viewTween);
   setCameraMode('ortho');
   setActiveView(view);
-  const start={theta:cam.theta,phi:cam.phi}, duration=260, t0=performance.now();
+  const start={theta:cam.theta,phi:cam.phi,r:cam.r,target:target.clone()}, duration=260, t0=performance.now();
+  const nextTarget=opts.target??target.clone();
+  const nextR=opts.zoomRatio?clampZoom(DEFAULT_CAM.r/opts.zoomRatio):cam.r;
   const step=now=>{
     const t=Math.min(1,(now-t0)/duration), e=1-Math.pow(1-t,3);
     cam.theta=start.theta+(theta-start.theta)*e;
     cam.phi=start.phi+(phi-start.phi)*e;
+    cam.r=start.r+(nextR-start.r)*e;
+    target.lerpVectors(start.target,nextTarget,e);
     updateCam();
     syncZoomControl();
     if(t<1)viewTween=requestAnimationFrame(step);
   };
   viewTween=requestAnimationFrame(step);
 }
-viewIso?.addEventListener('click',()=>setCameraView('iso',DEFAULT_CAM.theta,DEFAULT_CAM.phi));
-viewFront?.addEventListener('click',()=>setCameraView('front',0,Math.PI/2));
-viewRight?.addEventListener('click',()=>setCameraView('right',Math.PI/2,Math.PI/2));
+const sideViewTarget=()=>new THREE.Vector3(0,ARCH_HEIGHT_CENTER-0.55,(archDepth('input')+archDepth('output'))*0.5);
+const frontViewTarget=()=>new THREE.Vector3(0,ARCH_HEIGHT_CENTER-0.35,(archDepth('input')+archDepth('output'))*0.5);
+viewIso?.addEventListener('click',()=>setCameraView('iso',DEFAULT_CAM.theta,DEFAULT_CAM.phi,{target:DEFAULT_TARGET.clone()}));
+viewFront?.addEventListener('click',()=>setCameraView('front',0,Math.PI/2,{target:frontViewTarget(),zoomRatio:1.4}));
+viewRight?.addEventListener('click',()=>setCameraView('right',Math.PI/2,Math.PI/2,{target:sideViewTarget(),zoomRatio:1.32}));
 const hemi=new THREE.HemisphereLight(0xffffff,initialSceneTheme.ground,initialSceneTheme.hemi); scene.add(hemi);
 const key=new THREE.DirectionalLight(0xffffff,initialSceneTheme.key); key.position.set(8,20,12); scene.add(key);
 const fill=new THREE.DirectionalLight(0xffffff,initialSceneTheme.fill); fill.position.set(-8,8,-10); scene.add(fill);
@@ -1059,8 +1068,22 @@ function applyViewPresentation(){
   if(typeof archLabels==='undefined')return;
   archLabels.forEach(label=>{
     const only=label.userData?.viewOnly||null;
-    const hideGenericFront=activeView==='front'&&!only&&!label.userData?.keepInFront;
-    label.visible=!hideGenericFront&&(!only||only===activeView);
+    const builtInNode=!only&&label.userData?.labelKind==='node';
+    const builtInFlat=(activeView==='front'||activeView==='right')&&builtInNode;
+    const hideGenericFlat=(
+      (activeView==='right'&&!only&&!label.userData?.keepInFront&&!builtInFlat)||
+      (activeView==='front'&&!only&&!label.userData?.keepInFront&&!builtInFlat)
+    );
+    label.visible=!hideGenericFlat&&(!only||only===activeView);
+    if(builtInNode)label.rotation.y=activeView==='right'?Math.PI/2:0;
+    if(label.scale){
+      const boost=activeView==='front'
+        ? (label.userData?.frontBoost??1.75)
+        : activeView==='right'
+          ? (label.userData?.sideBoost??label.userData?.frontBoost??1.75)
+          : 1;
+      label.scale.setScalar(boost);
+    }
     if(label.material){
       const tags=label.userData?.tags||[];
       const opacity=focusActive()?(tagMatchesFocus(tags)?1:0.14):1;
@@ -1083,7 +1106,14 @@ function addArchLabel(text,p,colorHex,scale,renderOrder=7,opts={}){
     sp.position.set(p.x,p.y,p.z+ARCH_FRONT*2.2);
   }
   sp.renderOrder=renderOrder;
-  sp.userData={viewOnly:opts.viewOnly||null,tags:opts.tags||[],keepInFront:!!opts.keepInFront};
+  sp.userData={
+    viewOnly:opts.viewOnly||null,
+    tags:opts.tags||[],
+    keepInFront:!!opts.keepInFront,
+    labelKind:opts.labelKind||null,
+    frontBoost:opts.frontBoost??1,
+    sideBoost:opts.sideBoost??opts.frontBoost??1
+  };
   sp.visible=!sp.userData.viewOnly||sp.userData.viewOnly===activeView;
   archLabels.push(sp);
   scene.add(sp);
@@ -1128,7 +1158,7 @@ function addCluster(c,layer,opacity,{showLabel=true,labelText=null,labelScale=nu
   if(showLabel&&c.id!=='expert_pool'){
     const label=labelText??c.label;
     const labelColor=c.id==='moe_layer'?ARCH_LAYER_LABEL():colorForNode(c);
-    addArchLabel(label,p.clone().add(new THREE.Vector3(0,c.height*ARCH_PS/2-0.12,0)),labelColor,labelScale??Math.min(1.25,c.width*ARCH_PS*0.22),layerRenderOrder(layer)+0.1,{tags:archTagsFor(c.id,layer)});
+    addArchLabel(label,p.clone().add(new THREE.Vector3(0,c.height*ARCH_PS/2-0.12,0)),labelColor,labelScale??Math.min(1.25,c.width*ARCH_PS*0.22),layerRenderOrder(layer)+0.1,{tags:archTagsFor(c.id,layer),labelKind:'node',frontBoost:2.2});
   }
 }
 function addExpertPoolPanel(c,layer,{showLabel=true,labelText=null,solid=false}={}){
@@ -1147,7 +1177,7 @@ function addExpertPoolPanel(c,layer,{showLabel=true,labelText=null,solid=false}=
     '当前 MoE 层的专家池：32 个 EP bucket × 每桶 8 个 routed experts = 256 routed experts。它是一层内部结构，不是 32 层。');
   addExpertPoolGrid(panel,c,layer);
   mapExpertAliases(panel,layer);
-  if(showLabel)addArchLabel(labelText??`Expert Pool · L${layer}`,p.clone().add(new THREE.Vector3(0,h*0.36,0)),ARCH_LAYER_LABEL(),0.72,layerRenderOrder(layer)+0.2,{tags:archTagsFor('expert_pool',layer)});
+  if(showLabel)addArchLabel(labelText??`Expert Pool · L${layer}`,p.clone().add(new THREE.Vector3(0,h*0.36,0)),ARCH_LAYER_LABEL(),0.72,layerRenderOrder(layer)+0.2,{tags:archTagsFor('expert_pool',layer),labelKind:'node',frontBoost:2.5});
 }
 function addNode(n,layer,{ghost=false,opaque=false,showLabel=true,labelText=null,descOverride=null,box=null}={}){
   if(!n){
@@ -1166,7 +1196,7 @@ function addNode(n,layer,{ghost=false,opaque=false,showLabel=true,labelText=null
   const mesh=new THREE.Mesh(new THREE.BoxGeometry(w,h,ARCH_THICK),mat);
   mesh.position.copy(p); scene.add(mesh); rememberArch(mesh,n.id,layer,base,labelText,descOverride);
   const expert=/^expert_group_/.test(n.id);
-  if(showLabel&&!expert)addArchLabel(labelText??n.label,p,nodeLabelColor(),Math.min(expert?0.28:0.76,w*0.92),layerRenderOrder(layer)+0.2,{tags:archTagsFor(n.id,layer)});
+  if(showLabel&&!expert)addArchLabel(labelText??n.label,p,nodeLabelColor(),Math.min(expert?0.28:0.76,w*0.92),layerRenderOrder(layer)+0.2,{tags:archTagsFor(n.id,layer),labelKind:'node',frontBoost:2.55});
   return mesh;
 }
 function addArchLine(a,b,color,opacity,layerA=0,layerB=layerA,tags=null){
@@ -1330,18 +1360,17 @@ function drawHiddenStateChain(){
     graphPos(G.width-210,420,34),0x93c5fd,0.78,layerRenderOrder(34)+0.3,{tags:['data:hidden']});
 }
 function addSideViewAnnotations(){
-  const color=ARCH_LAYER_LABEL();
   const zDense=(archDepth(0)+archDepth(2))*0.5;
   const denseY=graphPos(DENSE_LAYER_BOX.x+DENSE_LAYER_BOX.width/2,DENSE_LAYER_BOX.y+DENSE_LAYER_BOX.height/2,1).y;
   const zMoeStart=archDepth(FIRST_MOE_LAYER);
   const zMoeEnd=archDepth(LAST_MOE_LAYER);
-  const zMoeMid=(zMoeStart+zMoeEnd)*0.5;
   const zOut=archDepth('output');
   const zIn=archDepth('input');
   const inputY=(nodePos('token_ids','input')?.y??graphPos(420,88,'input').y)-0.22;
-  const outputY=(nodePos('logits','output')?.y??graphPos(620,G.height-80,'output').y)+0.22;
+  const rawOutputY=(nodePos('logits','output')?.y??graphPos(620,G.height-80,'output').y)+0.22;
+  const outputY=Math.min(rawOutputY,ARCH_HEIGHT_CENTER+2.9);
   const moeY=graphPos(620,760,34).y;
-  const x=2.9;
+  const x=3.08;
   const railX=x+0.08;
   const railPts=[
     new THREE.Vector3(railX,inputY,zIn),
@@ -1373,19 +1402,35 @@ function addSideViewAnnotations(){
       new THREE.Vector3(railX,p.y+0.26,p.z)
     ],0x2563eb,0.72,3.2,['data:hidden'],{viewOnly:'right'});
   });
-  addArchLabel('INPUT',new THREE.Vector3(x,inputY,zIn),color,2.75,130,{orientation:'right',viewOnly:'right',minScale:2.5,tags:['data:hidden','op:embedding']});
-  addArchLabel('DENSE L0-L2',new THREE.Vector3(x,denseY,zDense),color,2.75,130,{orientation:'right',viewOnly:'right',minScale:2.4,tags:['layer:dense','data:hidden']});
-  addArchLabel('MOE L3-L60',new THREE.Vector3(x,ARCH_HEIGHT_CENTER+2.35,zMoeMid),color,3.1,130,{orientation:'right',viewOnly:'right',minScale:2.7,tags:['layer:moe','data:hidden']});
-  addArchLabel('HIDDEN L0 -> L60',new THREE.Vector3(x,ARCH_HEIGHT_CENTER-1.95,zMoeMid),0x2563eb,3.0,130,{orientation:'right',viewOnly:'right',minScale:2.6,tags:['data:hidden']});
-  addArchLabel('OUTPUT / LOGITS',new THREE.Vector3(x,outputY,zOut),color,2.75,130,{orientation:'right',viewOnly:'right',minScale:2.5,tags:['data:logits','comm:logits']});
+  // Side/front flat views use labels attached to actual 3D nodes.
+  // These guides remain as non-text helpers for reading repeated layer rows.
+  const rowGuide=(y,z0,z1,tags,lineColor=0x94a3b8)=>{
+    addStaticFocusLine([
+      new THREE.Vector3(railX+0.02,y,z0),
+      new THREE.Vector3(railX+0.02,y,z1)
+    ],lineColor,0.22,2.2,tags,{viewOnly:'right'});
+  };
+  const yOf=(id,layer=34,fallbackY=ARCH_HEIGHT_CENTER)=>nodePos(id,layer)?.y??fallbackY;
+  const moeRows=[
+    {id:'mla',tags:['op:mla','layer:moe','data:hidden'],color:0x0891b2},
+    {id:'moe_prenorm',tags:['op:norm','layer:moe','data:hidden'],color:0x9a8a14},
+    {id:'gate',tags:['op:router','layer:moe','data:dispatch'],color:0x9333ea},
+    {id:'a2a_dispatch',tags:['comm:ep','layer:moe','data:dispatch'],color:0xa855f7},
+    {id:'expert_pool',tags:['op:experts','layer:moe','data:dispatch','comm:ep'],color:0xc026d3},
+    {id:'a2a_combine',tags:['comm:ep','layer:moe','data:dispatch'],color:0xa855f7},
+    {id:'moe_residual',tags:['op:norm','layer:moe','data:hidden'],color:0x9a8a14}
+  ];
+  rowGuide(denseY,archDepth(0),archDepth(2),['layer:dense','data:hidden'],0x60a5fa);
+  moeRows.forEach(row=>{
+    const y=row.id==='expert_pool'
+      ? (clusterCenterPos('expert_pool',34)?.y??yOf('shared_expert',34,moeY))
+      : yOf(row.id,34,moeY);
+    rowGuide(y,zMoeStart,zMoeEnd,row.tags,row.color);
+  });
 }
 function addFrontViewAnnotations(){
-  const color=ARCH_LAYER_LABEL();
-  addArchLabel('INPUT / EMBEDDING',graphPos(1010,210,'input'),color,1.28,130,{viewOnly:'front',minScale:1.12,tags:['data:hidden','op:embedding']});
-  addArchLabel('DENSE L0-L2',graphPos(1010,128,1),0x0f172a,1.46,130,{viewOnly:'front',minScale:1.22,tags:['layer:dense','data:hidden']});
-  addArchLabel('MOE L3-L60',graphPos(1020,430,36),color,1.56,130,{viewOnly:'front',minScale:1.28,tags:['layer:moe','data:hidden']});
-  addArchLabel('HIDDEN STATE FLOW',graphPos(1010,300,22),0x2563eb,1.34,130,{viewOnly:'front',minScale:1.16,tags:['data:hidden']});
-  addArchLabel('FINAL / LOGITS',graphPos(1010,G.height-96,'output'),color,1.28,130,{viewOnly:'front',minScale:1.12,tags:['data:logits','comm:logits']});
+  // Front view uses the labels already attached to 3D model nodes/clusters.
+  // External front-only row labels are intentionally disabled so text stays on the model.
 }
 function buildArchitecturePreview(){
   drawStaticInputOutput();
