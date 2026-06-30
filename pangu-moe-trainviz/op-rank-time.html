@@ -767,7 +767,6 @@ try{
     {id:'d1p3',dp:1,stage:3,label:'D1 · PP3',rankRange:'28-31'}
   ],ticks:[{tick:0,region:'steady',stages:{0:{phase:'F',micro:0,layerRange:[0,12],opFocus:{layer:4,step:'mla'},stepIndex:1,stepTotal:13,label:'F m0 · L0-L12',dependsOn:['input'],produces:['hidden'],explain:'Fallback simulated frame.'},1:{phase:'F',micro:0,layerRange:[13,25],opFocus:{layer:13,step:'gate'},stepIndex:1,stepTotal:13,label:'F m0 · L13-L25',dependsOn:['hidden'],produces:['hidden'],explain:'Fallback simulated frame.'},2:{phase:'F',micro:0,layerRange:[26,37],opFocus:{layer:26,step:'experts'},stepIndex:1,stepTotal:12,label:'F m0 · L26-L37',dependsOn:['hidden'],produces:['hidden'],explain:'Fallback simulated frame.'},3:{phase:'B',micro:0,layerRange:[38,49],opFocus:{layer:49,step:'lm_head'},stepIndex:12,stepTotal:12,label:'B m0 · L49-L38',dependsOn:['loss'],produces:['grad'],explain:'Fallback simulated frame.'}}}]};
 }
-document.getElementById('traceMeta').textContent=`${TRACE.fidelity} · ${TRACE.config.schedule||'simulated schedule'} · ${TRACE.ticks.length} ticks`;
 
 /* 播放控制 / 状态条 DOM 引用（在 IDE frame 段赋值，此处先声明避免 TDZ） */
 let pbOpname=null,pbCounter=null,pbScrubber=null,statusLeft=null,statusRight=null;
@@ -899,11 +898,108 @@ const MODEL_CONFIG={
   demoParallel:{dp:2,pp:4,tp:2,ep:2,cp:1,vpp:1},
 };
 const DEMO=MODEL_CONFIG.demoParallel;
-const DEMO_STAGE_RANGES=Array.from(
-  {length:DEMO.pp},
-  (_,stage)=>TRACE.config.stageRanges?.[stage]||TRACE.config.stageRanges?.[String(stage)]||[0,0]
-);
 const rankOf=(dp,stage,tp,ep=0)=>(((dp*DEMO.pp+stage)*DEMO.tp+tp)*DEMO.ep+ep);
+function buildDemoStageRanges(totalLayers,pp){
+  const base=Math.floor(totalLayers/pp);
+  const extra=totalLayers%pp;
+  let lo=0;
+  return Array.from({length:pp},(_,stage)=>{
+    const span=base+(stage<extra?1:0);
+    const range=[lo,lo+span-1];
+    lo+=span;
+    return range;
+  });
+}
+const DEMO_STAGE_RANGES=buildDemoStageRanges(MODEL_CONFIG.hiddenLayers,DEMO.pp);
+function traceStageRangesMatchDemo(trace){
+  const cfg=trace?.config||{};
+  const ranges=cfg.stageRanges||{};
+  return cfg.dp===DEMO.dp&&cfg.pp===DEMO.pp&&cfg.tp===DEMO.tp&&(cfg.ep??DEMO.ep)===DEMO.ep&&
+    DEMO_STAGE_RANGES.every(([lo,hi],stage)=>{
+      const r=ranges[stage]||ranges[String(stage)];
+      return Array.isArray(r)&&r[0]===lo&&r[1]===hi;
+    });
+}
+function demoStepForLayer(layer,stage,tickIndex){
+  if(layer<MODEL_CONFIG.firstMoeLayer)return 'dense';
+  const steps=['mla','gate','a2a_dispatch','experts','a2a_combine','moe_residual'];
+  return steps[(tickIndex+stage)%steps.length];
+}
+function makeDemoStageCell(stage,tickIndex,region='steady'){
+  const [lo,hi]=DEMO_STAGE_RANGES[stage]||[0,0];
+  const span=Math.max(1,hi-lo+1);
+  const phase=(tickIndex+stage)%4===3?'B':'F';
+  const offset=(tickIndex+stage*3)%span;
+  const layer=phase==='B'?hi-offset:lo+offset;
+  const step=stage===DEMO.pp-1&&phase==='B'&&offset===0?'lm_head':demoStepForLayer(layer,stage,tickIndex);
+  const micro=tickIndex%(TRACE?.config?.microbatches||8);
+  const label=`${phase} m${micro} · ${phase==='B'?`L${hi}-L${lo}`:`L${lo}-L${hi}`}`;
+  const comm=stage>0&&phase==='F'?'pp':(stage<DEMO.pp-1&&phase==='B'?'pp':undefined);
+  return {
+    phase,micro,layerRange:[lo,hi],
+    opFocus:{layer,step},
+    stepIndex:Math.min(span,offset+1),
+    stepTotal:span,
+    label,
+    ...(comm?{comm}:{}),
+    dependsOn:stage>0&&phase==='F'?[`hidden:D*:m${micro}:PP${stage-1}_to_PP${stage}`]:['input'],
+    produces:stage<DEMO.pp-1?[`hidden:D*:m${micro}:PP${stage}_to_PP${stage+1}`]:['loss'],
+    explain:`Demo trace normalized for ${MODEL_CONFIG.displayName}: PP${stage} owns L${lo}-L${hi}.`
+  };
+}
+function normalizeDemoStageCell(raw,stage,tickIndex,forceSynthetic){
+  if(forceSynthetic||!raw||raw.phase==='bubble')return makeDemoStageCell(stage,tickIndex);
+  const [lo,hi]=DEMO_STAGE_RANGES[stage]||[0,0];
+  const next={...raw,layerRange:[lo,hi]};
+  const rawLayer=raw.opFocus?.layer;
+  const layer=typeof rawLayer==='number'?Math.min(hi,Math.max(lo,rawLayer)):lo;
+  const step=raw.opFocus?.step||demoStepForLayer(layer,stage,tickIndex);
+  next.opFocus={...(raw.opFocus||{}),layer,step};
+  next.stepTotal=Math.max(1,hi-lo+1);
+  if(!next.label||/L\d+-L\d+/.test(next.label)){
+    next.label=`${next.phase||'F'} m${next.micro??0} · L${lo}-L${hi}`;
+  }
+  return next;
+}
+function normalizeTraceForDemo(trace){
+  const forceSynthetic=!traceStageRangesMatchDemo(trace);
+  const sourceTicks=Array.isArray(trace?.ticks)&&trace.ticks.length?trace.ticks:[{tick:0,region:'steady',stages:{}}];
+  const stageRanges=Object.fromEntries(DEMO_STAGE_RANGES.map((range,stage)=>[stage,range]));
+  const lanes=[];
+  for(let dp=0;dp<DEMO.dp;dp++){
+    for(let stage=0;stage<DEMO.pp;stage++){
+      lanes.push({
+        id:`d${dp}p${stage}`,
+        dp,stage,
+        label:`D${dp} · PP${stage}`,
+        rankRange:`${rankOf(dp,stage,0,0)}-${rankOf(dp,stage,DEMO.tp-1,DEMO.ep-1)}`
+      });
+    }
+  }
+  const ticks=sourceTicks.map((tick,tickIndex)=>{
+    const stages={};
+    for(let stage=0;stage<DEMO.pp;stage++){
+      const raw=tick.stages?.[String(stage)]||tick.stages?.[stage];
+      stages[stage]=normalizeDemoStageCell(raw,stage,tickIndex,forceSynthetic);
+    }
+    return {...tick,stages};
+  });
+  return {
+    ...trace,
+    fidelity:forceSynthetic?`${trace?.fidelity||'schedule-simulated'} · normalized-to-72B-PP4`:trace?.fidelity,
+    config:{
+      ...(trace?.config||{}),
+      dp:DEMO.dp,pp:DEMO.pp,tp:DEMO.tp,ep:DEMO.ep,cp:DEMO.cp,
+      schedule:forceSynthetic?'normalized demo 1F1B schedule':(trace?.config?.schedule||'simulated schedule'),
+      stageRanges
+    },
+    lanes,
+    ticks,
+    defaultTick:Math.max(0,Math.min(ticks.length-1,trace?.defaultTick??0))
+  };
+}
+TRACE=normalizeTraceForDemo(TRACE);
+document.getElementById('traceMeta').textContent=`${TRACE.fidelity} · ${TRACE.config.schedule||'simulated schedule'} · ${TRACE.ticks.length} ticks`;
 const localRankOf=(tp,ep=0)=>tp*DEMO.ep+ep;
 const epLabel=ep=>`EP${ep} (${ep+1}/${DEMO.ep})`;
 const tpLabel=tp=>`TP${tp} (${tp+1}/${DEMO.tp})`;
