@@ -5,21 +5,38 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Ascend Hardware Map v3 · Data Movement Flow</title>
   <link rel="icon" href="data:,">
+  <script>
+    (() => {
+      const params = new URLSearchParams(location.search);
+      const storageKey = 'pto.ascendHardwareMap.theme';
+      const requestedTheme = params.get('theme');
+      let storedTheme = '';
+      try {
+        storedTheme = localStorage.getItem(storageKey) || '';
+      } catch (error) {
+        storedTheme = '';
+      }
+      const theme = requestedTheme === 'light' || requestedTheme === 'dark'
+        ? requestedTheme
+        : (storedTheme === 'light' || storedTheme === 'dark' ? storedTheme : 'dark');
+      document.documentElement.dataset.theme = theme;
+      window.__PTO_HARDWARE_MAP_INITIAL_THEME__ = theme;
+      if (params.get('preview') === '1') {
+        document.documentElement.classList.add('preview');
+      }
+    })();
+  </script>
   <link rel="stylesheet" href="../vendor/pto-design-system/tokens/foundation.css">
   <link rel="stylesheet" href="../vendor/pto-design-system/tokens/semantic.css">
   <link rel="stylesheet" href="../vendor/pto-design-system/tokens/components.css">
   <link rel="stylesheet" href="../vendor/pto-design-system/css/style.css">
   <link rel="stylesheet" href="../vendor/pto-design-system/patterns/aiv-core-object/pattern.css?v=2412220">
   <link rel="stylesheet" href="../vendor/pto-design-system/patterns/aic-core-object/pattern.css?v=2412220">
-  <link rel="stylesheet" href="../vendor/pto-design-system/patterns/memory-architecture/pattern.css?v=2412220">
+  <link rel="stylesheet" href="../vendor/pto-design-system/patterns/memory-architecture/pattern.css?v=ub-reuse-panel-v5">
+  <link rel="stylesheet" href="../vendor/pto-design-system/patterns/memory-reuse-viewer/pattern.css?v=ub-reuse-panel-v5">
   <link rel="stylesheet" href="../vendor/pto-design-system/patterns/hardware-architecture-viewport/pattern.css?v=2412220">
   <link rel="stylesheet" href="../vendor/pto-design-system/patterns/workbench-shell/pattern.css?v=2412220">
   <link rel="stylesheet" href="../vendor/pto-design-system/patterns/ide-frame/pattern.css?v=2412220">
-  <script>
-    if (new URLSearchParams(location.search).get('preview') === '1') {
-      document.documentElement.classList.add('preview');
-    }
-  </script>
   <style>
     body.flow-body {
       min-height: 100vh;
@@ -347,6 +364,32 @@
 
     .architecture-scroll.is-panning {
       cursor: grabbing;
+    }
+
+    .architecture-scroll.is-ub-hovered:not(.is-panning) {
+      cursor: pointer;
+    }
+
+    .architecture-floating-tools {
+      position: absolute;
+      top: var(--space-3);
+      right: var(--space-3);
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      gap: var(--space-1);
+      padding: 4px;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      background: color-mix(in srgb, var(--background-elevated) 88%, transparent);
+      box-shadow: var(--shadow-md);
+      pointer-events: auto;
+      backdrop-filter: var(--surface-backdrop-filter-soft, none);
+      -webkit-backdrop-filter: var(--surface-backdrop-filter-soft, none);
+    }
+
+    .architecture-floating-tools .pto-hw-viewport__tool {
+      min-width: 48px;
     }
 
     .architecture-canvas {
@@ -870,6 +913,97 @@
       padding: 0;
     }
 
+    .memory-reuse-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: var(--z-modal, 300);
+      display: grid;
+      pointer-events: none;
+    }
+
+    .memory-reuse-overlay[hidden] {
+      display: none;
+    }
+
+    .memory-reuse-scrim {
+      position: absolute;
+      inset: 0;
+      background: color-mix(in srgb, var(--background) 58%, transparent);
+      pointer-events: auto;
+    }
+
+    .memory-reuse-drawer {
+      position: absolute;
+      top: 56px;
+      right: 18px;
+      bottom: 28px;
+      width: min(1120px, calc(100vw - 72px));
+      min-width: min(760px, calc(100vw - 32px));
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      overflow: hidden;
+      border: 1px solid var(--panel-shell-border);
+      border-radius: var(--panel-shell-radius);
+      background: var(--panel-shell-bg);
+      box-shadow: var(--panel-shell-shadow);
+      backdrop-filter: var(--panel-shell-backdrop-filter);
+      pointer-events: auto;
+    }
+
+    .memory-reuse-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-3);
+      min-width: 0;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--panel-shell-border);
+      background: color-mix(in srgb, var(--background-elevated) 92%, transparent);
+    }
+
+    .memory-reuse-title {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      grid-template-areas: "title sub";
+      align-items: baseline;
+      column-gap: 10px;
+      min-width: 0;
+    }
+
+    .memory-reuse-title strong {
+      grid-area: title;
+      min-width: 0;
+      color: var(--foreground);
+      font: var(--text-title-3);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .memory-reuse-title span {
+      grid-area: sub;
+      min-width: 0;
+      color: var(--foreground-secondary);
+      font: var(--text-label);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .memory-reuse-close {
+      flex: 0 0 auto;
+      width: 30px;
+      height: 30px;
+      padding: 0;
+      border-radius: var(--radius-sm);
+    }
+
+    .memory-reuse-host {
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden;
+    }
+
     @media (max-width: 1240px) {
       body.flow-body {
         height: 100vh;
@@ -939,6 +1073,7 @@
     html.preview .pto-ide-frame__status-strip,
     html.preview .sidebar,
     html.preview .detail-panel,
+    html.preview .memory-reuse-overlay,
     html.preview .floating-bar,
     html.preview .stage-head {
       display: none;
@@ -1047,6 +1182,7 @@
         <div class="stage-meta pto-hw-viewport__controls">
           <div class="pto-hw-viewport__tools" aria-label="架构图显示控制">
             <button class="btn btn-sm btn-ghost pto-hw-viewport__tool" type="button" id="architectureDetailToggle" aria-pressed="true">细节开</button>
+            <button class="btn btn-sm btn-ghost pto-hw-viewport__tool" type="button" id="architectureThemeToggle" aria-pressed="false">浅色</button>
             <button class="btn btn-sm btn-ghost pto-hw-viewport__tool" type="button" id="architectureZoomOut" aria-label="缩小架构图">−</button>
             <span class="pto-hw-viewport__readout" id="architectureZoomReadout">55%</span>
             <button class="btn btn-sm btn-ghost pto-hw-viewport__tool" type="button" id="architectureZoomIn" aria-label="放大架构图">+</button>
@@ -1054,6 +1190,9 @@
         </div>
       </div>
       <section class="architecture-scroll pto-hw-viewport__stage" id="architectureScroll">
+        <div class="architecture-floating-tools" aria-label="架构图快捷控制">
+          <button class="btn btn-sm btn-ghost pto-hw-viewport__tool" type="button" id="architectureFloatingThemeToggle" aria-pressed="false">浅色</button>
+        </div>
         <div class="architecture-canvas">
           <div class="arch-frame" id="architectureFrame">
             <div class="pattern-iframe-shell pto-hw-viewport__scale">
@@ -1061,7 +1200,7 @@
                 class="pattern-iframe pto-hw-viewport__frame"
                 id="architectureFrameEl"
                 title="Ascend 950B Memory Architecture Pattern"
-                src="../ascend-950-workbench-demo/hardware-frame.html?preset=ascend950b&theme=dark&v=2412220"></iframe>
+                src="../ascend-950-workbench-demo/hardware-frame.html?preset=ascend950b&theme=dark&v=ub-reuse-panel-v5"></iframe>
             </div>
           </div>
           <section class="engine-map" aria-label="950 communication subsystem">
@@ -1127,6 +1266,20 @@
           </div>
         </footer>
 
+    <section class="memory-reuse-overlay" id="memoryReusePanel" aria-hidden="true" hidden>
+      <div class="memory-reuse-scrim" data-memory-reuse-close></div>
+      <section class="memory-reuse-drawer" role="dialog" aria-labelledby="memoryReuseTitle">
+        <header class="memory-reuse-head">
+          <div class="memory-reuse-title">
+            <strong id="memoryReuseTitle">UB 内存复用分析</strong>
+            <span id="memoryReuseSub">点击 AIV 的 UB 打开对应 buffer 生命周期视图。</span>
+          </div>
+          <button class="btn btn-icon btn-ghost memory-reuse-close" id="memoryReuseClose" type="button" aria-label="Close memory reuse panel">×</button>
+        </header>
+        <div class="memory-reuse-host" id="memoryReuseHost"></div>
+      </section>
+    </section>
+
     <div class="floating-bar">
       <div class="floating-shell is-expanded" id="floatingShell">
         <button class="floating-toggle" id="floatingToggle" type="button" aria-label="Collapse playback toolbar" aria-expanded="true">⌄</button>
@@ -1160,6 +1313,7 @@
   <script src="../vendor/pto-design-system/patterns/workbench-shell/pattern.js?v=2412220"></script>
   <script src="../vendor/pto-design-system/patterns/ide-frame/pattern.js?v=2412220"></script>
   <script src="../vendor/pto-design-system/patterns/hardware-architecture-viewport/pattern.js?v=2412220"></script>
+  <script src="../vendor/pto-design-system/patterns/memory-reuse-viewer/pattern.js?v=ub-reuse-panel-v5"></script>
   <script>
     "use strict";
 
@@ -1409,8 +1563,14 @@
       inspectorOpen: true,
       timelineOpen: false,
       viewMode: 'architecture',
+      memoryReuseViewer: null,
+      memoryReuseOpen: false,
+      architectureHoverTarget: null,
+      theme: window.__PTO_HARDWARE_MAP_INITIAL_THEME__ || document.documentElement.dataset.theme || 'dark',
     };
     const ARCH_ZOOM_LEVELS = [0.05, 0.075, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.55, 0.6, 0.7, 0.8, 0.9, 1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5];
+    const THEME_STORAGE_KEY = 'pto.ascendHardwareMap.theme';
+    const HARDWARE_FRAME_VERSION = 'ub-reuse-panel-v5';
 
     function getFlow() {
       return FLOWS.find((flow) => flow.id === state.flowId) || null;
@@ -1428,12 +1588,61 @@
       return el;
     }
 
+    function normalizeTheme(value) {
+      return value === 'light' ? 'light' : 'dark';
+    }
+
+    function architectureFrameUrl(theme = state.theme) {
+      const url = new URL('../ascend-950-workbench-demo/hardware-frame.html', location.href);
+      url.searchParams.set('preset', 'ascend950b');
+      url.searchParams.set('theme', normalizeTheme(theme));
+      url.searchParams.set('v', HARDWARE_FRAME_VERSION);
+      return url.href;
+    }
+
+    function syncThemeToggle() {
+      const isLight = normalizeTheme(state.theme) === 'light';
+      document.querySelectorAll('[data-architecture-theme-toggle], #architectureThemeToggle, #architectureFloatingThemeToggle').forEach((button) => {
+        button.textContent = isLight ? '深色' : '浅色';
+        button.title = isLight ? '切换到深色模式' : '切换到浅色模式';
+        button.setAttribute('aria-label', button.title);
+        button.setAttribute('aria-pressed', isLight ? 'true' : 'false');
+      });
+    }
+
+    function applyTheme(theme, options = {}) {
+      const nextTheme = normalizeTheme(theme);
+      state.theme = nextTheme;
+      document.documentElement.dataset.theme = nextTheme;
+      if (options.persist !== false) {
+        try {
+          localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+        } catch (error) {
+          // Theme persistence is optional; rendering should continue without storage access.
+        }
+      }
+      syncThemeToggle();
+      if (options.reloadFrame === false) return;
+      const frame = document.getElementById('architectureFrameEl');
+      if (!frame) return;
+      const nextSrc = architectureFrameUrl(nextTheme);
+      if (frame.src === nextSrc) return;
+      state.iframeReady = false;
+      clearArchitectureHover();
+      frame.src = nextSrc;
+    }
+
+    function toggleTheme() {
+      applyTheme(normalizeTheme(state.theme) === 'light' ? 'dark' : 'light');
+    }
+
     function renderArchitecture() {
       const frame = document.getElementById('architectureFrameEl');
       if (!frame) return;
 
       const onFrameReady = () => {
         state.iframeReady = true;
+        clearArchitectureHover();
         postArchitectureDetails();
         applyHighlights();
       };
@@ -1528,6 +1737,42 @@
         type: 'hardware-details',
         visible: state.detailsVisible,
       }, '*');
+    }
+
+    function closeMemoryReusePanel() {
+      const panel = document.getElementById('memoryReusePanel');
+      const frame = document.getElementById('hardwareMapFrame');
+      if (!panel) return;
+      state.memoryReuseOpen = false;
+      state.memoryReuseViewer?.destroy?.();
+      state.memoryReuseViewer = null;
+      panel.hidden = true;
+      panel.setAttribute('aria-hidden', 'true');
+      frame?.classList.remove('is-memory-reuse-open');
+    }
+
+    function openMemoryReusePanel(detail = {}) {
+      if (detail.node && detail.node !== 'buffer:UB') return;
+      const helper = window.PtoMemoryReuseViewer;
+      const panel = document.getElementById('memoryReusePanel');
+      const host = document.getElementById('memoryReuseHost');
+      const frame = document.getElementById('hardwareMapFrame');
+      if (!helper || !panel || !host) return;
+      const coreLabel = detail.coreTitle || detail.coreId || 'AIV';
+      const bufferLabel = detail.buffer || 'UB';
+      setText('memoryReuseTitle', `${coreLabel} · ${bufferLabel} 内存复用分析`);
+      setText('memoryReuseSub', `${detail.preset || 'ascend950b'} / ${detail.coreId || 'selected core'} / ${bufferLabel}`);
+      state.memoryReuseViewer?.destroy?.();
+      panel.hidden = false;
+      panel.setAttribute('aria-hidden', 'false');
+      frame?.classList.add('is-memory-reuse-open');
+      state.memoryReuseOpen = true;
+      const data = helper.createDemoData({
+        coreId: detail.coreId,
+        coreTitle: coreLabel,
+      });
+      state.memoryReuseViewer = helper.render(host, data, { initialBuffer: bufferLabel });
+      window.requestAnimationFrame(() => state.memoryReuseViewer?.resize?.());
     }
 
     function renderScenarioList() {
@@ -1825,6 +2070,89 @@
       resetCursor();
     }
 
+    function architectureFrameContext(event) {
+      const frameEl = document.getElementById('architectureFrameEl');
+      let doc = null;
+      let frameWindow = null;
+      try {
+        doc = frameEl?.contentDocument || null;
+        frameWindow = frameEl?.contentWindow || null;
+      } catch (error) {
+        return false;
+      }
+      if (!frameEl || !doc) return false;
+      const rect = frameEl.getBoundingClientRect();
+      if (!rect.width || !rect.height) return false;
+      const innerWidth = frameWindow?.innerWidth || rect.width;
+      const innerHeight = frameWindow?.innerHeight || rect.height;
+      const x = (event.clientX - rect.left) * (innerWidth / rect.width);
+      const y = (event.clientY - rect.top) * (innerHeight / rect.height);
+      if (x < 0 || y < 0 || x > innerWidth || y > innerHeight) return false;
+      return { doc, frameEl, x, y };
+    }
+
+    function architectureTargetAtPoint(event, selector) {
+      const context = architectureFrameContext(event);
+      if (!context) return null;
+      const targets = Array.from(context.doc.querySelectorAll(selector));
+      let bestTarget = null;
+      let bestArea = Infinity;
+      targets.forEach((target) => {
+        Array.from(target.getClientRects()).forEach((rect) => {
+          if (context.x < rect.left || context.x > rect.right || context.y < rect.top || context.y > rect.bottom) return;
+          const area = rect.width * rect.height;
+          if (area <= bestArea) {
+            bestArea = area;
+            bestTarget = target;
+          }
+        });
+      });
+      return bestTarget ? { ...context, target: bestTarget } : null;
+    }
+
+    function architectureDetailFromTarget(target, doc) {
+      const coreSlot = target.closest('.pto-mem950__core-slot');
+      const coreTitle = coreSlot?.dataset?.coreTitle
+        || coreSlot?.querySelector?.('.pto-aiv-core__title')?.textContent?.trim()
+        || coreSlot?.id
+        || 'AIV';
+      const node = target.dataset?.mem950Node || target.dataset?.aicNode || target.dataset?.aivNode || '';
+      return {
+        node,
+        buffer: node.startsWith('buffer:') ? node.slice('buffer:'.length) : '',
+        coreId: coreSlot?.id || '',
+        coreKind: coreSlot?.classList.contains('is-aiv') ? 'aiv' : '',
+        coreTitle,
+        preset: doc.querySelector('[data-pto-mem-arch]')?.dataset?.ptoMemArchPreset || 'ascend950b',
+      };
+    }
+
+    function clearArchitectureHover() {
+      state.architectureHoverTarget?.classList?.remove('is-hovered');
+      state.architectureHoverTarget = null;
+      document.getElementById('architectureScroll')?.classList.remove('is-node-hovered', 'is-ub-hovered');
+    }
+
+    function updateArchitectureHover(event) {
+      const hit = architectureTargetAtPoint(event, '[data-aiv-node], [data-aic-node], [data-mem950-node]');
+      const target = hit?.target || null;
+      if (target !== state.architectureHoverTarget) {
+        state.architectureHoverTarget?.classList?.remove('is-hovered');
+        state.architectureHoverTarget = target;
+        state.architectureHoverTarget?.classList?.add('is-hovered');
+      }
+      const scroll = document.getElementById('architectureScroll');
+      scroll?.classList.toggle('is-node-hovered', !!target);
+      scroll?.classList.toggle('is-ub-hovered', target?.dataset?.aivNode === 'buffer:UB');
+    }
+
+    function activateArchitectureNodeFromPoint(event) {
+      const hit = architectureTargetAtPoint(event, '[data-aiv-node="buffer:UB"]');
+      if (!hit?.target) return false;
+      openMemoryReusePanel(architectureDetailFromTarget(hit.target, hit.doc));
+      return true;
+    }
+
     function initArchitecturePan() {
       const viewport = document.getElementById('architectureScroll');
       const frame = document.getElementById('architectureFrame');
@@ -1835,22 +2163,30 @@
       let startPanX = 0;
       let startPanY = 0;
       let dragging = false;
+      let moved = false;
 
       frame.addEventListener('pointerdown', (event) => {
         if (event.button != null && event.button !== 0) return;
         dragging = true;
+        moved = false;
+        clearArchitectureHover();
         startX = event.clientX;
         startY = event.clientY;
         startPanX = state.archPanX;
         startPanY = state.archPanY;
-        state.architectureUserPanned = true;
         viewport.classList.add('is-panning');
         frame.setPointerCapture?.(event.pointerId);
         event.preventDefault();
       });
 
       frame.addEventListener('pointermove', (event) => {
-        if (!dragging) return;
+        if (!dragging) {
+          updateArchitectureHover(event);
+          return;
+        }
+        if (Math.hypot(event.clientX - startX, event.clientY - startY) > 4) moved = true;
+        if (!moved) return;
+        state.architectureUserPanned = true;
         state.archPanX = startPanX + event.clientX - startX;
         state.archPanY = startPanY + event.clientY - startY;
         syncArchitectureZoom();
@@ -1861,12 +2197,16 @@
         dragging = false;
         viewport.classList.remove('is-panning');
         frame.releasePointerCapture?.(event.pointerId);
+        if (!moved) activateArchitectureNodeFromPoint(event);
+        updateArchitectureHover(event);
       };
 
       frame.addEventListener('pointerup', endDrag);
       frame.addEventListener('pointercancel', endDrag);
+      frame.addEventListener('pointerleave', clearArchitectureHover);
       frame.addEventListener('dblclick', () => centerArchitectureView());
       frame.addEventListener('wheel', (event) => {
+        if (!event.metaKey) return;
         event.preventDefault();
         const factor = event.deltaY > 0 ? 0.92 : 1.08;
         setArchitectureScale(state.archScale * factor);
@@ -1887,7 +2227,12 @@
     }
 
     function handleArchitectureMessage(event) {
-      if (!event.data || event.data.type !== 'hardware-ready') return;
+      if (!event.data) return;
+      if (event.data.type === 'hardware-node-activate') {
+        openMemoryReusePanel(event.data);
+        return;
+      }
+      if (event.data.type !== 'hardware-ready') return;
       state.iframeReady = true;
       postArchitectureDetails();
       applyHighlights();
@@ -1909,11 +2254,13 @@
       }) || ideFrameInstance;
       window.addEventListener('message', handleArchitectureMessage);
       renderArchitecture();
+      applyTheme(state.theme, { persist: false });
       renderScenarioList();
       renderDetail();
       setViewMode(state.viewMode);
       syncArchitectureDetailToggle();
       syncArchitectureZoom();
+      syncThemeToggle();
       syncInspectorToggle();
       syncTimelineToggle();
       initIdeCursorTracking();
@@ -1928,6 +2275,8 @@
       document.getElementById('stepBackButton')?.addEventListener('click', () => stepBy(-1));
       document.getElementById('stepForwardButton')?.addEventListener('click', () => stepBy(1));
       document.getElementById('replayButton')?.addEventListener('click', replayFlow);
+      document.getElementById('architectureThemeToggle')?.addEventListener('click', toggleTheme);
+      document.getElementById('architectureFloatingThemeToggle')?.addEventListener('click', toggleTheme);
       document.getElementById('floatingToggle')?.addEventListener('click', () => {
         const shell = document.getElementById('floatingShell');
         setFloatingExpanded(!shell?.classList.contains('is-expanded'));
@@ -1962,9 +2311,17 @@
         state.timelineOpen = !state.timelineOpen;
         syncTimelineToggle();
       });
+      document.getElementById('memoryReuseClose')?.addEventListener('click', closeMemoryReusePanel);
+      document.querySelectorAll('[data-memory-reuse-close]').forEach((target) => {
+        target.addEventListener('click', closeMemoryReusePanel);
+      });
+      window.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && state.memoryReuseOpen) closeMemoryReusePanel();
+      });
       window.addEventListener('resize', () => {
         syncArchitectureZoom();
         if (!state.architectureUserPanned) centerArchitectureView();
+        state.memoryReuseViewer?.resize?.();
       });
     }
 
