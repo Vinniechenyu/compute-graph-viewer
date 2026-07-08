@@ -53,6 +53,11 @@
 
     * { box-sizing: border-box; }
     html, body { min-height: 100%; }
+    html {
+      color-scheme: dark;
+      scrollbar-color: color-mix(in srgb, var(--foreground-muted) 62%, transparent) transparent;
+      scrollbar-width: thin;
+    }
     body {
       margin: 0;
       overflow: hidden;
@@ -62,6 +67,31 @@
       font-size: 14px;
     }
     button { font-family: inherit; }
+    * {
+      scrollbar-color: color-mix(in srgb, var(--foreground-muted) 58%, transparent) transparent;
+      scrollbar-width: thin;
+    }
+    *::-webkit-scrollbar {
+      width: 10px;
+      height: 10px;
+    }
+    *::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    *::-webkit-scrollbar-thumb {
+      min-height: 32px;
+      border: 2px solid transparent;
+      border-radius: var(--radius-pill);
+      background: color-mix(in srgb, var(--foreground-muted) 62%, transparent);
+      background-clip: content-box;
+    }
+    *::-webkit-scrollbar-thumb:hover {
+      background: color-mix(in srgb, var(--foreground-secondary) 72%, transparent);
+      background-clip: content-box;
+    }
+    *::-webkit-scrollbar-corner {
+      background: transparent;
+    }
 
     .mobile-note { display: none; }
     .mla-frame {

@@ -24,6 +24,8 @@ html {
   height: auto;
   overflow-x: hidden;
   overflow-y: auto;
+  scrollbar-color: color-mix(in srgb, var(--foreground-muted) 52%, transparent) transparent;
+  scrollbar-width: thin;
 }
 
 body {
@@ -39,6 +41,31 @@ body {
   background-attachment: fixed;
   color: var(--foreground);
   font-family: var(--font-sans);
+}
+* {
+  scrollbar-color: color-mix(in srgb, var(--foreground-muted) 52%, transparent) transparent;
+  scrollbar-width: thin;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  min-height: 32px;
+  border: 2px solid transparent;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--foreground-muted) 56%, transparent);
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--foreground-secondary) 62%, transparent);
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 body::before {
@@ -1019,7 +1046,7 @@ const launchItems = [
     status: "hi-fi",
     desc: "按 S1-S8 引导把 CUDA Flash MLA sparse decode 迁移到 AscendC,联动源码、计算图、内存架构、流水与终端输出。",
     href: "ascendport_migration/ascendport_migration_V3_MLA_pto.html",
-    previewFrame: "ascendport_migration/ascendport_migration_V3_MLA_pto.html?preview=1",
+    preview: "assets/ascendport-mla-migration-workbench.png",
     tags: ["AscendPort", "MLA", "Migration"]
   },
   {
