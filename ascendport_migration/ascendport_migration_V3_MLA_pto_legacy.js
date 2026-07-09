@@ -1233,8 +1233,8 @@ function renderGraph(animate){
     const u=eff(n.id); const col=unitColor(u);
     const risk=(u==='risk');
     nodes+=`<g class="gnode${animate?' enter':''}" data-id="${n.id}" style="${animate?`animation-delay:${i*70}ms`:''}">
-      ${risk?`<rect x="${n.x-3}" y="${n.y-3}" width="${n.w+6}" height="${n.h+6}" rx="8" fill="none" stroke="${col}" stroke-width="1.1" class="risk-pulse"/>`:''}
-      <rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="${risk ? 8 : 9}" fill="${risk ? 'var(--surface-3)' : `${col}22`}" stroke="${risk ? 'var(--danger)' : col}" stroke-width="${risk ? 1.05 : 1.4}"/>
+      ${risk?`<rect x="${n.x-3}" y="${n.y-3}" width="${n.w+6}" height="${n.h+6}" rx="${n.h/2+3}" fill="none" stroke="${col}" stroke-width="1.4" class="risk-pulse"/>`:''}
+      <rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="${risk ? n.h/2 : 9}" fill="${risk ? 'var(--surface-3)' : `${col}22`}" stroke="${risk ? 'var(--danger)' : col}" stroke-width="${risk ? 2.2 : 1.4}"/>
       <text class="nt" x="${n.x+11}" y="${n.y+ (n.h>42?19:18)}" fill="#eef" font-size="13">${n.t}</text>
       <text class="ns2" x="${n.x+11}" y="${n.y+(n.h>42?33:31)}" fill="${risk ? 'var(--danger)' : col}" font-size="12" font-family="ui-monospace,Menlo,Consolas,monospace">${n.s}</text>
       ${(graphMapped&&n.unit==='risk')?`<text x="${n.x+n.w-8}" y="${n.y+13}" text-anchor="end" fill="${col}" font-size="12" font-weight="700">✓改写</text>`:''}
