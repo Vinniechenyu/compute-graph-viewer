@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>AscendPort · PTO Migration Workbench</title>
+  <title>AscendPort · 昇腾迁移工作台</title>
   <script>
     if (new URLSearchParams(location.search).has('preview')) {
       document.documentElement.dataset.preview = 'card';
@@ -213,6 +213,13 @@
     .editor-pane-body > [data-ide-bottom-dock][hidden] {
       display: none !important;
     }
+    .pto-ide-frame__pane[data-ide-pane="editor-preview"] {
+      background: transparent;
+      border-color: transparent;
+      box-shadow: none;
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+    }
     .tabs {
       min-width: 0;
       display: flex;
@@ -285,19 +292,40 @@
     }
     .etb-btn svg { width: 14px; height: 14px; }
 
-    .edit-split {
+    .edit-split.pto-ide-frame__split {
       min-height: 0;
       min-width: 0;
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) 0 0 0 0;
-      transition: grid-template-columns var(--duration-slow) var(--easing-default);
+      display: flex;
+      flex-direction: row;
+      padding: 0 !important;
       overflow: hidden;
+      background: transparent !important;
+      border: 0 !important;
+      box-shadow: none !important;
     }
-    .edit-split.graph-open { grid-template-columns: minmax(0, 1fr) minmax(340px, 42%) 0 0 0; }
-    .edit-split.compare-open { grid-template-columns: minmax(0, 1fr) 0 minmax(420px, 1fr) 0 0; }
-    .edit-split.tiling-open { grid-template-columns: minmax(0, 1fr) 0 0 minmax(360px, 44%) 0; }
-    .edit-split.pipe-open { grid-template-columns: minmax(0, 1fr) 0 0 0 minmax(380px, 46%); }
 
+    .editor-group-panel {
+      min-width: 0;
+      min-height: 0;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      overflow: hidden;
+      border: 1px solid var(--ide-frame-pane-border);
+      border-radius: var(--radius-lg);
+      background: color-mix(in srgb, var(--ide-frame-pane-bg) 82%, transparent);
+    }
+    .sourcepane {
+      grid-template-rows: auto auto minmax(0, 1fr);
+    }
+    .editor-group-panel > .pto-ide-frame__tabstrip {
+      min-height: 40px;
+      padding: 5px 8px;
+      border-bottom: 1px solid color-mix(in srgb, var(--border-subtle) 68%, transparent);
+      background: color-mix(in srgb, var(--surface-1) 72%, transparent);
+    }
+    .sourcepane .pto-ide-frame__pane-header {
+      border-bottom: 1px solid color-mix(in srgb, var(--border-subtle) 58%, transparent);
+    }
     .codewrap, .graphpane, .tilingpane, .pipepane {
       min-width: 0;
       min-height: 0;
@@ -305,15 +333,97 @@
       background: color-mix(in srgb, var(--ide-frame-pane-bg) 74%, transparent);
     }
     .codewrap { position: relative; overflow: auto; }
+    .analysispane {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .edit-split.analysis-open .analysispane {
+      display: grid;
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .analysis-tabs {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .analysis-tabs::-webkit-scrollbar { display: none; }
+    .analysis-tab {
+      border: 0;
+      background: transparent;
+      box-shadow: none;
+      flex: 0 0 auto;
+    }
+    .analysis-tab.on {
+      background: var(--ide-frame-selected-bg);
+      color: var(--foreground);
+      box-shadow: var(--ide-frame-selected-shadow);
+    }
+    .analysis-tab[hidden] {
+      display: none !important;
+    }
+    .analysis-close {
+      width: 26px;
+      min-height: 26px;
+      padding: 0;
+      border-radius: var(--radius-sm);
+    }
+    .analysis-body {
+      min-height: 0;
+      min-width: 0;
+      overflow: hidden;
+      position: relative;
+    }
+    .analysis-body > .diffpane,
+    .analysis-body > .graphpane,
+    .analysis-body > .tilingpane,
+    .analysis-body > .pipepane,
+    .analysis-body > .flowpane,
+    .analysis-body > .accpane,
+    .analysis-body > .perfpane {
+      display: none;
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+      min-width: 0;
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .analysis-body > .diffpane {
+      flex-direction: column;
+      overflow: auto;
+    }
+    .analysispane[data-analysis-view="generated"] .diffpane,
+    .analysispane[data-analysis-view="graph"] .graphpane,
+    .analysispane[data-analysis-view="tiling"] .tilingpane,
+    .analysispane[data-analysis-view="pipeline"] .pipepane {
+      display: flex;
+    }
+    .analysispane[data-analysis-view="flow"] .flowpane {
+      display: flex;
+    }
+    .analysispane[data-analysis-view="accuracy"] .accpane,
+    .analysispane[data-analysis-view="performance"] .perfpane {
+      display: block;
+    }
+    .analysispane .gp-head,
+    .analysispane .tp-head {
+      display: none;
+    }
     .diffpane, .graphpane, .tilingpane, .pipepane {
       opacity: 0;
       pointer-events: none;
       transition: opacity var(--duration-base) var(--easing-default);
     }
-    .edit-split.compare-open .diffpane,
-    .edit-split.graph-open .graphpane,
-    .edit-split.tiling-open .tilingpane,
-    .edit-split.pipe-open .pipepane {
+    .analysispane[data-analysis-view="generated"] .diffpane,
+    .analysispane[data-analysis-view="graph"] .graphpane,
+    .analysispane[data-analysis-view="tiling"] .tilingpane,
+    .analysispane[data-analysis-view="pipeline"] .pipepane {
       opacity: 1;
       pointer-events: auto;
     }
@@ -561,25 +671,42 @@
     .tp-opt .rec { color: var(--success); }
     .tp-opt .wrn { color: var(--danger); }
     .sbar {
-      height: 34px;
-      display: flex;
-      overflow: hidden;
+      min-height: 42px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(42px, 1fr));
+      gap: 5px;
+      padding: 5px;
+      overflow: visible;
       border-radius: var(--radius-md);
       background: color-mix(in srgb, var(--surface-1) 80%, transparent);
     }
     .sblk {
-      flex: 1;
+      min-width: 0;
+      min-height: 30px;
       display: flex;
       align-items: center;
       justify-content: center;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      background: color-mix(in srgb, var(--surface-2) 72%, transparent);
       color: var(--foreground-secondary);
       font: var(--text-mono);
       font-size: 12px;
-      min-width: 0;
-      transition: background var(--duration-base) var(--easing-default);
+      transition:
+        background var(--duration-base) var(--easing-default),
+        border-color var(--duration-base) var(--easing-default),
+        color var(--duration-base) var(--easing-default);
     }
-    .sblk.tail { background: color-mix(in srgb, var(--danger) 18%, transparent); color: var(--danger); }
-    .sblk.act { background: color-mix(in srgb, var(--vec) 30%, transparent); color: var(--foreground); }
+    .sblk.tail {
+      border-color: color-mix(in srgb, var(--danger) 30%, transparent);
+      background: color-mix(in srgb, var(--danger) 12%, transparent);
+      color: var(--danger);
+    }
+    .sblk.act {
+      border-color: color-mix(in srgb, var(--primary) 58%, transparent);
+      background: color-mix(in srgb, var(--primary) 24%, transparent);
+      color: var(--foreground);
+    }
     .sbar-cap, .tl-axis, .swim-axis {
       display: flex;
       justify-content: space-between;
@@ -624,6 +751,368 @@
       color: var(--foreground-secondary);
       font-size: 14px;
       margin-top: 2px;
+    }
+    .tp-scheme-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 10px;
+    }
+    .tp-scheme {
+      min-width: 0;
+      min-height: 148px;
+      padding: 10px;
+      display: grid;
+      grid-template-rows: auto auto 1fr auto;
+      gap: 8px;
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-md);
+      background: color-mix(in srgb, var(--card-bg) 92%, transparent);
+      color: var(--foreground-secondary);
+      cursor: pointer;
+      text-align: left;
+    }
+    .tp-scheme:hover {
+      border-color: var(--card-hover-border);
+      background: color-mix(in srgb, var(--card-bg) 86%, var(--state-hover));
+    }
+    .tp-scheme:focus-visible {
+      outline: 2px solid var(--focus-ring);
+      outline-offset: 2px;
+    }
+    .tp-scheme.is-active {
+      border-color: color-mix(in srgb, var(--primary) 68%, transparent);
+      background: color-mix(in srgb, var(--primary) 15%, var(--card-bg));
+      color: var(--foreground);
+    }
+    .tp-scheme__top {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .tp-scheme__top h4 {
+      margin: 0;
+      overflow: hidden;
+      color: var(--foreground);
+      font: 700 14px / 1.25 var(--font-sans);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .tp-scheme__badge {
+      min-height: var(--tag-height);
+      padding: 0 var(--tag-padding-x);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: var(--tag-radius);
+      background: var(--comp-tag-bg);
+      color: var(--comp-tag-fg);
+      font: var(--text-label);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .tp-verdict {
+      min-height: 28px;
+      padding: 5px 7px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      background: color-mix(in srgb, var(--surface-2) 72%, transparent);
+      color: var(--foreground-muted);
+      font-size: 12px;
+    }
+    .tp-verdict b {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--foreground-secondary);
+      font-size: 12px;
+      font-weight: var(--font-weight-bold);
+      white-space: nowrap;
+    }
+    .tp-verdict b::before {
+      width: 6px;
+      height: 6px;
+      content: "";
+      border-radius: 50%;
+      background: currentColor;
+      box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 12%, transparent);
+    }
+    .tp-verdict--ready {
+      border-color: color-mix(in srgb, var(--success) 20%, transparent);
+      background: color-mix(in srgb, var(--success) 6%, transparent);
+    }
+    .tp-verdict--ready b { color: var(--success); }
+    .tp-verdict--review {
+      border-color: color-mix(in srgb, var(--warning) 22%, transparent);
+      background: color-mix(in srgb, var(--warning) 7%, transparent);
+    }
+    .tp-verdict--review b { color: var(--warning); }
+    .tp-scheme__facts {
+      display: grid;
+      gap: 5px;
+    }
+    .tp-scheme__row {
+      display: grid;
+      grid-template-columns: 56px minmax(0, 1fr);
+      gap: 7px;
+      align-items: baseline;
+      color: var(--foreground-secondary);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+    .tp-scheme__row span {
+      overflow: hidden;
+      color: var(--foreground-muted);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .tp-scheme__row b {
+      overflow: hidden;
+      color: var(--foreground);
+      font-weight: var(--font-weight-bold);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .tp-scheme__row b.is-ok { color: var(--success); }
+    .tp-scheme__row b.is-warn { color: var(--warning); }
+    .tp-scheme__row b.is-risk { color: var(--danger); }
+    .tp-scheme__note {
+      margin: 0;
+      color: var(--foreground-muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .tp-detail-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 10px;
+      align-items: stretch;
+    }
+    .tp-detail-card {
+      min-width: 0;
+      padding: 11px;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      background: color-mix(in srgb, var(--surface-2) 64%, transparent);
+    }
+    .tp-detail-card--wide {
+      display: grid;
+      gap: 10px;
+    }
+    .tp-detail-head {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .tp-detail-head h4,
+    .tp-subhead {
+      margin: 0;
+      color: var(--foreground);
+      font: var(--text-title-2);
+      font-size: 14px;
+    }
+    .tp-subhead { margin-bottom: 6px; }
+    .tp-detail-head span {
+      min-width: 0;
+      overflow: hidden;
+      color: var(--foreground-muted);
+      font: var(--text-mono);
+      font-size: 12px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .tp-control-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .tp-control-row .tp-anim {
+      margin: 0;
+    }
+    .tp-explain {
+      color: var(--foreground-secondary);
+      font-size: 14px;
+      line-height: 1.45;
+    }
+    .sblk.next {
+      outline: 1px solid color-mix(in srgb, var(--success) 55%, transparent);
+      outline-offset: -2px;
+      color: color-mix(in srgb, var(--success) 82%, var(--foreground));
+    }
+    .tp-memory-area {
+      display: grid;
+      gap: 10px;
+    }
+    .tp-memory-arch {
+      height: 300px;
+      min-height: 0;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      background: color-mix(in srgb, var(--surface-1) 52%, transparent);
+      overflow: hidden;
+    }
+    .tp-memory-arch__head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 8px 10px 4px;
+      color: var(--foreground-secondary);
+      font: var(--text-label);
+    }
+    .tp-memory-arch .pto-memory-architecture-viewport {
+      height: 268px;
+      min-height: 0;
+      background: radial-gradient(circle, color-mix(in srgb, var(--foreground) 8%, transparent) 1px, transparent 1.5px);
+      background-size: 20px 20px;
+      overflow: hidden;
+    }
+    .tp-memory-arch .pto-memory-architecture-sizer {
+      min-height: 0;
+    }
+    .tp-memory-arch .pto-mem950.is-aiv-folded {
+      padding: 10px;
+    }
+    .tp-memory-arch .pto-mem950.is-aiv-folded .pto-mem950__layout {
+      gap: 42px;
+      align-items: flex-start;
+    }
+    .tp-memory-arch .pto-mem950.is-aiv-folded .pto-mem950__rails {
+      height: var(--tp-aic-height, 430px);
+      align-self: flex-start;
+    }
+    .tp-memory-arch .pto-mem950.is-aiv-folded .pto-mem950__rail {
+      height: 100%;
+      min-height: 0;
+      border-radius: 24px;
+    }
+    .tp-memory-arch .pto-mem950.is-aiv-folded .pto-mem950__rail-grid {
+      top: 22px;
+      bottom: 68px;
+    }
+    .tp-memory-arch .pto-mem950.is-aiv-folded .pto-mem950__rail-label {
+      bottom: 32px;
+    }
+    .tp-memory-arch .pto-mem950.is-aiv-folded .pto-mem950__stack {
+      gap: 0;
+    }
+    .tp-memory-arch .pto-mem950.is-aiv-folded .pto-mem950__notes {
+      display: none;
+    }
+    .tp-transfer-map {
+      display: grid;
+      grid-template-columns: minmax(82px, 1fr) 18px minmax(82px, 1fr) 18px minmax(82px, 1fr) 18px minmax(96px, 1fr);
+      gap: 6px;
+      align-items: stretch;
+    }
+    .tp-transfer-node {
+      min-width: 0;
+      min-height: 54px;
+      padding: 8px;
+      display: grid;
+      align-content: center;
+      gap: 4px;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      background: color-mix(in srgb, var(--surface-1) 72%, transparent);
+      color: var(--foreground-secondary);
+      transition: background var(--duration-base) var(--easing-default), color var(--duration-base) var(--easing-default), border-color var(--duration-base) var(--easing-default);
+    }
+    .tp-transfer-node b {
+      overflow: hidden;
+      color: var(--foreground);
+      font-size: 14px;
+      font-weight: var(--font-weight-bold);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .tp-transfer-node span {
+      overflow: hidden;
+      color: var(--foreground-muted);
+      font-size: 12px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .tp-transfer-node.act {
+      border-color: color-mix(in srgb, var(--primary) 58%, transparent);
+      background: color-mix(in srgb, var(--primary) 20%, transparent);
+      color: var(--foreground);
+    }
+    .tp-transfer-node.next {
+      border-color: color-mix(in srgb, var(--success) 40%, transparent);
+      background: color-mix(in srgb, var(--success) 10%, transparent);
+    }
+    .tp-transfer-arrow {
+      display: grid;
+      place-items: center;
+      color: var(--foreground-muted);
+      font-size: 14px;
+    }
+    .tp-transfer-status {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .tp-transfer-card {
+      min-width: 0;
+      padding: 9px;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      background: color-mix(in srgb, var(--surface-1) 74%, transparent);
+    }
+    .tp-transfer-card span {
+      display: block;
+      color: var(--foreground-muted);
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+    .tp-transfer-card b {
+      display: block;
+      overflow: hidden;
+      color: var(--foreground);
+      font-size: 14px;
+      font-weight: var(--font-weight-bold);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .tp-current-summary {
+      display: grid;
+      gap: 8px;
+      color: var(--foreground-secondary);
+      font-size: 14px;
+      line-height: 1.45;
+    }
+    .tp-current-summary b {
+      color: var(--foreground);
+      font-weight: var(--font-weight-bold);
+    }
+    .tp-current-note {
+      padding: 9px;
+      border-radius: var(--radius-sm);
+      background: color-mix(in srgb, var(--surface-1) 76%, transparent);
+      color: var(--foreground-secondary);
+      font-size: 14px;
+      line-height: 1.45;
+    }
+    .tp-current-note.is-ready { color: color-mix(in srgb, var(--success) 82%, var(--foreground)); }
+    .tp-current-note.is-review { color: color-mix(in srgb, var(--warning) 86%, var(--foreground)); }
+    @media (max-width: 1180px) {
+      .tp-scheme-grid,
+      .tp-detail-grid,
+      .tp-transfer-map,
+      .tp-transfer-status {
+        grid-template-columns: minmax(0, 1fr);
+      }
+      .tp-transfer-arrow { display: none; }
     }
 
     .panel-body {
@@ -670,7 +1159,7 @@
       font-size: 12px;
     }
     .ptab .cnt.err { background: color-mix(in srgb, var(--danger) 18%, transparent); color: var(--danger); }
-    .term, .probs, .flowpane, .accpane, .perfpane {
+    .term, .outputpane, .probs, .flowpane, .accpane, .perfpane {
       min-height: 0;
       overflow: auto;
     }
@@ -679,6 +1168,12 @@
       padding: 8px 14px;
       color: var(--foreground-secondary);
       font: 500 14px / 1.45 var(--font-mono);
+    }
+    .outputpane {
+      padding: 8px 14px;
+      color: var(--foreground-secondary);
+      font-size: 14px;
+      line-height: 1.5;
     }
     .tl { white-space: pre-wrap; word-break: break-word; }
     .tl .g { color: var(--success); }
@@ -913,7 +1408,7 @@
       height: 100%;
       min-height: 0;
       display: grid;
-      grid-template-rows: auto auto auto auto minmax(0, 1fr);
+      grid-template-rows: auto auto auto minmax(0, 1fr);
       overflow: hidden;
     }
     .wz-h { padding: 14px 16px 12px; }
@@ -1037,7 +1532,25 @@
     .opmap .st { display: inline-flex; border-radius: var(--radius-sm); padding: 1px 6px; font-size: 12px; font-weight: var(--font-weight-bold); }
     .opmap .st.ok { color: var(--success); background: color-mix(in srgb, var(--success) 14%, transparent); }
     .opmap .st.rw { color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); }
-    .wz-foot { padding: 0 16px 12px; background: transparent; }
+    .wz-foot {
+      position: sticky;
+      bottom: -32px;
+      z-index: 3;
+      margin: 10px -16px -16px;
+      padding: 12px 16px 16px;
+      background:
+        linear-gradient(
+          180deg,
+          transparent 0,
+          color-mix(in srgb, var(--background) 94%, transparent) 18px,
+          color-mix(in srgb, var(--background) 98%, transparent) 100%
+        );
+    }
+    .run-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 8px;
+    }
     .run {
       width: 100%;
       min-height: 38px;
@@ -1051,7 +1564,8 @@
     .run:hover { background: var(--button-solid-bg-hover); }
     .run:disabled { opacity: var(--button-disabled-opacity); cursor: default; }
     .run.ghost { background: var(--button-secondary-bg); color: var(--button-secondary-fg); }
-    .foot-hint { margin-top: 8px; text-align: center; color: var(--foreground-muted); font-size: 12px; }
+    .run.ghost:hover { background: var(--button-secondary-bg-hover); }
+    .foot-hint { margin: 0 0 8px; text-align: center; color: var(--foreground-muted); font-size: 12px; }
 
     .notif-wrap {
       position: fixed;
@@ -1100,10 +1614,10 @@
 <body>
   <div class="mobile-note">
     <b>请在桌面端打开</b>
-    <span>AscendPort 迁移工作台是多 pane IDE 布局，需要较宽屏幕才能完整呈现文件树、编辑器、计算图和迁移向导。</span>
+    <span>AscendPort 迁移工作台是多分栏编辑布局，需要较宽屏幕才能完整呈现文件树、编辑器、计算图和迁移向导。</span>
   </div>
 
-  <section class="pto-ide-frame mla-frame" data-ide-frame data-host="standalone" aria-label="AscendPort PTO migration workbench">
+  <section class="pto-ide-frame mla-frame" data-ide-frame data-host="standalone" aria-label="AscendPort 迁移工作台">
     <header class="pto-ide-frame__topbar pto-ide-frame__standalone-chrome">
       <div class="pto-ide-frame__topbar-left">
         <div class="pto-ide-frame__host-chip">
@@ -1114,27 +1628,27 @@
           </svg>
           <span class="mla-host-chip-text"><span class="mla-status-dot"></span>AscendPort 已连接 · Atlas 800T A2</span>
         </div>
-        <div class="pto-ide-frame__workspace">flash_mla_decode.cu — deepseek-v3 · Flash MLA</div>
+        <div class="pto-ide-frame__workspace">稀疏解码算子 · 源码迁移</div>
       </div>
       <div class="pto-ide-frame__topbar-center">
-        <div class="pto-ide-frame__search" aria-label="Workbench context">
+        <div class="pto-ide-frame__search" aria-label="工作台上下文">
           <svg class="pto-ide-frame__search-icon" viewBox="0 0 24 24" aria-hidden="true">
             <circle cx="11" cy="11" r="8"></circle>
             <path d="m21 21-4.3-4.3"></path>
           </svg>
-          <span class="mla-search-copy">GPU → AscendC migration · CANN 8.0 · FP8 e4m3</span>
+          <span class="mla-search-copy">源端到昇腾迁移 · CANN 8.0 · FP8 e4m3</span>
         </div>
       </div>
       <div class="pto-ide-frame__topbar-right">
-        <div class="pto-ide-frame__window-actions" aria-label="Window controls">
-          <button class="pto-ide-frame__window-action is-selected" type="button" data-ide-toggle="terminal" aria-label="Toggle terminal panel" aria-controls="terminal-view" aria-expanded="true" aria-pressed="true" id="topTerminalBtn" title="Terminal">
+        <div class="pto-ide-frame__window-actions" aria-label="窗口控制">
+          <button class="pto-ide-frame__window-action is-selected" type="button" data-ide-toggle="terminal" aria-label="切换终端面板" aria-controls="terminal-view" aria-expanded="true" aria-pressed="true" id="topTerminalBtn" title="终端">
             <svg class="pto-ide-frame__window-icon" viewBox="0 0 24 24" aria-hidden="true">
               <rect x="3" y="5" width="18" height="14" rx="2"></rect>
               <path d="m7 9 3 3-3 3"></path>
               <path d="M12 15h5"></path>
             </svg>
           </button>
-          <button class="pto-ide-frame__window-action is-selected" type="button" data-ide-toggle="inspector" aria-label="Toggle inspector panel" aria-controls="inspector-pane" aria-expanded="true" aria-pressed="true" id="topInspectorBtn" title="Inspector">
+          <button class="pto-ide-frame__window-action is-selected" type="button" data-ide-toggle="inspector" aria-label="切换检查器面板" aria-controls="inspector-pane" aria-expanded="true" aria-pressed="true" id="topInspectorBtn" title="检查器">
             <svg class="pto-ide-frame__window-icon" viewBox="0 0 24 24" aria-hidden="true">
               <rect x="3" y="4" width="18" height="16" rx="2"></rect>
               <path d="M15 4v16"></path>
@@ -1143,7 +1657,7 @@
               <path d="M7 16h4"></path>
             </svg>
           </button>
-          <button class="pto-ide-frame__window-action" type="button" aria-label="Reset migration" id="topResetBtn" title="Reset">
+          <button class="pto-ide-frame__window-action" type="button" aria-label="重置迁移流程" id="topResetBtn" title="重置">
             <svg class="pto-ide-frame__window-icon" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M3 12a9 9 0 1 0 3-6.7"></path>
               <path d="M3 3v6h6"></path>
@@ -1154,17 +1668,17 @@
     </header>
 
     <div class="pto-ide-frame__body">
-      <nav class="pto-ide-frame__activity-rail pto-ide-frame__standalone-chrome" aria-label="Activity rail">
-        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button is-selected" type="button" data-ide-toggle="explorer" aria-label="Toggle file explorer" aria-controls="explorer-pane" aria-expanded="true" aria-pressed="true" title="Explorer">
+      <nav class="pto-ide-frame__activity-rail pto-ide-frame__standalone-chrome" aria-label="活动栏">
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button is-selected" type="button" data-ide-toggle="explorer" aria-label="切换资源管理器" aria-controls="explorer-pane" aria-expanded="true" aria-pressed="true" title="资源管理器">
           <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9l-.81-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"></path></svg>
         </button>
-        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" aria-label="Search" title="Search">
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" aria-label="搜索" title="搜索">
           <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
         </button>
-        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" aria-label="Source control" title="Source control">
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" aria-label="源码控制" title="源码控制">
           <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="18" cy="18" r="3"></circle><circle cx="6" cy="6" r="3"></circle><path d="M13 6h3a2 2 0 0 1 2 2v7"></path><path d="M6 9v12"></path></svg>
         </button>
-        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" aria-label="Terminal" title="Terminal" id="railTerminalBtn">
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" aria-label="终端" title="终端" id="railTerminalBtn">
           <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="m7 9 3 3-3 3"></path><path d="M12 15h5"></path></svg>
         </button>
       </nav>
@@ -1172,78 +1686,102 @@
       <div class="pto-ide-frame__workarea">
         <div class="pto-ide-frame__split" data-ide-split="mla-vertical" data-split-direction="vertical" data-sizes="72,28" data-min-size="390,165" data-storage-key="ascendport-mla-pto-vertical-v1">
           <section class="pto-ide-frame__pane pto-ide-frame__pane--stack" data-ide-pane="main-row">
-            <div class="pto-ide-frame__split" data-ide-split="standalone-main" data-split-direction="horizontal" data-sizes="17,57,26" data-min-size="220,520,300" data-storage-key="ascendport-mla-pto-main-v1">
+            <div class="pto-ide-frame__split" data-ide-split="standalone-main" data-split-direction="horizontal" data-sizes="17,64,19" data-min-size="220,640,300" data-storage-key="ascendport-mla-pto-main-v1">
               <aside class="pto-ide-frame__pane pto-ide-frame__explorer" data-ide-pane="explorer" id="explorer-pane">
                 <header class="pto-ide-frame__pane-header"><div class="explorer-head"><span>资源管理器</span><span>DEEPSEEK-V3</span></div></header>
                 <div class="pto-ide-frame__pane-body"><div class="tree" id="tree"></div></div>
               </aside>
 
               <section class="pto-ide-frame__pane" data-ide-pane="editor-preview">
-                <div class="pto-ide-frame__tabstrip"><div class="tabs" id="tabs"></div></div>
-                <header class="pto-ide-frame__pane-header">
-                  <div class="edtoolbar">
-                    <span class="etb-path"><b>ops</b> / <span id="etbFile">flash_mla_decode.cu</span></span>
-                    <span class="etb-spacer"></span>
-                    <button class="etb-btn" id="parseBtn" type="button" title="解析算子并打开计算图">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="6" cy="6" r="2.5"></circle><circle cx="18" cy="6" r="2.5"></circle><circle cx="12" cy="18" r="2.5"></circle><path d="M7.5 7.5 11 15m6-8.5L13 15"></path></svg>
-                      解析算子 · 计算图
-                    </button>
-                  </div>
-                </header>
                 <div class="pto-ide-frame__pane-body pto-ide-frame__split editor-pane-body" data-ide-split="editor-bottom" data-split-direction="vertical" data-sizes="76,24" data-min-size="360,154" data-storage-key="ascendport-mla-pto-editor-bottom-v1">
-                  <div class="edit-split" id="split" data-ide-pane="editor-main">
-                    <div class="codewrap" id="codewrap">
-                      <div class="pane-h" id="leftPaneH" style="display:none">
-                        <span class="dot-c" style="background:var(--cube)"></span><b>flash_mla_decode.cu</b><span class="pane-tag cuda">CUDA · GPU</span>
-                        <span class="link-hint">悬停/点击代码 ↔ 联动对侧</span>
+                  <div class="edit-split pto-ide-frame__split" id="split" data-ide-pane="editor-main" data-ide-split="source-analysis" data-split-direction="horizontal" data-sizes="50,50" data-min-size="420,420" data-storage-key="ascendport-mla-source-analysis-v1">
+                    <section class="editor-group-panel sourcepane" data-ide-pane="source-code-group">
+                      <div class="pto-ide-frame__tabstrip">
+                        <div class="tabs" id="tabs"></div>
                       </div>
-                      <div class="code"><div class="gutter" id="gutter"></div><div class="codelines" id="codelines"></div></div>
-                    </div>
+                      <header class="pto-ide-frame__pane-header">
+                        <div class="edtoolbar">
+                          <span class="etb-path"><b>ops</b> / <span id="etbFile">flash_mla_decode.cu</span></span>
+                          <span class="etb-spacer"></span>
+                          <button class="etb-btn" id="parseBtn" type="button" title="解析算子并打开计算图">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="6" cy="6" r="2.5"></circle><circle cx="18" cy="6" r="2.5"></circle><circle cx="12" cy="18" r="2.5"></circle><path d="M7.5 7.5 11 15m6-8.5L13 15"></path></svg>
+                            解析算子 · 计算图
+                          </button>
+                        </div>
+                      </header>
+                      <div class="codewrap" id="codewrap" data-ide-pane="source-code">
+                        <div class="pane-h" id="leftPaneH" style="display:none">
+                          <span class="dot-c" style="background:var(--cube)"></span><b>flash_mla_decode.cu</b><span class="pane-tag cuda">源端代码</span>
+                          <span class="link-hint">悬停/点击代码 ↔ 联动对侧</span>
+                        </div>
+                        <div class="code"><div class="gutter" id="gutter"></div><div class="codelines" id="codelines"></div></div>
+                      </div>
+                    </section>
 
-                    <div class="graphpane" id="graphpane">
-                      <div class="gp-head">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="1.8" aria-hidden="true"><circle cx="6" cy="6" r="2.5"></circle><circle cx="18" cy="6" r="2.5"></circle><circle cx="12" cy="18" r="2.5"></circle><path d="M7.5 7.5 11 15m6-8.5L13 15"></path></svg>
-                        <div><b>算子计算图</b> <span class="sub">解析结果 · Flash MLA Sparse Decode</span></div>
-                        <div class="gp-close" id="gclose" title="收起">x</div>
+                    <section class="editor-group-panel analysispane" id="analysisPane" data-ide-pane="analysis" data-analysis-view="graph">
+                      <div class="pto-ide-frame__tabstrip">
+                        <div class="tabs analysis-tabs" aria-label="分析视图">
+                          <button class="tab analysis-tab on" type="button" data-analysis="graph">计算图<span class="x">×</span></button>
+                          <button class="tab analysis-tab" type="button" data-analysis="generated">生成代码<span class="x">×</span></button>
+                          <button class="tab analysis-tab" type="button" data-analysis="flow">数据流<span class="x">×</span></button>
+                          <button class="tab analysis-tab" type="button" data-analysis="tiling">分块<span class="x">×</span></button>
+                          <button class="tab analysis-tab" type="button" data-analysis="pipeline">流水<span class="x">×</span></button>
+                          <button class="tab analysis-tab" type="button" data-analysis="accuracy">精度<span class="x">×</span></button>
+                          <button class="tab analysis-tab" type="button" data-analysis="performance">性能<span class="x">×</span></button>
+                        </div>
                       </div>
-                      <div class="legend">
-                        <span><i style="background:var(--mem)"></i>片上搬运</span>
-                        <span><i style="background:var(--cube)"></i>Cube 矩阵</span>
-                        <span><i style="background:var(--vec)"></i>Vector 向量</span>
-                        <span><i style="background:var(--scalar)"></i>Scalar 标量</span>
-                        <span><i style="background:var(--risk)"></i>GPU-only · 无直接适配</span>
-                      </div>
-                      <div class="gcanvas" id="gcanvas"></div>
-                      <div class="gp-detail" id="gdetail">
-                        <b>点击任意节点查看解析详情</b><br>
-                        <span>计算图由 S1 从 CUDA AST 自动抽取，节点颜色为工具推断的目标昇腾执行单元。</span>
-                      </div>
-                    </div>
+                      <div class="analysis-body">
+                        <div class="graphpane" id="graphpane">
+                          <div class="gp-head">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="1.8" aria-hidden="true"><circle cx="6" cy="6" r="2.5"></circle><circle cx="18" cy="6" r="2.5"></circle><circle cx="12" cy="18" r="2.5"></circle><path d="M7.5 7.5 11 15m6-8.5L13 15"></path></svg>
+                            <div><b>算子计算图</b> <span class="sub">解析结果 · 稀疏解码</span></div>
+                            <div class="gp-close" id="gclose" title="收起">×</div>
+                          </div>
+                          <div class="legend">
+                            <span><i style="background:var(--mem)"></i>片上搬运</span>
+                            <span><i style="background:var(--cube)"></i>矩阵单元</span>
+                            <span><i style="background:var(--vec)"></i>向量单元</span>
+                            <span><i style="background:var(--scalar)"></i>标量单元</span>
+                            <span><i style="background:var(--risk)"></i>仅源端支持</span>
+                          </div>
+                          <div class="gcanvas" id="gcanvas"></div>
+                          <div class="gp-detail" id="gdetail">
+                            <b>点击任意节点查看解析详情</b><br>
+                            <span>计算图由 S1 从源码抽取，节点颜色表示目标执行单元。</span>
+                          </div>
+                        </div>
 
-                    <div class="codewrap diffpane" id="diffwrap">
-                      <div class="pane-h">
-                        <span class="dot-c" style="background:var(--primary)"></span><b id="diffFile">flash_mla_decode.cpp</b><span class="pane-tag asc">AscendC · 昇腾</span>
-                      </div>
-                      <div class="code"><div class="gutter" id="diffGutter"></div><div class="codelines" id="diffLines"></div></div>
-                    </div>
+                        <div class="codewrap diffpane" id="diffwrap">
+                          <div class="pane-h">
+                            <span class="dot-c" style="background:var(--primary)"></span><b id="diffFile">flash_mla_decode.cpp</b><span class="pane-tag asc">昇腾代码</span>
+                          </div>
+                          <div class="code"><div class="gutter" id="diffGutter"></div><div class="codelines" id="diffLines"></div></div>
+                        </div>
 
-                    <div class="tilingpane" id="tilingpane">
-                      <div class="tp-head">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--vec)" stroke-width="1.8" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M3 9h18M3 15h18M9 3v18"></path></svg>
-                        <div><b>Tiling 可视化</b> <span class="sub">key(S 维)分块 · 缓冲占用</span></div>
-                        <div class="tp-close" id="tpClose" title="收起">x</div>
-                      </div>
-                      <div class="tp-body" id="tpBody"></div>
-                    </div>
+                        <div class="tilingpane" id="tilingpane">
+                          <div class="tp-head">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--vec)" stroke-width="1.8" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M3 9h18M3 15h18M9 3v18"></path></svg>
+                            <div><b>分块可视化</b> <span class="sub">维度分块 · 缓冲占用</span></div>
+                            <div class="tp-close" id="tpClose" title="收起">×</div>
+                          </div>
+                          <div class="tp-body" id="tpBody"></div>
+                        </div>
 
-                    <div class="pipepane" id="pipepane">
-                      <div class="tp-head">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--mem)" stroke-width="1.8" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18"></path></svg>
-                        <div><b>流水线编排 · 前后对比</b> <span class="sub">串行 → 双缓冲重叠</span></div>
-                        <div class="tp-close" id="ppClose" title="收起">x</div>
+                        <div class="flowpane" id="flowpane"></div>
+
+                        <div class="pipepane" id="pipepane">
+                          <div class="tp-head">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--mem)" stroke-width="1.8" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18"></path></svg>
+                            <div><b>流水线编排 · 前后对比</b> <span class="sub">串行 → 双缓冲重叠</span></div>
+                            <div class="tp-close" id="ppClose" title="收起">×</div>
+                          </div>
+                          <div class="tp-body" id="ppBody"></div>
+                        </div>
+
+                        <div class="accpane" id="accpane"></div>
+                        <div class="perfpane" id="perfpane"></div>
                       </div>
-                      <div class="tp-body" id="ppBody"></div>
-                    </div>
+                    </section>
                   </div>
                 </div>
               </section>
@@ -1257,16 +1795,21 @@
                   <div class="wizard-shell">
                     <div class="wz-h">
                       <div class="kick">AscendPort</div>
-                      <h1>GPU → 昇腾 · 八阶段流水</h1>
-                      <p>逐步把 CUDA 算子迁移为 AscendC。每一步都可介入，底部按钮执行当前阶段。</p>
+                      <h1>源端到昇腾 · 八阶段流水</h1>
+                      <p>逐步把源端算子迁移为昇腾算子。每一步都可介入，下方按钮执行当前阶段。</p>
                     </div>
                     <div class="prog" id="prog"></div>
                     <div class="plabels" id="plabels"></div>
-                    <div class="wz-foot">
-                      <button class="run" id="runBtn" type="button">运行 S2 · 算子映射</button>
-                      <div class="foot-hint" id="footHint">共 8 个阶段 · 当前 1 / 8 完成</div>
+                    <div class="wz-scroll" id="wzScroll">
+                      <div id="wzContent"></div>
+                      <div class="wz-foot">
+                        <div class="foot-hint" id="footHint">共 8 个阶段 · 当前 1 / 8 完成</div>
+                        <div class="run-row">
+                          <button class="run" id="runBtn" type="button">单步运行 S2</button>
+                          <button class="run ghost" id="runAllBtn" type="button">全部执行</button>
+                        </div>
+                      </div>
                     </div>
-                    <div class="wz-scroll" id="wzScroll"></div>
                   </div>
                 </div>
               </aside>
@@ -1274,47 +1817,37 @@
           </section>
 
           <section class="pto-ide-frame__pane pto-ide-frame__bottom-dock" data-ide-pane="bottom-panel" data-ide-bottom-dock>
-            <button type="button" id="bottomVisualizationToggle" data-ide-toggle="visualization" hidden aria-hidden="true">Visualization</button>
+            <button type="button" id="bottomVisualizationToggle" data-ide-toggle="visualization" hidden aria-hidden="true">问题</button>
             <div class="pto-ide-frame__bottom-view" data-ide-bottom-panel="visualization" hidden aria-hidden="true">
-              <div class="panel-body">
-                <div class="panel-tabs">
-                  <div class="ptab" data-p="probs" data-ide-toggle="visualization" aria-controls="probs">问题<span class="cnt err" id="probCnt">2</span></div>
-                  <div class="ptab" data-p="flow" data-ide-toggle="visualization" aria-controls="flowpane" id="flowTab" style="display:none">数据流 <span class="cnt" style="background:color-mix(in srgb, var(--success) 14%, transparent);color:var(--success)">S4</span></div>
-                  <div class="ptab" data-p="acc" data-ide-toggle="visualization" aria-controls="accpane" id="accTab" style="display:none">精度报告 <span class="cnt" id="accCnt" style="background:color-mix(in srgb, var(--success) 14%, transparent);color:var(--success)">S7</span></div>
-                  <div class="ptab" data-p="perf" data-ide-toggle="visualization" aria-controls="perfpane" id="perfTab" style="display:none">性能报告 <span class="cnt" style="background:color-mix(in srgb, var(--success) 14%, transparent);color:var(--success)">S8</span></div>
-                  <div style="margin-left:auto;color:var(--foreground-muted);font-size:12px;align-self:center">ascendport ▸ analysis</div>
-                </div>
-                <div class="probs" id="probs"></div>
-                <div class="flowpane" id="flowpane" style="display:none"></div>
-                <div class="accpane" id="accpane" style="display:none"></div>
-                <div class="perfpane" id="perfpane" style="display:none"></div>
-              </div>
             </div>
             <div class="pto-ide-frame__bottom-view" data-ide-bottom-panel="terminal" id="terminal-view">
               <div class="panel-body">
                 <div class="panel-tabs">
+                  <div class="ptab" data-p="probs" aria-controls="probs">问题<span class="cnt err" id="probCnt">2</span></div>
                   <div class="ptab on" data-p="term">终端</div>
                   <div class="ptab" data-p="term2">输出</div>
-                  <div style="margin-left:auto;color:var(--foreground-muted);font-size:12px;align-self:center">ascendport ▸ migrate</div>
-                  <button class="pto-ide-frame__window-action" type="button" data-ide-close="terminal" aria-label="Close terminal" title="Close terminal">
+                  <div style="margin-left:auto;color:var(--foreground-muted);font-size:12px;align-self:center">迁移日志</div>
+                  <button class="pto-ide-frame__window-action" type="button" data-ide-close="terminal" aria-label="关闭终端" title="关闭终端">
                     <svg class="pto-ide-frame__window-icon" viewBox="0 0 24 24" aria-hidden="true">
                       <path d="M18 6 6 18"></path>
                       <path d="m6 6 12 12"></path>
                     </svg>
                   </button>
                 </div>
+                <div class="probs" id="probs"></div>
                 <div class="term" id="term"></div>
+                <div class="outputpane" id="outputpane" style="display:none">暂无输出。</div>
               </div>
             </div>
           </section>
         </div>
 
         <footer class="pto-ide-frame__status-strip pto-ide-frame__standalone-chrome">
-          <span class="s">migrate/lightning-indexer</span>
+          <span class="s">迁移任务</span>
           <span class="s" id="sbStep">S1 · 已完成</span>
-          <span class="s">AscendC · CANN 8.0</span>
+          <span class="s">昇腾代码 · CANN 8.0</span>
           <span class="mla-status-right">
-            <span class="s" id="sbAicore">aicore —</span>
+            <span class="s" id="sbAicore">算力核 —</span>
             <span class="s">FP8 · e4m3</span>
             <span class="s">UTF-8</span>
           </span>
@@ -1357,10 +1890,10 @@
       };
       const graphUnitLabel = {
         mem: '片上搬运',
-        cube: 'Cube 矩阵',
-        vector: 'Vector 向量',
-        scalar: 'Scalar 标量',
-        risk: 'GPU-only · 无直接适配'
+        cube: '矩阵单元',
+        vector: '向量单元',
+        scalar: '标量单元',
+        risk: '仅源端支持 · 无直接适配'
       };
       const graphColorKey = {
         mem: 'sem:comm',
@@ -1394,8 +1927,8 @@
             id: node.id,
             label: node.t,
             typeLabel: rewritten && isGpuOnly
-              ? 'GPU-only → Vector 替代'
-              : (isGpuOnly ? 'GPU-only · 无直接适配' : (isTensor ? node.s : graphUnitLabel[unit])),
+              ? '仅源端支持 → 向量归约替代'
+              : (isGpuOnly ? '仅源端支持 · 无直接适配' : (isTensor ? node.s : graphUnitLabel[unit])),
             kind: isTensor ? 'tensor' : 'op',
             hideTypeLabel: !isTensor && !isGpuOnly,
             x: ox + (node.x + node.w / 2) * sx,
@@ -1437,7 +1970,7 @@
         const col = unitColor(unit);
         let note = node.d;
         if (graphMapped && node.unit === 'risk') {
-          note = '【已在 S2 改写】' + node.d.replace(/S2 决策.*$/, '现映射为 Vector 片上归约，见 S6 的 SelectTopK / TopK 原语。');
+          note = '【已在 S2 改写】' + node.d.replace(/S2 决策.*$/, '现映射为向量单元片上归约，见 S6 的 SelectTopK / TopK 原语。');
         }
         detail.innerHTML =
           `<span class="badge" style="background:${col}22;color:${col}">${graphUnitLabel[unit]}</span>` +
@@ -1463,7 +1996,7 @@
         if (!canvas || !modelGraph?.renderController) return;
         graphController?.destroy?.();
         graphController = modelGraph.renderController(canvas, buildPatternGraph(), {
-          ariaLabel: 'AscendPort Flash MLA operator graph',
+          ariaLabel: 'AscendPort 稀疏解码算子计算图',
           interaction: { selectableClusters: false },
           overlays: { edgeTags: false, evidence: false },
           fitMode: 'full',
@@ -1474,7 +2007,7 @@
         decorateGpuOnlyGraphNodes();
         const detail = document.getElementById('gdetail');
         if (detail) {
-          detail.innerHTML = '<b>点击任意节点查看解析详情</b><br><span>计算图由 model-graphviz pattern 渲染，节点语义映射到昇腾执行单元。</span>';
+          detail.innerHTML = '<b>点击任意节点查看解析详情</b><br><span>计算图由共享图谱组件渲染，节点语义映射到昇腾执行单元。</span>';
         }
       };
 
@@ -1505,9 +2038,9 @@
         if (!root) return;
         const total = Math.max(1, model.total || 1);
         const rows = [
-          ['mte', 'MTE 搬运', model.rows.mte || []],
-          ['cube', 'Cube', model.rows.cube || []],
-          ['vec', 'Vector', model.rows.vec || []]
+          ['mte', '搬运单元', model.rows.mte || []],
+          ['cube', '矩阵单元', model.rows.cube || []],
+          ['vec', '向量单元', model.rows.vec || []]
         ];
         const fontFamily = getComputedStyle(document.documentElement).getPropertyValue('--font-sans').trim() || 'sans-serif';
         rows.forEach(([key, label, cells]) => {
@@ -1552,11 +2085,11 @@
 
       window.swimHTML = swimHTML = function swimHTMLPto(model, play) {
         const id = `swim-${++swimId}`;
-        const axis = `<div class="swim-axis"><span>t=0</span><span>时间(cycle)→</span><span>t=${model.total}</span></div>`;
-        const legend = '<div class="swim-legend"><span><i style="background:var(--mem)"></i>MTE 搬运</span><span><i style="background:var(--cube)"></i>Cube</span><span><i style="background:var(--vec)"></i>Vector</span><span><i style="background:repeating-linear-gradient(45deg,rgba(255,255,255,.28),rgba(255,255,255,.28) 3px,transparent 3px,transparent 6px)"></i>空转 idle</span></div>';
+        const axis = `<div class="swim-axis"><span>t=0</span><span>时间(周期)→</span><span>t=${model.total}</span></div>`;
+        const legend = '<div class="swim-legend"><span><i style="background:var(--mem)"></i>搬运单元</span><span><i style="background:var(--cube)"></i>矩阵单元</span><span><i style="background:var(--vec)"></i>向量单元</span><span><i style="background:repeating-linear-gradient(45deg,rgba(255,255,255,.28),rgba(255,255,255,.28) 3px,transparent 3px,transparent 6px)"></i>空转</span></div>';
         const row = (key, label) => `<div class="swim-row pto-pattern-swimlane-task__row"><div class="swim-lbl pto-pattern-swimlane-task__label">${label}</div><div class="swim-track"><canvas class="swim-canvas pto-pattern-swimlane-task__canvas" data-row="${key}"></canvas></div></div>`;
         requestAnimationFrame(() => drawPatternSwim(id, model, play));
-        return `<div class="swim pto-pattern-swimlane-task" data-swim-id="${id}">${row('mte', 'MTE 搬运')}${row('cube', 'Cube')}${row('vec', 'Vector')}${axis}${legend}</div>`;
+        return `<div class="swim pto-pattern-swimlane-task" data-swim-id="${id}">${row('mte', '搬运单元')}${row('cube', '矩阵单元')}${row('vec', '向量单元')}${axis}${legend}</div>`;
       };
 
       window.timelineHTML = timelineHTML = function timelineHTMLPto(model, play) {
@@ -1620,13 +2153,13 @@
             <span class="fb-step">步骤 <b id="flowNo">1</b>/${FLOW_STEPS.length} · <span id="flowTitle">${FLOW_STEPS[0].t}</span></span>
             <span class="fb-spacer"></span>
             <span class="fb-legend">
-              <span><i style="background:var(--mem)"></i>MTE 搬运</span>
-              <span><i style="background:var(--cube)"></i>Cube 矩阵</span>
-              <span><i style="background:var(--vec)"></i>Vector 向量</span>
+              <span><i style="background:var(--mem)"></i>搬运单元</span>
+              <span><i style="background:var(--cube)"></i>矩阵单元</span>
+              <span><i style="background:var(--vec)"></i>向量单元</span>
             </span>
           </div>
           <div class="flow-arch" id="flowMemoryArch">
-            <div class="flow-arch__head"><span>memory-architecture · Ascend 910B</span><span>路径焦点随步骤同步</span></div>
+            <div class="flow-arch__head"><span>内存架构 · 昇腾 910B</span><span>路径焦点随步骤同步</span></div>
             <div class="pto-memory-architecture-viewport" data-pto-mem-arch-viewport>
               <div class="pto-memory-architecture-sizer" data-pto-mem-arch-sizer>
                 <div class="pto-memory-architecture-canvas" data-pto-mem-arch-canvas>
@@ -1668,7 +2201,7 @@
         requestAnimationFrame(() => {
           const frame = document.querySelector('[data-ide-frame]');
           if (!frame?.dataset.ideFrameReady) return;
-          const terminalMode = panel === 'term' || panel === 'term2';
+          const terminalMode = panel === 'term' || panel === 'term2' || panel === 'probs';
           if (terminalMode && frame.dataset.bottomPanelMode !== 'terminal') {
             document.getElementById('topTerminalBtn')?.click();
           }
