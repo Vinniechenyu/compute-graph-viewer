@@ -1869,7 +1869,7 @@ function renderProg(){
   });
 }
 function renderWizard(){
-  const sc=document.getElementById('wzScroll');
+  const sc=document.getElementById('wzContent') || document.getElementById('wzScroll');
   // step 是已执行进度；viewStep 只控制右侧当前查看的阶段。
   const defaultView = Math.max(0, Math.min(STEPS.length-1, state.step-1));
   const viewIndex = Math.max(0, Math.min(STEPS.length-1, Number.isFinite(state.viewStep)?state.viewStep:defaultView));
