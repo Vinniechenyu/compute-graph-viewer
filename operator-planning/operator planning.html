@@ -272,12 +272,11 @@
     }
     .operator-plan {
       display: grid;
-      grid-template-rows: auto auto minmax(0, 1fr) auto;
+      grid-template-rows: auto minmax(0, 1fr) auto;
       gap: 12px;
       min-height: 100%;
     }
     .operator-plan .viz-panel,
-    .operator-plan .path-step,
     .operator-plan .metric,
     .operator-plan .plan-code-preview,
     .operator-plan .plan-swimlane,
@@ -288,36 +287,6 @@
     }
     .operator-plan .viz-panel {
       background: color-mix(in srgb, var(--ide-frame-pane-bg) 72%, transparent);
-    }
-    .plan-path {
-      display: grid;
-      grid-template-columns: repeat(5, minmax(0, 1fr));
-      gap: 8px;
-    }
-    .path-step {
-      min-width: 0;
-      padding: 9px 10px;
-      border-radius: var(--radius-md);
-      background: color-mix(in srgb, var(--foreground) 5%, transparent);
-    }
-    .path-step span {
-      display: block;
-      color: var(--foreground-muted);
-      font: var(--text-label);
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-    }
-    .path-step b {
-      display: block;
-      margin-top: 4px;
-      overflow: hidden;
-      color: var(--foreground);
-      font: 700 12px / 1.25 var(--font-sans);
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .path-step.is-current {
-      background: color-mix(in srgb, var(--primary) 18%, transparent);
     }
     .plan-summary-grid {
       display: grid;
@@ -5856,14 +5825,6 @@
           const activeCores = Math.min(selected.blockDim, outcome.soc.cores);
           $('#planView').innerHTML = `
             <div class="operator-plan">
-              <section class="plan-path" aria-label="Plan path">
-                <div class="path-step"><span>1 / Source</span><b>${escapeHtml(operator.title)}</b></div>
-                <div class="path-step"><span>2 / Tiling</span><b>B${outcome.blockDim} / T${outcome.tileNum} / DB${outcome.bufferNum}</b></div>
-                <div class="path-step is-current"><span>3 / Pipeline</span><b>${escapeHtml(scenario.name)}</b></div>
-                <div class="path-step"><span>4 / Validate</span><b>${verdict.label} · UB ${outcome.ubPct.toFixed(0)}%</b></div>
-                <div class="path-step"><span>5 / Handoff</span><b>Kernel + host tiling</b></div>
-              </section>
-
               <section class="plan-summary-grid">
                 <article class="viz-panel">
                   <header class="section-head"><h3>Constraints</h3><span class="section-meta">hardware · data · tiling</span></header>
