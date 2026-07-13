@@ -3089,7 +3089,7 @@
               <span class="ide-status__item" id="statusOperator">OP-003</span>
             </div>
             <div class="ide-status__group ide-status__group--right">
-              <span class="ide-status__item" id="statusView">API 可视化</span>
+              <span class="ide-status__item" id="statusView">Operator Plan</span>
               <span class="ide-status__item">UTF-8</span>
               <span class="ide-status__item">UX 原型</span>
             </div>
@@ -3169,8 +3169,8 @@
 
       const tilingSchemes = [
           { name: '基线方案', soc: '910b', dtype: 'half', inputs: 2, total: 16384, blockDim: 8, tileNum: 8, bufferNum: 2, tailPolicy: 'branch', paddingPolicy: 'mask', tilingMode: 'auto', note: '第一版均分方案，便于阅读和解释。' },
-        { name: '对齐 tail 场景', soc: '910b', dtype: 'half', inputs: 2, total: 16448, blockDim: 7, tileNum: 8, bufferNum: 2, tailPolicy: 'former/tail', paddingPolicy: 'padding', tilingMode: 'auto', note: '刻意制造 former/tail 核切分，让 tail 对齐更可见。' },
-        { name: 'Double Buffer 友好', soc: '910b', dtype: 'half', inputs: 3, total: 32768, blockDim: 12, tileNum: 4, bufferNum: 2, tailPolicy: 'pad', paddingPolicy: 'padding', tilingMode: 'auto', note: 'tile 数更少，启用 Double Buffer，UB 压力更高。' }
+        { name: '尾块对齐', soc: '910b', dtype: 'half', inputs: 2, total: 16448, blockDim: 7, tileNum: 8, bufferNum: 2, tailPolicy: 'former/tail', paddingPolicy: 'padding', tilingMode: 'auto', note: '刻意制造 former/tail 核切分，让 tail 对齐更可见。' },
+        { name: 'Double Buffer友好', soc: '910b', dtype: 'half', inputs: 3, total: 32768, blockDim: 12, tileNum: 4, bufferNum: 2, tailPolicy: 'pad', paddingPolicy: 'padding', tilingMode: 'auto', note: 'tile 数更少，启用 Double Buffer，UB 压力更高。' }
       ];
 
       const pipelineLanes = [
@@ -3453,7 +3453,7 @@
 
       const state = {
         operatorId: 'OP-003',
-        view: 'api',
+        view: 'plan',
         tilingScheme: '对齐 tail 场景',
         customSchemeCount: 0,
         soc: '910b',
@@ -3796,8 +3796,8 @@
             <div class="tiling-fact"><span>SOC</span><b>${outcome.soc.name}</b></div>
             <div class="tiling-fact"><span>核心</span><b>${outcome.soc.cores} ${outcome.soc.coreLabel}</b></div>
             <div class="tiling-fact"><span>UB</span><b>${outcome.soc.ubKB} KB / core</b></div>
-            <div class="tiling-fact"><span>对齐</span><b>${outcome.soc.alignBytes}B = ${outcome.alignElems} elems</b></div>
-            <div class="tiling-fact"><span>Vector</span><b>${outcome.soc.vectorWidthBytes}B = ${vectorElems} elems</b></div>
+            <div class="tiling-fact"><span>对齐</span><b>${outcome.soc.alignBytes}B = ${outcome.alignElems}</b></div>
+            <div class="tiling-fact"><span>Vector</span><b>${outcome.soc.vectorWidthBytes}B = ${vectorElems}</b></div>
           </div>
         `;
       }
@@ -3808,7 +3808,7 @@
           <div class="tiling-fact-grid">
             <div class="tiling-fact"><span>输入形状</span><b title="${input[1]}">${input[1]}</b></div>
             <div class="tiling-fact"><span>总长度</span><b>${fmt(outcome.total)}</b></div>
-            <div class="tiling-fact"><span>已对齐</span><b>${fmt(outcome.totalAligned)} (${outcome.alignElems} elems/unit)</b></div>
+            <div class="tiling-fact"><span>已对齐</span><b>${fmt(outcome.totalAligned)}</b></div>
           </div>
         `;
       }
@@ -3906,8 +3906,8 @@
           });
           kernel += '};\n';
         } else {
-          kernel += `// Tail-core split: ${outcome.formerNum} former cores (${outcome.formerLength} elems each)\n`;
-          kernel += `//                  ${outcome.tailNum} tail cores (${outcome.tailLength} elems each)\n\n`;
+          kernel += `// Tail-core split: ${outcome.formerNum} former cores (${outcome.formerLength})\n`;
+          kernel += `//                  ${outcome.tailNum} tail cores (${outcome.tailLength})\n\n`;
           kernel += 'class KernelOp {\n';
           kernel += 'public:\n';
           kernel += `    __aicore__ inline void Init(${sig}, const TilingData& t) {\n`;
@@ -4152,7 +4152,7 @@
                         ${renderOperatorShapeFacts(p, outcome)}
                       </section>
                       <section class="tiling-group">
-                        <div class="tiling-group__head"><h4>硬件目标</h4><span>${outcome.soc.name} · ${outcome.soc.coreLabel}</span></div>
+                        <div class="tiling-group__head"><h4>目标硬件</h4><span>${outcome.soc.name} · ${outcome.soc.coreLabel}</span></div>
                         <div class="hardware-target-grid">
                           <div class="hardware-target-controls">
                             <div class="control-field">
@@ -4182,7 +4182,6 @@
                           ${stepperField('blockDim', 'BLOCK_DIM', 1, outcome.soc.cores, selected.blockDim, 1)}
                           ${stepperField('tileNum', 'TILE_NUM', 1, 32, selected.tileNum, 1)}
                         </div>
-                        <div class="control-hint">BLOCK_DIM → 激活核数 / 单核工作量；TILE_NUM → tile 长度 / 循环次数。</div>
                         <div class="control-field">
                           <label>BUFFER_NUM</label>
                           <div class="seg-control" data-seg="bufferNum">
@@ -4230,7 +4229,7 @@
                         <p class="core-explain"><b>${selected.blockDim}/${outcome.soc.cores} ${outcome.soc.coreLabel} 激活</b>，${outcome.soc.cores - selected.blockDim} 个核空闲。</p>
                         <div class="section-head" style="margin-top:10px;padding-left:0;padding-right:0;background:transparent;border-bottom:0;border:none"><h3>硬件利用 · 核内</h3><span class="section-meta">${selected.tileNum} tiles × ${selected.bufferNum} buffers</span></div>
                         <div class="intra-core-grid" aria-label="单核内部 tile 切分">
-                          ${Array.from({ length: outcome.loopCount }, (_, i) => `<div class="intra-tile" title="loop ${i + 1} · ${outcome.tileLen} elements"><span>loop ${i + 1}</span>${fmt(outcome.tileLen)}</div>`).join('')}
+                          ${Array.from({ length: outcome.loopCount }, (_, i) => `<div class="intra-tile" title="loop ${i + 1} · ${outcome.tileLen}"><span>loop ${i + 1}</span>${fmt(outcome.tileLen)}</div>`).join('')}
                         </div>
                       </div>
                       <div>
@@ -5557,7 +5556,7 @@
                 ['工作负载', contract.workloadSeed],
                 ['SOC / dtype', `${contract.soc} · ${contract.dtype} · ${contract.format}`],
                 ['Tiling', `B${contract.blockDim} / T${contract.tileNum} / DB${contract.bufferNum}`],
-                ['Tile 长度', `${fmt(contract.tileLength)} elems`],
+                ['Tile 长度', `${fmt(contract.tileLength)}`],
                 ['UB 预算', contract.ubBudget],
                 ['队列预算', contract.queueBudget],
                 ['尾块策略', `${contract.tailPolicy} / ${contract.paddingPolicy}`]
@@ -5823,29 +5822,34 @@
           const queueOk = queueCount <= queueLimit;
           const code = tilingCodeForScheme(selected, outcome);
           const activeCores = Math.min(selected.blockDim, outcome.soc.cores);
+          const output = operator.outputs[0] || ['output', '-', '-'];
+          const outputMeta = splitDtypeFormat(output[2]);
           $('#planView').innerHTML = `
             <div class="operator-plan">
               <section class="plan-summary-grid">
                 <article class="viz-panel">
-                  <header class="section-head"><h3>Constraints</h3><span class="section-meta">hardware · data · tiling</span></header>
+                  <header class="section-head"><h3>Constraints</h3></header>
                   <div class="section-body plan-constraints">
                     <div class="plan-constraint-group">
-                      <div class="plan-constraint-line"><strong>SOC</strong><span>${outcome.soc.name}</span></div>
-                      <div class="plan-constraint-line"><strong>core</strong><span>${outcome.soc.cores} ${outcome.soc.coreLabel}</span></div>
-                      <div class="plan-constraint-line"><strong>UB</strong><span>${outcome.soc.ubKB} KB / core</span></div>
-                      <div class="plan-constraint-line"><strong>align</strong><span>${outcome.soc.alignBytes}B copy boundary</span></div>
+                      <div class="plan-constraint-line"><strong>目标硬件</strong><span>${outcome.soc.name}</span></div>
+                      <div class="plan-constraint-line"><strong>核数</strong><span>${outcome.soc.cores} ${outcome.soc.coreLabel}</span></div>
+                      <div class="plan-constraint-line"><strong>UB容量</strong><span>${outcome.soc.ubKB} KB / core</span></div>
+                      <div class="plan-constraint-line"><strong>对齐要求</strong><span>${outcome.soc.alignBytes}B copy boundary</span></div>
                       <div class="plan-constraint-line"><strong>vector</strong><span>${outcome.soc.vectorWidthBytes}B width</span></div>
                     </div>
                     <div class="plan-constraint-group">
                       <div class="plan-constraint-line"><strong>dtype</strong><span>${selected.dtype}</span></div>
-                      <div class="plan-constraint-line"><strong>format</strong><span>${splitDtypeFormat(operator.inputs[0]?.[2]).format}</span></div>
-                      <div class="plan-constraint-line"><strong>input shape</strong><span>${escapeHtml(operator.inputs.map((item) => `${item[0]} ${item[1]}`).join(' · '))}</span></div>
-                      <div class="plan-constraint-line"><strong>total length</strong><span>${fmt(outcome.total)} elems</span></div>
+                      <div class="plan-constraint-line"><strong>Format</strong><span>${splitDtypeFormat(operator.inputs[0]?.[2]).format}</span></div>
+                      <div class="plan-constraint-line"><strong>Input shape</strong><span>${escapeHtml(operator.inputs.map((item) => `${item[0]} ${item[1]}`).join(' · '))}</span></div>
+                      <div class="plan-constraint-line"><strong>输出</strong><span>${escapeHtml(`${output[0]} · ${output[1]}`)}</span></div>
+                      <div class="plan-constraint-line"><strong>输出格式</strong><span>${escapeHtml(outputMeta.format)}</span></div>
+                      <div class="plan-constraint-line"><strong>工作负载</strong><span>${escapeHtml(operatorWorkloadText(operator, outcome))}</span></div>
+                      <div class="plan-constraint-line"><strong>Total length</strong><span>${fmt(outcome.total)}</span></div>
                     </div>
                     <div class="plan-constraint-group">
-                      <div class="plan-constraint-line"><strong>UB usage</strong><span>${outcome.ubPct.toFixed(0)}% / core</span></div>
-                      <div class="plan-constraint-line"><strong>blockLength</strong><span>${fmt(outcome.perCoreDisplay)} elems</span></div>
-                      <div class="plan-constraint-line"><strong>tileLength</strong><span>${fmt(outcome.tileLen)} elems</span></div>
+                      <div class="plan-constraint-line"><strong>UB使用量</strong><span>${outcome.ubPct.toFixed(0)}% / core</span></div>
+                      <div class="plan-constraint-line"><strong>blockLength</strong><span>${fmt(outcome.perCoreDisplay)}</span></div>
+                      <div class="plan-constraint-line"><strong>tileLength</strong><span>${fmt(outcome.tileLen)}</span></div>
                       <div class="plan-constraint-line"><strong>loop times</strong><span>${fmt(outcome.loopCount)}</span></div>
                       <div class="plan-constraint-line"><strong>former/tail</strong><span>${tailOk ? 'no tail branch' : `${outcome.formerNum} former / ${outcome.tailNum} tail`}</span></div>
                     </div>
@@ -5853,7 +5857,7 @@
                 </article>
 
                 <article class="viz-panel plan-verdict">
-                  <header class="section-head"><h3>Verdict</h3><span class="section-meta">pass / warning / error</span></header>
+                  <header class="section-head"><h3>Verdict</h3></header>
                   <div class="section-body plan-verdict-layout">
                     <div>
                       <h2 class="plan-verdict-title">${verdict.label === 'Invalid' ? 'Capacity risk' : 'Ready for profiling'}</h2>
@@ -5881,14 +5885,10 @@
 
               <section class="operator-plan-grid">
                 <aside class="viz-panel">
-                  <header class="section-head"><h3>Tiling 参数</h3><span class="section-meta">GUI controls</span></header>
+                  <header class="section-head"><h3>变量控制</h3></header>
                   <div class="section-body plan-control-stack">
                     <section class="tiling-group">
-                      <div class="tiling-group__head"><h4>算子形状</h4><span>从 operator 读取</span></div>
-                      ${renderOperatorShapeFacts(operator, outcome)}
-                    </section>
-                    <section class="tiling-group">
-                      <div class="tiling-group__head"><h4>硬件目标</h4><span>${outcome.soc.name} · ${outcome.soc.coreLabel}</span></div>
+                      <div class="tiling-group__head"><h4>目标硬件</h4></div>
                       <div class="control-field">
                         <label>SOC</label>
                         <div class="seg-control" data-seg="soc">
@@ -5903,31 +5903,27 @@
                         </div>
                         <div class="control-hint">影响元素字节数，以及 ${outcome.soc.alignBytes}B 对齐单元对应的元素数。</div>
                       </div>
-                      ${renderHardwareFacts(outcome)}
                     </section>
                     <section class="tiling-group">
-                      <div class="tiling-group__head"><h4>Tiling 方案</h4><span>多方案候选</span></div>
-                      <div class="plan-scheme-list">
-                        ${tilingSchemes.map((scheme, index) => {
-                          const s = computeTilingOutcome(scheme);
-                          return `<button class="plan-scheme-card ${scheme.name === state.tilingScheme ? 'is-active' : ''}" type="button" data-plan-tiling-scheme="${scheme.name}"><b>${index + 1} · ${scheme.name}</b><span>B${scheme.blockDim} / T${scheme.tileNum} / DB${scheme.bufferNum} · UB ${s.ubPct.toFixed(0)}%</span></button>`;
-                        }).join('')}
+                      <div class="tiling-group__head"><h4>Tiling 可调项</h4></div>
+                      <div class="control-field">
+                        <label>Tiling 方案</label>
+                        <div class="plan-scheme-list">
+                          ${tilingSchemes.map((scheme) => {
+                            const s = computeTilingOutcome(scheme);
+                            return `<button class="plan-scheme-card ${scheme.name === state.tilingScheme ? 'is-active' : ''}" type="button" data-plan-tiling-scheme="${scheme.name}"><b>${scheme.name}</b><span>${scheme.blockDim}核${scheme.tileNum}块/Buffer ${scheme.bufferNum}/UB ${s.ubPct.toFixed(0)}%</span></button>`;
+                          }).join('')}
+                        </div>
                       </div>
-                    </section>
-                    <section class="tiling-group">
-                      <div class="tiling-group__head"><h4>Tiling 可调项</h4><span>当前方案参数</span></div>
-                      ${renderWorkloadSummary(operator, outcome)}
                       <div class="stepper-pair">
                         ${stepperField('blockDim', 'BLOCK_DIM', 1, outcome.soc.cores, selected.blockDim, 1)}
                         ${stepperField('tileNum', 'TILE_NUM', 1, 32, selected.tileNum, 1)}
                       </div>
-                      <div class="control-hint">BLOCK_DIM → 激活核数 / 单核工作量；TILE_NUM → tile 长度 / 循环次数。</div>
                       <div class="control-field">
                         <label>BUFFER_NUM</label>
                         <div class="seg-control" data-seg="bufferNum">
                           ${[1, 2].map((num) => `<button type="button" class="${selected.bufferNum === num ? 'is-active' : ''}" data-set-buffer-num="${num}">${num} ${num === 2 ? '（双缓冲）' : '（单缓冲）'}</button>`).join('')}
                         </div>
-                        <div class="control-hint">BUFFER_NUM → UB 压力 / overlap 就绪度；Double Buffer 会成倍增加队列占用。</div>
                       </div>
                       <div class="control-field">
                         <label>尾块策略</label>
@@ -5953,7 +5949,7 @@
                 </aside>
 
                 <section class="viz-panel">
-                  <header class="section-head"><h3>Pipeline</h3><span class="section-meta">pseudo code drives swimlane</span></header>
+                  <header class="section-head"><h3>Pipeline</h3></header>
                   <div class="section-body plan-pipeline-stack">
                     <div class="control-field">
                       <label>preset pipeline scheme</label>
@@ -5975,7 +5971,7 @@
                 </section>
 
                 <aside class="viz-panel">
-                  <header class="section-head"><h3>Inspector</h3><span class="section-meta">why it matters</span></header>
+                  <header class="section-head"><h3>Inspector</h3></header>
                   <div class="section-body plan-inspector-stack">
                     <div class="soft-note">当前选中 <code>CopyIn(next)</code>。它是 double buffer 是否真正形成 overlap 的关键行：如果 slot1 未释放或 UB pressure 接近上限，prefetch 会从隐藏延迟变成阻塞源。</div>
                     <div>
@@ -5993,11 +5989,11 @@
 
               <section class="plan-code-output">
                 <article class="viz-panel">
-                  <header class="section-head"><h3>生成的 kernel 骨架</h3><span class="section-meta">op_kernel/add_custom.cpp</span></header>
+                  <header class="section-head"><h3>生成的 kernel 骨架</h3></header>
                   <pre>${escapeHtml(code.kernel)}</pre>
                 </article>
                 <article class="viz-panel">
-                  <header class="section-head"><h3>Host 侧 Tiling 结构体</h3><span class="section-meta">op_host/tiling.h</span></header>
+                  <header class="section-head"><h3>Host 侧 Tiling 结构体</h3></header>
                   <pre>${escapeHtml(code.host)}</pre>
                 </article>
               </section>
