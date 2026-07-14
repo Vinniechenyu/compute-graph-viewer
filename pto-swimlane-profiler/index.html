@@ -3,8 +3,8 @@
   PyPTO 泳道分析器 — Mix 子图核间同步可视化原型
   课题: 04-uxdesign/02-swimlane-profiler/ux-analysis.md (Issue #1121)
 
-  数据等级: L3-placeholder
-    - 所有 task / sync / 耗时为按硬件拓扑与执行逻辑编造的占位数据。
+  数据等级: L2 / schema-generated / share-safe
+    - task literal、schema 与数量级来自登记 L1 来源；组合关系与诊断异常为可追溯 L2 构造。
     - 已植入「瓶颈剧本」: Attention Score 子图 Wrap 06 的 AIC 跑超大 BMM,
       配对 AIV 长时间停等; 同组其他 Wrap 早完空转 (负载不均)。
     - 待 Codex 补 merged_swimlane.json 真实样本后替换 buildModel()。
@@ -21,104 +21,14 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>PTO性能分析</title>
+<link rel="stylesheet" href="../vendor/pto-design-system/css/style.css" />
+<link rel="stylesheet" href="../vendor/pto-design-system/patterns/workbench-shell/pattern.css" />
+<link rel="stylesheet" href="../vendor/pto-design-system/patterns/ide-frame/pattern.css" />
+<link rel="stylesheet" href="../vendor/pto-design-system/patterns/swimlane-task/pattern.css" />
+<link rel="stylesheet" href="../vendor/pto-design-system/patterns/pass-ir-graph-node/pattern.css" />
 <style>
 /* ============================================================
-   1. Legacy fallback tokens —— 最新 PTO bundle 会在下方 link 覆盖
-   ============================================================ */
-:root {
-  --ark-neutral-0: #0b0b0b; --ark-neutral-1: #101010; --ark-neutral-2: #141414;
-  --ark-neutral-3: #1a1a1a; --ark-neutral-4: #343434;
-  --ark-blue-500: #4369efff; --ark-blue-600: #5a92e6; --ark-domain-aux: #7c8db8;
-  --ark-green-500: #04d793ff; --ark-orange-500: #ffaa3bff; --ark-red-500: #ff4b7bff;
-  --font-sans: 'Inter', 'Source Han Sans SC', 'PingFang SC', 'Noto Sans SC', sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
-  --font-weight-semibold: 600; --font-weight-medium: 500;
-  --letter-spacing-label: 0.5px;
-  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 20px; --space-6: 24px;
-  --radius-sm: 6px; --radius-md: 8px; --radius-lg: 12px; --radius-xl: 16px; --radius-pill: 999px;
-  --shadow-lg: 0 12px 30px rgba(0,0,0,0.42);
-  --z-overlay: 200;
-  --duration-fast: 100ms; --easing-default: cubic-bezier(0.4,0,0.2,1);
-}
-:root, :root[data-theme='dark'] {
-  --background: var(--ark-neutral-1); --background-elevated: var(--ark-neutral-2);
-  --surface-1: #161616; --surface-2: #1c1c1c; --surface-3: #262626; --surface-4: #313131;
-  --foreground: rgba(255,255,255,0.90); --foreground-secondary: rgba(255,255,255,0.60);
-  --foreground-muted: rgba(255,255,255,0.40); --foreground-disabled: rgba(255,255,255,0.25);
-  --border-subtle: rgba(255,255,255,0.06); --border-default: rgba(255,255,255,0.10);
-  --border-strong: rgba(255,255,255,0.16);
-  --primary: var(--ark-blue-500); --primary-hover: var(--ark-blue-600);
-  --accent: var(--ark-domain-aux); --success: var(--ark-green-500);
-  --warning: var(--ark-orange-500); --danger: var(--ark-red-500);
-  --focus-ring: rgba(67,105,239,0.42);
-  --state-hover: rgba(255,255,255,0.06); --state-press: rgba(255,255,255,0.10);
-  --state-muted: rgba(255,255,255,0.06); --state-selected: rgba(67,105,239,0.14);
-  --surface-disabled: rgba(255,255,255,0.04);
-  --tone-warning-bg: color-mix(in srgb, var(--warning) 16%, transparent);
-  --button-height-md: 36px; --button-height-sm: 30px; --button-radius: var(--radius-lg);
-  --button-padding-x-md: var(--space-3); --button-padding-x-sm: var(--space-2); --button-gap: 6px;
-  --button-font: 500 12px/1 var(--font-sans);
-  --button-solid-bg: var(--foreground); --button-solid-bg-hover: color-mix(in srgb,var(--foreground) 88%,transparent);
-  --button-solid-fg: var(--background);
-  --button-secondary-bg: color-mix(in srgb,var(--surface-2) 92%,white 3%);
-  --button-secondary-bg-hover: var(--surface-3);
-  --button-secondary-bg-press: color-mix(in srgb,var(--surface-3) 84%,black);
-  --button-secondary-border: var(--border-subtle); --button-secondary-fg: var(--foreground);
-  --button-secondary-shadow: inset 0 1px 0 rgba(255,255,255,0.03), 0 2px 8px rgba(0,0,0,0.16);
-  --button-ghost-bg-hover: var(--state-hover); --button-ghost-fg: var(--foreground-secondary);
-  --button-ghost-fg-hover: var(--foreground);
-  --text-title-1: 600 20px/1.30 var(--font-sans); --text-title-2: 600 16px/1.30 var(--font-sans);
-  --text-body: 400 14px/1.50 var(--font-sans); --text-body-sm: 400 12px/1.50 var(--font-sans);
-  --text-label: 500 11px/1.20 var(--font-sans); --text-mono: 500 12px/1.40 var(--font-mono);
-  --tag-height: 20px;
-  --stat-chip-height: 22px; --stat-chip-bg: var(--surface-2);
-  --stat-chip-border: var(--border-subtle); --stat-chip-fg: color-mix(in srgb,var(--foreground) 88%,var(--background));
-  --segmented-control-bg: var(--surface-disabled); --segmented-control-border: var(--border-subtle);
-}
-
-/* ============================================================
-   2. Legacy fallback components —— 真实组件类来自下方 css/style.css
-   ============================================================ */
-* { box-sizing: border-box; }
-.btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: var(--button-gap);
-  min-height: var(--button-height-md); padding: 0 var(--button-padding-x-md);
-  border-radius: var(--button-radius); background: var(--button-secondary-bg);
-  border: 1px solid var(--button-secondary-border); box-shadow: var(--button-secondary-shadow);
-  color: var(--button-secondary-fg); font: var(--button-font); cursor: pointer;
-  white-space: nowrap; appearance: none; -webkit-appearance: none;
-  transition: background var(--duration-fast) var(--easing-default),
-    border-color var(--duration-fast) var(--easing-default), color var(--duration-fast) var(--easing-default);
-}
-.btn:hover { background: var(--button-secondary-bg-hover); border-color: var(--border-default); }
-.btn:active { background: var(--button-secondary-bg-press); }
-.btn:focus-visible { box-shadow: 0 0 0 3px var(--focus-ring), var(--button-secondary-shadow); }
-.btn-sm { min-height: var(--button-height-sm); padding-inline: var(--button-padding-x-sm); }
-.btn-icon { min-width: var(--button-height-sm); width: var(--button-height-sm); padding: 0;
-  min-height: var(--button-height-sm); font-size: 14px; }
-.btn-solid { background: var(--button-solid-bg); border-color: transparent; box-shadow: none;
-  color: var(--button-solid-fg); font-weight: var(--font-weight-semibold); }
-.btn-solid:hover { background: var(--button-solid-bg-hover); border-color: transparent; }
-.btn-ghost { background: transparent; border-color: transparent; box-shadow: none; color: var(--button-ghost-fg); }
-.btn-ghost:hover { background: var(--button-ghost-bg-hover); border-color: transparent; color: var(--button-ghost-fg-hover); }
-.btn.is-selected, .btn.is-selected:hover { background: var(--foreground); border-color: transparent;
-  color: var(--background); box-shadow: none; }
-.segmented-control {
-  display: inline-flex; align-items: center; gap: 3px; padding: 3px; border-radius: 10px;
-  border: 1px solid var(--segmented-control-border); background: var(--segmented-control-bg);
-}
-.segmented-control > .btn { min-height: 28px; }
-.segmented-control > .btn:not(.is-selected) { background: transparent; border-color: transparent; box-shadow: none; }
-.segmented-control > .btn:not(.is-selected):hover { background: var(--button-ghost-bg-hover); }
-.stat-chip {
-  display: inline-flex; align-items: center; gap: 6px; min-height: var(--stat-chip-height);
-  padding: 0 8px; border-radius: var(--radius-pill); background: var(--stat-chip-bg);
-  border: 1px solid var(--stat-chip-border); color: var(--stat-chip-fg);
-  font: var(--text-label); white-space: nowrap;
-}
-
-/* ============================================================
-   3. 模块布局 —— 局部 layout/structure 类 (sl- 前缀)
+   模块布局 —— 局部 layout/structure 类 (sl- 前缀)
    ============================================================ */
 html, body { margin: 0; height: 100%; }
 body {
@@ -139,25 +49,25 @@ body {
 .sl-brand-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .sl-brand-title { font: var(--text-title-2); }
 .sl-brand-sub {
-  font: var(--text-label); color: var(--foreground-muted);
+  font: 500 11px / 1.2 var(--font-sans); color: var(--foreground-muted);
   text-transform: uppercase; letter-spacing: var(--letter-spacing-label);
 }
 .sl-zoom-readout {
-  min-width: 46px; text-align: center; font: var(--text-mono);
+  min-width: 46px; text-align: center; font: 500 12px / 1.4 var(--font-mono);
   color: color-mix(in srgb, var(--foreground) 84%, var(--background));
 }
 .sl-stage { flex: 1 1 auto; display: flex; gap: 10px; padding: 10px var(--space-4) var(--space-4); min-height: 0; }
 .sl-pane { display: flex; flex-direction: column; min-height: 0; min-width: 0;
-  border-radius: 10px; background: #242424; overflow: hidden; }
+  border-radius: var(--radius-md); background: var(--surface-3); overflow: hidden; }
 .sl-pane-canvas { flex: 1 1 auto; }
 .sl-pane-inspector { flex: 0 0 332px; }
 .sl-pane-head { flex: 0 0 auto; display: flex; align-items: center; gap: var(--space-3);
   padding: 10px 14px; min-height: 50px; }
 .sl-pane-title { font: var(--text-title-2); }
-.sl-pane-kicker { font: var(--text-label); color: var(--foreground-muted);
+.sl-pane-kicker { font: 500 11px / 1.2 var(--font-sans); color: var(--foreground-muted);
   text-transform: uppercase; letter-spacing: var(--letter-spacing-label); }
 .sl-legend { display: flex; align-items: center; gap: 11px; flex-wrap: wrap; }
-.sl-legend-item { display: flex; align-items: center; gap: 5px; font: var(--text-label); color: var(--foreground-secondary); }
+.sl-legend-item { display: flex; align-items: center; gap: 5px; font: 500 11px / 1.2 var(--font-sans); color: var(--foreground-secondary); }
 .sl-legend-swatch { width: 10px; height: 10px; border-radius: 3px; flex: 0 0 auto; }
 .sl-legend-swatch.is-wait {
   background: repeating-linear-gradient(135deg, rgba(255,170,59,0.85) 0 2px, transparent 2px 4px),
@@ -168,8 +78,8 @@ body {
   grid-template-columns: 184px 1fr; grid-template-rows: 34px 1fr; }
 .sl-corner {
   border-right: 1px solid var(--border-subtle); border-bottom: 1px solid var(--border-default);
-  display: flex; align-items: center; padding: 0 12px; background: #242424;
-  font: var(--text-label); color: var(--foreground-muted);
+  display: flex; align-items: center; padding: 0 12px; background: var(--surface-3);
+  font: 500 11px / 1.2 var(--font-sans); color: var(--foreground-muted);
   text-transform: uppercase; letter-spacing: var(--letter-spacing-label);
 }
 .sl-axis-wrap { overflow: hidden; border-bottom: 1px solid var(--border-default); }
@@ -177,8 +87,8 @@ body {
 .sl-body-wrap { overflow: auto; }
 .sl-axis-wrap canvas, .sl-lane-wrap canvas, .sl-body-wrap canvas { display: block; }
 .sl-body-wrap::-webkit-scrollbar { width: 12px; height: 12px; }
-.sl-body-wrap::-webkit-scrollbar-thumb { background: var(--surface-4); border-radius: 8px; border: 3px solid #242424; }
-.sl-body-wrap::-webkit-scrollbar-corner { background: #242424; }
+.sl-body-wrap::-webkit-scrollbar-thumb { background: var(--surface-4); border-radius: var(--radius-md); border: 3px solid var(--surface-3); }
+.sl-body-wrap::-webkit-scrollbar-corner { background: var(--surface-3); }
 
 /* Inspector */
 .sl-insp-body { flex: 1 1 auto; overflow: auto; padding: 0 14px 16px; }
@@ -189,7 +99,7 @@ body {
 .sl-crumb-item.is-current { color: var(--foreground); cursor: default; font-weight: 600; }
 .sl-crumb-sep { color: var(--foreground-disabled); }
 .sl-insp-section { margin-top: 14px; }
-.sl-insp-section-label { font: var(--text-label); color: var(--foreground-muted);
+.sl-insp-section-label { font: 500 11px / 1.2 var(--font-sans); color: var(--foreground-muted);
   text-transform: uppercase; letter-spacing: var(--letter-spacing-label); margin-bottom: 7px; }
 .sl-kv { display: flex; justify-content: space-between; gap: 10px; padding: 5px 0; font: var(--text-body-sm); }
 .sl-kv + .sl-kv { border-top: 1px solid var(--border-subtle); }
@@ -209,9 +119,9 @@ body {
 .sl-dot { width: 11px; height: 11px; border-radius: 3px; flex: 0 0 auto; }
 .sl-row-name { flex: 1 1 auto; min-width: 0; font: var(--text-body-sm); color: var(--foreground); }
 .sl-row-name small { color: var(--foreground-muted); }
-.sl-row-meta { font: var(--text-label); color: var(--foreground-muted); font-family: var(--font-mono); }
+.sl-row-meta { font: 500 11px / 1.2 var(--font-sans); color: var(--foreground-muted); font-family: var(--font-mono); }
 .sl-pill { display: inline-flex; align-items: center; gap: 4px; height: var(--tag-height);
-  padding: 0 8px; border-radius: var(--radius-pill); background: var(--surface-3); font: var(--text-label); }
+  padding: 0 8px; border-radius: var(--radius-pill); background: var(--surface-3); font: 500 11px / 1.2 var(--font-sans); }
 .sl-pill.is-warn { color: var(--warning); }
 .sl-pill.is-ok { color: var(--success); }
 .sl-sync-item { padding: 8px 9px; border-radius: var(--radius-md);
@@ -230,14 +140,7 @@ body {
 .sl-task-tooltip {
   position: fixed;
   z-index: 1000;
-}
-
-.sl-task-tooltip-dot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  margin-right: 6px;
-  border-radius: 2px;
+  font: var(--text-body-sm);
 }
 
 .sl-banner {
@@ -248,10 +151,6 @@ body {
 }
 .sl-banner b { color: color-mix(in srgb, var(--warning) 82%, var(--foreground)); font-weight: 600; }
 </style>
-<link rel="stylesheet" href="../vendor/pto-design-system/css/style.css?v=6941fa7" />
-<link rel="stylesheet" href="../vendor/pto-design-system/patterns/workbench-shell/pattern.css?v=6941fa7" />
-<link rel="stylesheet" href="../vendor/pto-design-system/patterns/ide-frame/pattern.css?v=6941fa7" />
-<link rel="stylesheet" href="../vendor/pto-design-system/patterns/swimlane-task/pattern.css?v=6941fa7" />
 <style>
 /* PTO retrofit overrides: layout-only glue around shared ide-frame + swimlane-task. */
 html,
@@ -272,16 +171,26 @@ body {
 .sl-app {
   width: 100vw;
   height: 100vh;
-  padding: 0 0 var(--space-3);
+  padding: 0;
   background: var(--ide-frame-page-bg);
 }
 
 .sl-frame {
   width: 100%;
-  height: calc(100vh - var(--space-3));
+  max-width: none;
+  height: 100vh;
   aspect-ratio: auto;
   border-radius: 0;
   box-shadow: none;
+  --ide-dot-opacity: 0;
+}
+
+.sl-frame .pto-ide-frame__workarea {
+  padding-bottom: var(--space-3);
+}
+
+#terminalDock {
+  margin-right: var(--space-2);
 }
 
 .sl-task-tooltip {
@@ -289,30 +198,26 @@ body {
   z-index: 1000;
 }
 
-.sl-task-tooltip-dot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  margin-right: 6px;
-  border-radius: 2px;
-  vertical-align: middle;
-}
-
 .sl-overview-tooltip {
   z-index: 60;
 }
 
 .pto-swimlane-task-tooltip__key {
+  font: 500 11px / 1.2 var(--font-sans);
   letter-spacing: normal;
   text-transform: none;
 }
 
-.sl-frame::after {
-  display: none;
+.sl-task-tooltip .pto-swimlane-task-tooltip__title {
+  font: 600 12px / 1.4 var(--font-mono);
+}
+
+.sl-task-tooltip .pto-swimlane-task-tooltip__value {
+  font: 500 12px / 1.4 var(--font-mono);
 }
 
 .sl-frame .pto-ide-frame__topbar {
-  min-height: 52px;
+  min-height: 48px;
 }
 
 .sl-window-actions {
@@ -338,7 +243,7 @@ body {
 .sl-title-stack strong {
   overflow: hidden;
   color: var(--foreground);
-  font: var(--ide-frame-title-font);
+  font: var(--text-title-2);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -355,10 +260,18 @@ body {
   max-width: 100%;
   overflow: hidden;
   color: var(--foreground-muted);
-  font: var(--text-mono);
+  font: 500 12px / 1.4 var(--font-mono);
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.sl-frame .pto-ide-frame__pane-title {
+  font: var(--text-title-2);
+}
+
+.sl-frame .stat-chip {
+  font: 500 11px / 1.2 var(--font-sans);
 }
 
 .sl-explorer-body,
@@ -455,7 +368,7 @@ body {
 
 .sl-zoom-label {
   color: var(--foreground-muted);
-  font: var(--text-label);
+  font: 500 11px / 1.2 var(--font-sans);
 }
 
 .sl-zoom-control .btn {
@@ -486,6 +399,288 @@ body {
   flex-wrap: wrap;
   gap: 6px;
   margin-bottom: var(--space-3);
+}
+
+.sl-report-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+}
+
+.sl-report-card + .sl-report-card {
+  margin-top: var(--space-3);
+}
+
+.sl-report-card__title {
+  color: var(--foreground-secondary);
+  font: 500 11px / 1.2 var(--font-sans);
+  font-weight: var(--font-weight-semibold);
+}
+
+.sl-report-tabs {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: var(--space-4);
+  margin-bottom: var(--space-3);
+  border-bottom: 1px solid color-mix(in srgb, var(--border-subtle) 80%, transparent);
+}
+
+.sl-pmu-groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-bottom: var(--space-3);
+}
+
+.sl-report-tabs .sl-report-tab {
+  min-height: 34px;
+  padding: 0 var(--space-1);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--foreground-muted);
+}
+
+.sl-report-tabs .sl-report-tab:hover {
+  background: transparent;
+  color: var(--foreground-secondary);
+}
+
+.sl-report-tabs .sl-report-tab.is-selected,
+.sl-report-tabs .sl-report-tab.is-selected:hover {
+  background: transparent;
+  box-shadow: inset 0 -2px 0 var(--accent);
+  color: var(--foreground);
+}
+
+.sl-pmu-group {
+  min-height: 26px;
+}
+
+.sl-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.sl-metric-card {
+  min-width: 0;
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--surface-3) 68%, transparent);
+}
+
+.sl-metric-card.is-warn {
+  background: color-mix(in srgb, var(--warning) 13%, var(--surface-3));
+}
+
+.sl-metric-card__label {
+  overflow: hidden;
+  color: var(--foreground-muted);
+  font: 500 11px / 1.2 var(--font-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sl-metric-card__value {
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--foreground);
+  font: 600 16px/1.25 var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sl-metric-card.is-warn .sl-metric-card__value {
+  color: var(--warning);
+}
+
+.sl-counter-table {
+  display: grid;
+  gap: 1px;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--border-subtle) 80%, transparent);
+}
+
+.sl-counter-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(58px, 0.5fr) minmax(0, 0.9fr);
+  gap: var(--space-2);
+  align-items: center;
+  padding: 7px var(--space-2);
+  background: color-mix(in srgb, var(--surface-3) 72%, transparent);
+  font: 500 11px / 1.2 var(--font-sans);
+}
+
+.sl-counter-row.is-head {
+  color: var(--foreground-muted);
+  background: color-mix(in srgb, var(--surface-3) 90%, transparent);
+}
+
+.sl-counter-name,
+.sl-counter-note {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sl-counter-name {
+  color: var(--foreground);
+  font-family: var(--font-mono);
+}
+
+.sl-counter-val {
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  text-align: right;
+}
+
+.sl-counter-note {
+  color: var(--foreground-secondary);
+}
+
+.sl-empty-state {
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--surface-3) 64%, transparent);
+  color: var(--foreground-muted);
+  font: var(--text-body-sm);
+  line-height: 1.6;
+}
+
+.sl-top-task {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--easing-default);
+}
+
+.sl-top-task:hover,
+.sl-top-task.is-active {
+  background: var(--surface-3);
+}
+
+.sl-top-task.is-active {
+  background: color-mix(in srgb, var(--warning) 10%, var(--surface-3));
+}
+
+.sl-top-task__top,
+.sl-top-task__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.sl-top-task__id {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--foreground);
+  font: 500 12px / 1.4 var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sl-top-task__row {
+  color: var(--foreground-secondary);
+  font: 500 11px / 1.2 var(--font-sans);
+}
+
+.sl-top-task__row .v {
+  color: var(--foreground);
+  font-family: var(--font-mono);
+}
+
+.sl-top-task__sub {
+  color: var(--foreground-muted);
+  font: var(--text-body-sm);
+  line-height: 1.45;
+}
+
+.sl-task-detail-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sl-task-back {
+  gap: 5px;
+  min-height: 24px;
+  padding-inline: 0 var(--space-2);
+}
+
+.sl-task-back svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sl-task-detail-title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--foreground);
+  font: var(--text-title-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sl-task-summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.sl-task-basic-card {
+  gap: 0;
+}
+
+.sl-task-basic-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.sl-object-path {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sl-object-path__item {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sl-object-path__item:not(.is-current) {
+  color: var(--foreground-secondary);
+  cursor: pointer;
+}
+
+.sl-object-path__sep {
+  flex: none;
+  color: var(--foreground-disabled);
+}
+
+.sl-task-tab-panel > .sl-insp-section:first-child {
+  margin-top: 0;
 }
 
 #globalRulerTicks {
@@ -520,11 +715,168 @@ body {
 }
 
 .sl-swimlane-scroll-shell {
+  position: relative;
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+
+.sl-timestamp-guide {
+  position: absolute;
+  top: 27px;
+  bottom: 0;
+  z-index: 45;
+  width: 1px;
+  background: color-mix(in srgb, var(--foreground) 62%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--background) 28%, transparent);
+  pointer-events: none;
+}
+
+.sl-timestamp-guide[hidden] {
+  display: none;
+}
+
+.sl-block-graph-view {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.sl-block-graph-view[hidden] {
+  display: none;
+}
+
+.sl-block-graph-tools {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sl-block-graph-tools {
+  margin-left: auto;
+}
+
+.sl-block-graph-tools .btn svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sl-block-graph-body {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  background-color: var(--surface-1);
+  background-image: radial-gradient(circle, var(--pass-ir-pattern-stage-dot) 1px, transparent 1.2px);
+  background-size: 24px 24px;
+  cursor: grab;
+  touch-action: none;
+}
+
+.sl-block-graph-canvas-tools {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-3);
+  z-index: 3;
+  height: 28px;
+  min-height: 28px;
+  gap: 6px;
+  padding: 3px 8px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--surface-3);
+  box-shadow: none;
+}
+
+.sl-block-graph-canvas-tools .btn {
+  width: 22px;
+  min-width: 22px;
+  height: 22px;
+  min-height: 22px;
+  border-radius: var(--radius-md);
+}
+
+.sl-block-graph-canvas-tools .btn svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sl-block-graph-body.is-panning {
+  cursor: grabbing;
+}
+
+.sl-block-graph-stage {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.sl-compare-swimlane-view {
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.sl-compare-swimlane-view[hidden] {
+  display: none;
+}
+
+.sl-compare-grid {
+  position: relative;
+  background: var(--surface-1);
+}
+
+.sl-compare-timestamp-guide {
+  top: 0;
+  bottom: 0;
+}
+
+.sl-block-graph-flow {
+  min-width: max-content;
+  min-height: 0;
+  width: max-content;
+  height: max-content;
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--space-3);
+}
+
+.sl-block-graph-node {
+  flex: none;
+}
+
+.sl-block-graph-edge {
+  width: 34px;
+  height: 16px;
+  flex: none;
+  fill: none;
+  stroke: var(--foreground-muted);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .sl-timeline-head {
@@ -557,7 +909,7 @@ body {
 .sl-corner-eyebrow {
   display: none;
   color: var(--foreground-muted);
-  font: var(--text-label);
+  font: 500 11px / 1.2 var(--font-sans);
 }
 
 .sl-corner-title {
@@ -570,7 +922,7 @@ body {
 .sl-corner-meta {
   display: none;
   color: var(--foreground-muted);
-  font: var(--text-label);
+  font: 500 11px / 1.2 var(--font-sans);
 }
 
 .sl-timeline-right {
@@ -659,7 +1011,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  padding: var(--space-3) var(--space-3) var(--space-5);
+  padding: 0 0 var(--space-2);
 }
 
 .sl-run-card {
@@ -673,7 +1025,6 @@ body {
 
 .sl-run-card.is-selected {
   background: var(--surface-3);
-  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .sl-run-card--past:not(.is-expanded) {
@@ -717,7 +1068,7 @@ body {
 .sl-run-id {
   overflow-wrap: anywhere;
   color: var(--foreground);
-  font: var(--text-mono);
+  font: 500 12px / 1.4 var(--font-mono);
 }
 
 .sl-run-card--past .sl-run-id {
@@ -733,7 +1084,7 @@ body {
 
 .sl-history-kv dt {
   color: var(--foreground-muted);
-  font: var(--text-label);
+  font: 500 11px / 1.2 var(--font-sans);
   white-space: nowrap;
 }
 
@@ -746,7 +1097,7 @@ body {
 }
 
 .sl-history-sm {
-  font: var(--text-label);
+  font: 500 11px / 1.2 var(--font-sans);
 }
 
 .sl-history-divider {
@@ -757,15 +1108,47 @@ body {
 }
 
 .sl-history-artifact {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
-  padding: 2px 0;
+  min-height: 24px;
+  padding: 1px 0;
   font: var(--text-body-sm);
 }
 
+.sl-history-artifact-select {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
+  min-height: 24px;
+  padding: 1px 28px 1px var(--space-1);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.sl-history-artifact-select:not(:disabled) {
+  cursor: pointer;
+}
+
+.sl-history-artifact-select:not(:disabled):hover,
+.sl-history-artifact.is-selected .sl-history-artifact-select {
+  background: var(--state-selected);
+}
+
+.sl-history-artifact-select:disabled {
+  cursor: default;
+}
+
 .sl-history-artifact .nm {
+  flex: 1 1 auto;
   overflow: hidden;
   color: var(--foreground-secondary);
   font-family: var(--font-mono);
@@ -776,8 +1159,61 @@ body {
 .sl-history-artifact .rl {
   flex: none;
   color: var(--foreground-muted);
-  font: var(--text-label);
+  font: 500 11px / 1.2 var(--font-sans);
   white-space: nowrap;
+}
+
+.sl-history-artifact-more {
+  position: absolute;
+  right: 0;
+  display: inline-flex;
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  min-height: 24px;
+  padding: 0;
+  border-radius: var(--radius-md);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.sl-history-artifact-more svg {
+  width: 15px;
+  height: 15px;
+  fill: currentColor;
+}
+
+.sl-history-artifact:hover .rl,
+.sl-history-artifact:focus-within .rl,
+.sl-history-artifact.is-menu-open .rl {
+  opacity: 0;
+}
+
+.sl-history-artifact:hover .sl-history-artifact-more,
+.sl-history-artifact:focus-within .sl-history-artifact-more,
+.sl-history-artifact.is-menu-open .sl-history-artifact-more {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.sl-history-artifact-menu {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  right: 0;
+  z-index: 80;
+  min-width: 148px;
+  padding: var(--space-1);
+  border-radius: var(--radius-md);
+  background: var(--surface-4);
+  box-shadow: var(--shadow-lg);
+}
+
+.sl-history-artifact-menu .btn {
+  width: 100%;
+  min-height: 28px;
+  justify-content: flex-start;
+  padding-inline: var(--space-2);
+  border-radius: var(--radius-sm);
 }
 
 .sl-banner {
@@ -810,10 +1246,6 @@ body {
 
 .sl-body-wrap::-webkit-scrollbar-thumb {
   border-color: color-mix(in srgb, var(--background) 80%, transparent);
-}
-
-.sl-insp-body {
-  padding-top: 0;
 }
 
 .sl-insp-section {
@@ -862,15 +1294,6 @@ body {
   font-weight: var(--font-weight-semibold);
 }
 
-@media (max-width: 1120px) {
-  .sl-app {
-    padding: 0 0 var(--space-2);
-  }
-
-  .sl-frame {
-    height: calc(100vh - var(--space-2));
-  }
-}
 </style>
 </head>
 <body>
@@ -883,7 +1306,7 @@ body {
         </div>
       </div>
       <div class="pto-ide-frame__topbar-center">
-        <span class="sl-project-placeholder">project_name</span>
+        <span class="sl-project-placeholder" id="projectName">project_name</span>
       </div>
       <div class="pto-ide-frame__topbar-right">
         <div class="pto-ide-frame__window-actions sl-window-actions" data-ide-slot="window-controls" aria-label="面板开关">
@@ -893,7 +1316,7 @@ body {
               <path d="M9 3v18"></path>
             </svg>
           </button>
-          <button class="pto-ide-frame__window-action is-selected" type="button" id="topInspectorToggle" aria-label="切换性能报告面板" aria-controls="inspectorPane" aria-expanded="true" aria-pressed="true" title="性能报告">
+          <button class="pto-ide-frame__window-action is-selected" type="button" id="topInspectorToggle" aria-label="切换性能统计面板" aria-controls="inspectorPane" aria-expanded="true" aria-pressed="true" title="性能统计">
             <svg class="pto-ide-frame__window-icon" viewBox="0 0 24 24" aria-hidden="true">
               <rect x="3" y="3" width="18" height="18" rx="2"></rect>
               <path d="M15 3v18"></path>
@@ -917,21 +1340,21 @@ body {
             <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9l-.81-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"></path>
           </svg>
         </button>
-        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button sl-visually-disabled" type="button" aria-label="搜索" title="搜索">
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button sl-visually-disabled" type="button" aria-label="搜索" title="搜索" disabled aria-disabled="true">
           <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true">
             <circle cx="11" cy="11" r="8"></circle>
             <path d="m21 21-4.3-4.3"></path>
           </svg>
         </button>
-        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button sl-visually-disabled" type="button" aria-label="版本记录" title="版本记录">
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button sl-visually-disabled" type="button" aria-label="源代码管理" title="源代码管理" disabled aria-disabled="true">
           <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <circle cx="18" cy="18" r="3"></circle>
-            <circle cx="6" cy="6" r="3"></circle>
-            <path d="M13 6h3a2 2 0 0 1 2 2v7"></path>
-            <path d="M6 9v12"></path>
+            <circle cx="6" cy="18" r="3"></circle>
+            <circle cx="18" cy="6" r="3"></circle>
+            <path d="M6 15V3"></path>
+            <path d="M9 18a9 9 0 0 0 9-9"></path>
           </svg>
         </button>
-        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button sl-visually-disabled" type="button" aria-label="终端" title="终端">
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" id="railTerminalToggle" aria-label="终端" aria-controls="terminalPane" aria-expanded="false" aria-pressed="false" title="终端">
           <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true">
             <rect x="3" y="5" width="18" height="14" rx="2"></rect>
             <path d="m7 9 3 3-3 3"></path>
@@ -942,7 +1365,7 @@ body {
       </nav>
 
       <div class="pto-ide-frame__workarea">
-        <div class="pto-ide-frame__split" data-ide-split="standalone-main" data-split-direction="horizontal" data-storage-key="pyptoux-mix-sync-workbench-main-v1" data-sizes="20,80" data-min-size="240,760" data-pixel-sizes="260,0">
+        <div class="pto-ide-frame__split" data-ide-split="standalone-main" data-split-direction="horizontal" data-storage-key="pyptoux-mix-sync-workbench-main-v4" data-sizes="18,82" data-min-size="240,760" data-pixel-sizes="260,0">
           <aside class="pto-ide-frame__pane pto-ide-frame__explorer" id="scenarioPane" data-ide-pane="explorer">
             <div class="pto-ide-frame__pane-header">
               <h2 class="pto-ide-frame__pane-title">运行历史</h2>
@@ -953,60 +1376,98 @@ body {
           </aside>
 
           <section class="pto-ide-frame__pane pto-ide-frame__pane--stack" data-ide-pane="main-col">
-            <div class="pto-ide-frame__split" data-ide-split="swimlane-right" data-split-direction="vertical" data-storage-key="pyptoux-mix-sync-workbench-right-v1" data-sizes="76,24" data-min-size="360,140">
+            <div class="pto-ide-frame__split" data-ide-split="swimlane-right" data-split-direction="vertical" data-storage-key="pyptoux-mix-sync-workbench-right-v5" data-sizes="82,18" data-min-size="430,112" data-pixel-sizes="0,112">
               <section class="pto-ide-frame__pane pto-ide-frame__pane--stack" data-ide-pane="content-row">
-                <main class="pto-ide-frame__split" data-ide-split="swimlane-content" data-split-direction="horizontal" data-storage-key="pyptoux-mix-sync-workbench-content-v1" data-sizes="70,30" data-min-size="520,300" data-pixel-sizes="0,332">
-                  <section class="pto-ide-frame__pane" id="canvasPane" data-ide-pane="editor-preview">
-                    <div class="pto-ide-frame__pane-header">
-                      <h2 class="pto-ide-frame__pane-title">泳道图</h2>
-                      <div class="sl-legend" id="legend"></div>
-                    </div>
-                    <div class="pto-ide-frame__pane-body sl-pane-body">
-                      <div class="sl-swimlane-workbench">
-                        <div class="sl-swimlane-toolbar">
-                          <span class="sl-searchbox">
-                            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m21 21-4-4"></path></svg>
-                            <input id="taskSearch" type="search" placeholder="搜索任务 / 泳道 / Wrap" />
-                          </span>
-                          <button class="btn btn-sm" id="mixModeBtn" type="button" aria-pressed="false" title="按 1C2V Wrap 重排泳道">Mix模式</button>
-                          <button class="btn btn-sm" id="syncPathBtn" type="button" aria-pressed="false" title="弱化无同步边的任务，聚焦核间协作">同步路径</button>
-                          <span class="sl-tool-spacer"></span>
-                          <span class="sl-zoom-control" title="泳道图缩放控制滑杆，控制时间轴可见区">
-                            <span class="sl-zoom-label">缩放</span>
-                            <button class="btn btn-icon btn-ghost" id="zoomOut" aria-label="缩小">−</button>
-                            <input class="sl-zoom-slider" id="zoomSlider" type="range" min="100" max="480" step="5" value="100" />
-                            <button class="btn btn-icon btn-ghost" id="zoomIn" aria-label="放大">+</button>
-                            <span class="sl-zoom-readout" id="zoomReadout">100%</span>
-                          </span>
+                <main class="pto-ide-frame__split" data-ide-split="swimlane-content" data-split-direction="horizontal" data-storage-key="pyptoux-mix-sync-workbench-content-v4" data-sizes="73,27" data-min-size="520,300" data-pixel-sizes="0,332">
+                  <section class="pto-ide-frame__pane pto-ide-frame__pane--stack" id="analysisColumn" data-ide-pane="analysis-column">
+                    <div class="pto-ide-frame__split" data-ide-split="swimlane-analysis" data-split-direction="vertical" data-storage-key="pyptoux-mix-sync-workbench-analysis-v1" data-sizes="56,44" data-min-size="240,180">
+                      <section class="pto-ide-frame__pane" id="canvasPane" data-ide-pane="editor-preview">
+                        <div class="pto-ide-frame__pane-header">
+                          <h2 class="pto-ide-frame__pane-title" id="swimlanePaneTitle">mix-sync-run-20260709-001 · merged_swimlane</h2>
                         </div>
-                        <div class="sl-swimlane-scroll-shell">
-                          <div class="sl-timeline-head">
-                            <div class="sl-timeline-band">
-                              <div class="sl-timeline-corner">
-                                <span class="sl-corner-title" title="Attention Score / Wrap 06">Attention Score / Wrap 06</span>
-                              </div>
-                              <div class="sl-timeline-right">
-                                <div class="sl-global-ruler" id="globalRulerScale" aria-label="全局时间尺">
-                                  <div id="globalRulerTicks"></div>
-                                  <div class="sl-global-ruler__brush" id="globalRulerBrush"></div>
+                        <div class="pto-ide-frame__pane-body sl-pane-body">
+                          <div class="sl-swimlane-workbench">
+                            <div class="sl-swimlane-toolbar">
+                              <span class="sl-searchbox">
+                                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m21 21-4-4"></path></svg>
+                                <input id="taskSearch" type="search" placeholder="搜索任务 / 泳道 / Wrap" />
+                              </span>
+                              <button class="btn btn-sm" id="mixModeBtn" type="button" aria-pressed="false" title="按 1C2V Wrap 重排泳道">Mix模式</button>
+                              <button class="btn btn-sm" id="syncPathBtn" type="button" aria-pressed="false" title="弱化无同步边的任务，聚焦核间协作">同步路径</button>
+                              <span class="sl-tool-spacer"></span>
+                              <span class="sl-zoom-control" title="泳道图缩放控制滑杆，控制时间轴可见区">
+                                <span class="sl-zoom-label">缩放</span>
+                                <button class="btn btn-icon btn-ghost" id="zoomOut" aria-label="缩小">−</button>
+                                <input class="sl-zoom-slider" id="zoomSlider" type="range" min="100" max="480" step="5" value="100" />
+                                <button class="btn btn-icon btn-ghost" id="zoomIn" aria-label="放大">+</button>
+                                <span class="sl-zoom-readout" id="zoomReadout">100%</span>
+                              </span>
+                            </div>
+                            <div class="sl-swimlane-scroll-shell">
+                              <div class="sl-timeline-head">
+                                <div class="sl-timeline-band">
+                                  <div class="sl-timeline-corner">
+                                    <span class="sl-corner-title" title="Attention Score">Attention Score</span>
+                                  </div>
+                                  <div class="sl-timeline-right">
+                                    <div class="sl-global-ruler" id="globalRulerScale" aria-label="全局时间尺">
+                                      <div id="globalRulerTicks"></div>
+                                      <div class="sl-global-ruler__brush" id="globalRulerBrush"></div>
+                                    </div>
+                                    <div class="sl-axis-wrap" id="axisWrap"><canvas id="axisCanvas"></canvas></div>
+                                    <div class="sl-overview-wrap" id="overviewWrap"><div class="sl-overview" id="overviewBand"></div></div>
+                                  </div>
                                 </div>
-                                <div class="sl-axis-wrap" id="axisWrap"><canvas id="axisCanvas"></canvas></div>
-                                <div class="sl-overview-wrap" id="overviewWrap"><div class="sl-overview" id="overviewBand"></div></div>
                               </div>
+                              <div class="sl-grid" id="grid">
+                                <div class="sl-lane-wrap" id="laneWrap"><canvas id="laneCanvas"></canvas></div>
+                                <div class="sl-body-wrap" id="bodyWrap"><canvas id="bodyCanvas"></canvas></div>
+                              </div>
+                              <div class="sl-timestamp-guide" id="timestampGuide" aria-hidden="true" hidden></div>
                             </div>
                           </div>
-                          <div class="sl-grid" id="grid">
-                            <div class="sl-lane-wrap" id="laneWrap"><canvas id="laneCanvas"></canvas></div>
-                            <div class="sl-body-wrap" id="bodyWrap"><canvas id="bodyCanvas"></canvas></div>
+                        </div>
+                      </section>
+
+                      <section class="pto-ide-frame__pane sl-block-graph-view" id="blockGraphView" data-ide-pane="block-graph" hidden aria-hidden="true">
+                        <div class="pto-ide-frame__pane-header">
+                          <h2 class="pto-ide-frame__pane-title" id="blockGraphTitle">attention_score_block_06</h2>
+                          <div class="sl-block-graph-tools" aria-label="计算图工具栏">
+                            <button class="btn btn-icon btn-ghost" type="button" id="closeBlockGraph" aria-label="关闭计算图" title="关闭计算图">
+                              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+                            </button>
                           </div>
                         </div>
-                      </div>
+                        <div class="sl-block-graph-body" id="blockGraphViewport" tabindex="0" aria-label="任务对应的 block graph，可拖拽和缩放">
+                          <div class="segmented-control sl-block-graph-canvas-tools" aria-label="计算图画布工具">
+                            <button class="btn btn-icon btn-ghost" type="button" id="blockGraphZoomOut" aria-label="缩小计算图" title="缩小">
+                              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M8 11h6"></path><path d="m20 20-4-4"></path></svg>
+                            </button>
+                            <button class="btn btn-icon btn-ghost" type="button" id="blockGraphFit" aria-label="适应计算图画布" title="适应画布">
+                              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5"></path><path d="M16 3h5v5"></path><path d="M8 21H3v-5"></path><path d="M16 21h5v-5"></path></svg>
+                            </button>
+                            <button class="btn btn-icon btn-ghost" type="button" id="blockGraphZoomIn" aria-label="放大计算图" title="放大">
+                              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M8 11h6"></path><path d="M11 8v6"></path><path d="m20 20-4-4"></path></svg>
+                            </button>
+                          </div>
+                          <div class="sl-block-graph-stage" id="blockGraphStage">
+                            <div class="pto-pass-ir-graph-node-pattern-surface sl-block-graph-flow" id="blockGraphMount"></div>
+                          </div>
+                        </div>
+                        <div class="sl-compare-swimlane-view" id="compareSwimlaneView" hidden aria-hidden="true">
+                          <div class="sl-grid sl-compare-grid" id="compareGrid">
+                            <div class="sl-lane-wrap" id="compareLaneWrap"><canvas id="compareLaneCanvas"></canvas></div>
+                            <div class="sl-body-wrap" id="compareBodyWrap"><canvas id="compareBodyCanvas"></canvas></div>
+                            <div class="sl-timestamp-guide sl-compare-timestamp-guide" id="compareTimestampGuide" aria-hidden="true" hidden></div>
+                          </div>
+                        </div>
+                      </section>
                     </div>
                   </section>
 
                   <aside class="pto-ide-frame__pane" id="inspectorPane" data-ide-pane="inspector">
                     <div class="pto-ide-frame__pane-header">
-                      <h2 class="pto-ide-frame__pane-title" id="inspTitle">性能报告</h2>
+                      <h2 class="pto-ide-frame__pane-title" id="inspTitle">性能统计</h2>
                     </div>
                     <div class="sl-insp-body" id="inspBody"></div>
                   </aside>
@@ -1033,7 +1494,7 @@ body {
                   </div>
                   <div class="pto-ide-frame__terminal-body">
                     <p class="pto-ide-frame__terminal-line"><span class="sl-terminal-prompt">pypto@swimlane-profiler %</span> 终端面板默认关闭，打开后用于承载执行日志与诊断输出。</p>
-                    <p class="pto-ide-frame__terminal-line">当前 demo 使用 L3 占位数据；真实 merged_swimlane.json 接入后在这里同步展示加载与解析状态。</p>
+                    <p class="pto-ide-frame__terminal-line">当前 demo 使用 L2 schema-generated / share-safe 数据；不是一次真实模型运行的原始导出。</p>
                   </div>
                 </div>
               </section>
@@ -1046,16 +1507,19 @@ body {
 </div>
 
 <div class="pto-swimlane-task-tooltip sl-task-tooltip" id="tooltip" role="tooltip" aria-hidden="true"></div>
-<script src="../vendor/pto-design-system/patterns/workbench-shell/pattern.js?v=6941fa7"></script>
-<script src="../vendor/pto-design-system/patterns/ide-frame/pattern.js?v=6941fa7"></script>
-<script src="../vendor/pto-design-system/patterns/swimlane-task/pattern.js?v=6941fa7"></script>
+<script src="../vendor/pto-design-system/patterns/workbench-shell/pattern.js"></script>
+<script src="../vendor/pto-design-system/patterns/ide-frame/pattern.js"></script>
+<script src="../vendor/pto-design-system/patterns/swimlane-task/pattern.js"></script>
+<script>window.PTO_PASS_IR_GRAPH_NODE_ASSET_PREFIX = '../vendor/pto-design-system/';</script>
+<script src="../vendor/pto-design-system/patterns/pass-ir-graph-node/pattern.js"></script>
+<script src="swimlane-data.js"></script>
 
 <script>
 /* ============================================================
-   4. 数据模型 + 剧本 (L3-placeholder)
+   4. 旧版随机模型生成器（仅保留为历史参考，运行时不调用）
 
    剧本: 一个 transformer 解码层跑 3 次迭代 (L0/L1/L2)。
-   解码层被切成 6 个 mix 子图, 静态绑定到 24 个 1C2V wrap
+   解码层被切成 8 个 mix 子图, 静态绑定到 32 个 1C2V wrap
    (每子图 4 个 wrap; 每个 wrap = 1 AIC + 2 AIV)。
 
    植入瓶颈:
@@ -1080,30 +1544,90 @@ const SCENARIO = {
   slowWrap: 6,          // 全局 wrap 编号 (g1 的本地 k=2)
 };
 
+const TASK_COLORMAP = window.PtoSwimlaneTaskPattern.createTaskColormap({
+  labelColors: {
+    QKV: '#3F7DF6',
+    AttnQK: '#9B6BF0',
+    AttnV: '#1FB6C9',
+    'FFN-Up': '#EF8A3C',
+    'FFN-Dn': '#86C541',
+    Resid: '#E25A92',
+    OutProj: '#6FAE9A',
+    'KV-Upd': '#C9A24B',
+  },
+  laneKindColors: {
+    host: '#7C8DB8',
+    memory: '#7C8DB8',
+    cpu: '#7C8DB8',
+    aic: '#5A92E6',
+    aiv: '#9B6BF0',
+    mte: '#EAB308',
+    other: '#7C8DB8',
+  },
+});
+
 function buildModel() {
   const rand = mulberry32(0x5117A2);
   const rnd = (a, b) => a + rand() * (b - a);
   const rndi = (a, b) => Math.floor(a + rand() * (b - a + 1));
   const pick = (arr) => arr[Math.floor(rand() * arr.length)];
 
-  /* 6 个 mix 子图 (颜色属 data-viz exempt) */
+  /* 8 个 mix 子图 (颜色属 data-viz exempt) */
   const groups = [
-    { id: 0, name: 'QKV Projection',     short: 'QKV',    color: '#3F7DF6', cScale: 1.00, wChar: 0.20 },
-    { id: 1, name: 'Attention Score',    short: 'AttnQK', color: '#9B6BF0', cScale: 1.08, wChar: 0.30 },
-    { id: 2, name: 'Attention Context',  short: 'AttnV',  color: '#1FB6C9', cScale: 1.00, wChar: 0.22 },
-    { id: 3, name: 'FFN Up · GeLU',      short: 'FFN-Up', color: '#EF8A3C', cScale: 1.06, wChar: 0.18 },
-    { id: 4, name: 'FFN Down',           short: 'FFN-Dn', color: '#86C541', cScale: 1.04, wChar: 0.24 },
-    { id: 5, name: 'Residual · RMSNorm', short: 'Resid',  color: '#E25A92', cScale: 0.72, wChar: 0.12 },
-  ];
+    { id: 0, name: 'QKV Projection',     short: 'QKV',     cScale: 1.00, wChar: 0.20 },
+    { id: 1, name: 'Attention Score',    short: 'AttnQK',  cScale: 1.08, wChar: 0.30 },
+    { id: 2, name: 'Attention Context',  short: 'AttnV',   cScale: 1.00, wChar: 0.22 },
+    { id: 3, name: 'FFN Up · GeLU',      short: 'FFN-Up',  cScale: 1.06, wChar: 0.18 },
+    { id: 4, name: 'FFN Down',           short: 'FFN-Dn',  cScale: 1.04, wChar: 0.24 },
+    { id: 5, name: 'Residual · RMSNorm', short: 'Resid',   cScale: 0.72, wChar: 0.12 },
+    { id: 6, name: 'Output Projection',  short: 'OutProj', cScale: 0.86, wChar: 0.18 },
+    { id: 7, name: 'KV Cache Update',    short: 'KV-Upd',  cScale: 0.78, wChar: 0.16 },
+  ].map((group) => ({
+    ...group,
+    color: TASK_COLORMAP.colorForTask({ colorKey: group.short }, 'semantic'),
+  }));
 
-  /* 78 条泳道 (核身份固定; 显示顺序见 buildOrder) */
+  /* Host + A5: 4 AI CPU + 32 AIC + 64 AIV (显示顺序见 buildOrder) */
   const cores = [];
-  cores.push({ key: 'cpu_ctrl', label: 'AI CPU 控制', kind: 'cpu', section: 'AI CPU' });
-  for (let i = 0; i < 3; i++) cores.push({ key: 'cpu_sched_' + i, label: 'AI CPU 调度 ' + i, kind: 'cpu', section: 'AI CPU' });
-  for (let i = 0; i < 24; i++) cores.push({ key: 'aic_' + i, label: 'AIC ' + String(i).padStart(2, '0'), kind: 'aic', section: 'AIC', group: Math.floor(i / 4), wrap: i });
-  for (let i = 0; i < 48; i++) cores.push({ key: 'aiv_' + i, label: 'AIV ' + String(i).padStart(2, '0'), kind: 'aiv', section: 'AIV', group: Math.floor(i / 8), wrap: Math.floor(i / 2) });
-  cores.push({ key: 'mte_in', label: 'MTE 输入', kind: 'mte', section: 'MTE' });
-  cores.push({ key: 'mte_out', label: 'MTE 输出', kind: 'mte', section: 'MTE' });
+  cores.push({ key: 'host_cpu', label: 'Host CPU', kind: 'host', section: 'Host', laneGroup: 'host' });
+  cores.push({ key: 'host_memory', label: 'Memory', kind: 'memory', section: 'Host', laneGroup: 'host' });
+  cores.push({ key: 'cpu_ctrl', label: 'AI CPU 控制', kind: 'cpu', section: 'AI CPU', laneGroup: 'ai_cpu' });
+  for (let i = 1; i <= 3; i++) {
+    cores.push({ key: 'cpu_sched_' + i, label: 'AI CPU 调度 ' + i, kind: 'cpu', section: 'AI CPU', laneGroup: 'ai_cpu' });
+  }
+  for (let die = 1; die <= 2; die++) {
+    for (let core = 1; core <= 16; core++) {
+      const wrap = (die - 1) * 16 + (core - 1);
+      cores.push({
+        key: 'aic_' + wrap,
+        label: `Core_${core}_AIC`,
+        kind: 'aic',
+        section: 'AIC',
+        laneGroup: 'die' + die,
+        die,
+        core,
+        group: Math.floor(wrap / 4),
+        wrap,
+      });
+    }
+    for (let core = 1; core <= 16; core++) {
+      const wrap = (die - 1) * 16 + (core - 1);
+      for (let vec = 0; vec < 2; vec++) {
+        cores.push({
+          key: 'aiv_' + (2 * wrap + vec),
+          label: `Core_${core}_AIV_${vec}`,
+          kind: 'aiv',
+          section: 'AIV',
+          laneGroup: 'die' + die,
+          die,
+          core,
+          vector: vec,
+          group: Math.floor(wrap / 4),
+          wrap,
+        });
+      }
+    }
+  }
   cores.forEach((c, i) => { c.idx = i; });
   const idxOf = {};
   cores.forEach((c) => { idxOf[c.key] = c.idx; });
@@ -1148,12 +1672,11 @@ function buildModel() {
     const layerStart = LAYER0 + L * LAYER_SPAN;
     mk(idxOf['cpu_ctrl'], '层调度', layerStart - 50, layerStart - 26, layerStart - 26, null, null, 'cpu', 0, 0);
 
-    for (let g = 0; g < 6; g++) {
+    for (let g = 0; g < groups.length; g++) {
       const gcfg = groups[g];
       const winStart = layerStart + g * STAGGER;
-      const schedCore = idxOf['cpu_sched_' + (g % 3)];
+      const schedCore = idxOf['cpu_sched_' + ((g % 3) + 1)];
       mk(schedCore, '子图启动', winStart - 22, winStart - 8, winStart - 8, g, null, 'cpu', 0, 0);
-      mk(idxOf['mte_in'], 'HBM→L1 加载', winStart - 36, winStart + 16, winStart + 16, g, null, 'mte', 1, rndi(4, 7));
 
       let groupComputeEnd = winStart;
 
@@ -1230,8 +1753,6 @@ function buildModel() {
           }
         }
       }
-
-      mk(idxOf['mte_out'], 'L1→HBM 写回', groupComputeEnd + 6, groupComputeEnd + 44, groupComputeEnd + 44, g, null, 'mte', rndi(2, 4), 1);
     }
   }
 
@@ -1246,26 +1767,52 @@ function buildModel() {
 /* ============================================================
    6. 渲染基础
    ============================================================ */
-const MODEL = buildModel();
-const edgeById = {}; MODEL.edges.forEach((e) => { edgeById[e.id] = e; });
-const taskById = {}; MODEL.tasks.forEach((t) => { taskById[t.id] = t; });
-const CURRENT_RUN_ID = 'mix-sync-run-20260708-001';
+const DATASET = window.SWIMLANE_PROFILER_DATA;
+if (!DATASET?.runs?.length) throw new Error('swimlane-data.js 未加载或没有运行记录');
+const RUN_BY_ID = Object.fromEntries(DATASET.runs.map((run) => [run.id, run]));
+let CURRENT_RUN = DATASET.runs[0];
+let MODEL = CURRENT_RUN.model;
+let edgeById = {};
+let taskById = {};
+function rebuildModelIndexes() {
+  edgeById = Object.fromEntries(MODEL.edges.map((edge) => [edge.id, edge]));
+  taskById = Object.fromEntries(MODEL.tasks.map((task) => [task.id, task]));
+}
+rebuildModelIndexes();
+const CURRENT_RUN_ID = CURRENT_RUN.id;
 const ARTIFACT_ZH = {
-  'execution timeline': '执行时间线',
   'merged swimlane placeholder': '泳道数据',
-  'sync edge evidence': '同步边证据',
-  'bottleneck narrative': '瓶颈剧本',
+  'program graph': '执行计算图',
+  'PMU counter rows': 'PMU 计数',
+  'dynamic topology': '动态拓扑',
+  'runtime execution graph demo model': '执行逻辑图',
+  'source code map': '源码映射',
 };
-const PAST_RUNS = [
-  { id: 'mix-sync-run-20260707-1742-004', operator: 'decoder_layer_mix_subgraph', dur: 2570, tasks: 468, completeness: '完整', timestamp: '2026-07-07 17:42' },
-  { id: 'mix-sync-run-20260707-1016-003', operator: 'attention_score_mix', dur: 2314, tasks: 444, completeness: '完整', timestamp: '2026-07-07 10:16' },
-  { id: 'mix-sync-run-20260706-2238-002', operator: 'ffn_up_gelu_mix', dur: 1988, tasks: 392, completeness: '完整', timestamp: '2026-07-06 22:38' },
-  { id: 'mix-sync-run-20260706-1530-001', operator: 'residual_rmsnorm_mix', dur: 1460, tasks: 316, completeness: '完整', timestamp: '2026-07-06 15:30' },
+const REPORT_TABS = [
+  { id: 'overview', label: '概览' },
+  { id: 'latency', label: '耗时' },
+  { id: 'pmu', label: 'PMU' },
+  { id: 'optimize', label: '优化建议' },
+  { id: 'core', label: '核心详情' },
 ];
-const RUN_ARTIFACTS = [
-  { name: 'merged_swimlane.json', role: 'merged swimlane placeholder' },
-  { name: 'sync_edges.l3.json', role: 'sync edge evidence' },
-  { name: 'mix-sync-story.md', role: 'bottleneck narrative' },
+const TASK_REPORT_TABS = [
+  { id: 'overview', label: '概览' },
+  { id: 'latency', label: '耗时' },
+  { id: 'pmu', label: 'PMU' },
+  { id: 'trace', label: '溯源' },
+  { id: 'optimize', label: '优化' },
+];
+const PMU_GROUPS = [1, 2, 4, 5, 6, 7, 8];
+const PMU_G2_META = [
+  { key: 'pmu_idc_aic_vec_busy_o', label: 'AIC/Vector busy', summary: '向量/AI Core 活跃' },
+  { key: 'cube_instr_busy', label: 'Cube 指令 busy', summary: 'Cube 计算段' },
+  { key: 'scalar_instr_busy', label: 'Scalar 指令 busy', summary: '标量调度段' },
+  { key: 'mte1_instr_busy', label: 'MTE1 指令 busy', summary: 'L1 -> L0 搬运' },
+  { key: 'mte2_instr_busy', label: 'MTE2 指令 busy', summary: 'GM/L2 -> L1/UB 搬运' },
+  { key: 'mte3_instr_busy', label: 'MTE3 指令 busy', summary: 'UB -> GM 写回' },
+  { key: 'icache_req', label: 'I-Cache 请求', summary: '取指请求' },
+  { key: 'icache_miss', label: 'I-Cache Miss', summary: '取指缺失' },
+  { key: 'pmu_fix_instr_busy', label: 'FixPipe 指令 busy', summary: 'FixPipe 后处理' },
 ];
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, (ch) => ({
@@ -1273,57 +1820,182 @@ function escapeHtml(value) {
   }[ch]));
 }
 function runList() {
-  return [{
-    id: CURRENT_RUN_ID,
-    operator: 'decoder_layer_mix_subgraph',
-    dur: Math.round(MODEL.timelineEnd),
-    tasks: MODEL.tasks.length,
-    completeness: 'L3 占位',
-    timestamp: '2026-07-08 22:30',
-    current: true,
-  }, ...PAST_RUNS];
+  return DATASET.runs.map((run) => ({
+    id: run.id,
+    operator: run.operator,
+    dur: Math.round(run.model.timelineEnd),
+    tasks: run.model.tasks.length,
+    completeness: run.completeness,
+    timestamp: run.timestamp,
+    current: run.id === state?.selectedRunId,
+  }));
 }
 
-const ROW_H = 21, BAR_PAD = 3, BAR_H = ROW_H - 2 * BAR_PAD;
+const ROW_H = 21, SUB_ROW_H = 17, CORE_GAP_H = 6, BAR_PAD = 3, SUB_BAR_PAD = 3, BAR_H = ROW_H - 2 * BAR_PAD, SUB_BAR_H = SUB_ROW_H - 2 * SUB_BAR_PAD;
 const AXIS_H = 34, ZOOM_MIN = 100, ZOOM_MAX = 480;
-const KIND_ACCENT = { cpu: '#7C8DB8', aic: '#5A92E6', aiv: '#9B6BF0', mte: '#EAB308' };
+const KIND_ACCENT = Object.fromEntries(
+  ['host', 'memory', 'cpu', 'aic', 'aiv', 'mte'].map((kind) => [kind, TASK_COLORMAP.colorForLaneKind(kind)]),
+);
+const AIC_SUBLANES = ['Scalar', 'MTE_2', 'MTE_1', 'Cube', 'FixPipe'];
+const AIV_SUBLANES = ['Scalar', 'MTE_2', 'Vector', 'MTE_3'];
 
 const state = {
   zoomPct: 100, mixMode: false, syncPathOnly: false,
   query: '',
   hoverTask: null,
+  hoverLaneKey: null,
+  hoverLaneUtilKey: null,
+  hoverLaneUtil: null,
+  hoverLayer: null,
+  reportTab: 'overview',
+  taskReportTab: 'overview',
+  pmuGroup: 2,
   level: 'overview',      // overview | group | wrap | task
   selGroup: null, selWrap: null, selTask: null,
+  selectedRunId: CURRENT_RUN_ID,
+  openArtifactMenu: null,
+  secondaryViewMode: null,
+  comparisonRunId: null,
+  collapsedLaneGroups: new Set(['host']),
+  expandedLaneCores: new Set(),
   expandedRuns: new Set([CURRENT_RUN_ID]),
 };
 
-/* ---- 显示顺序: rowToCore[row]=coreIdx, rowOf[coreIdx]=row ---- */
-let rowToCore = [], rowOf = [];
-function buildOrder() {
-  const order = [];
-  const id = MODEL.idxOf;
-  order.push(id['cpu_ctrl'], id['cpu_sched_0'], id['cpu_sched_1'], id['cpu_sched_2']);
-  if (state.mixMode) {
-    /* Mix: AI CPU — Wrap(1C2V: AIC + 两 AIV) — MTE */
-    for (let w = 0; w < 24; w++) {
-      order.push(MODEL.aicIdxOfWrap(w));
-      const av = MODEL.aivIdxOfWrap(w);
-      order.push(av[0], av[1]);
-    }
-  } else {
-    /* 经典: AI CPU — AIC — AIV — MTE */
-    for (let i = 0; i < 24; i++) order.push(MODEL.idxOf['aic_' + i]);
-    for (let i = 0; i < 48; i++) order.push(MODEL.idxOf['aiv_' + i]);
+const LANE_GROUPS = [
+  { id: 'host', label: 'Host' },
+  { id: 'ai_cpu', label: 'AI CPU' },
+  { id: 'die1', label: 'AI Core DIE 0' },
+  { id: 'die2', label: 'AI Core DIE 1' },
+];
+
+/* ---- 显示顺序: rowItems[row]={type, ...}; rowToCore[row]=coreIdx|null, rowOf[coreIdx]=row ---- */
+let rowItems = [], rowToCore = [], rowOf = [], subRowOf = [];
+function coreLaneOrder(a, b) {
+  if (a.laneGroup !== b.laneGroup) return a.idx - b.idx;
+  if (!a.die || !b.die) return a.idx - b.idx;
+  if (a.core !== b.core) return a.core - b.core;
+  const rank = (c) => state.mixMode
+    ? (c.kind === 'aic' ? 1 : (c.vector === 0 ? 0 : 2))
+    : (c.kind === 'aic' ? 0 : (c.vector === 0 ? 1 : 2));
+  return rank(a) - rank(b);
+}
+function coreSublanes(core) {
+  if (core.kind === 'aic') return AIC_SUBLANES;
+  if (core.kind === 'aiv') return AIV_SUBLANES;
+  return [];
+}
+function isExpandableCore(core) {
+  return coreSublanes(core).length > 0;
+}
+function pushRowItem(item) {
+  const row = rowItems.length;
+  rowItems.push(item);
+  rowToCore.push(item.type === 'core' || item.type === 'subcore' ? item.coreIdx : null);
+  if (item.type === 'core') rowOf[item.coreIdx] = row;
+  if (item.type === 'subcore') {
+    if (!subRowOf[item.coreIdx]) subRowOf[item.coreIdx] = {};
+    subRowOf[item.coreIdx][item.sublane] = row;
   }
-  order.push(id['mte_in'], id['mte_out']);
-  rowToCore = order;
+}
+function rowItemHeight(item) {
+  if (item.type === 'subcore') return SUB_ROW_H;
+  return item.type === 'spacer' ? CORE_GAP_H : ROW_H;
+}
+function computeRowGeometry() {
+  let y = 0;
+  rowItems.forEach((item) => {
+    item.y = y;
+    item.h = rowItemHeight(item);
+    y += item.h;
+  });
+}
+function buildOrder() {
+  rowItems = [];
+  rowToCore = [];
   rowOf = [];
-  order.forEach((coreIdx, row) => { rowOf[coreIdx] = row; });
+  subRowOf = [];
+  LANE_GROUPS.forEach((group) => {
+    const cores = MODEL.cores.filter((c) => c.laneGroup === group.id).sort(coreLaneOrder);
+    pushRowItem({ type: 'section', id: group.id, label: group.label, count: cores.length });
+    if (state.collapsedLaneGroups.has(group.id)) return;
+    cores.forEach((c, index) => {
+      pushRowItem({ type: 'core', coreIdx: c.idx });
+      if (state.expandedLaneCores.has(c.idx)) {
+        coreSublanes(c).forEach((sublane) => {
+          pushRowItem({ type: 'subcore', coreIdx: c.idx, sublane });
+        });
+      }
+      const isDieGroup = group.id.startsWith('die');
+      const next = cores[index + 1];
+      if (isDieGroup && next && next.core !== c.core) {
+        pushRowItem({ type: 'spacer', id: `${group.id}-core-${c.core}-gap` });
+      }
+    });
+  });
+  computeRowGeometry();
 }
 
-/* mix 模式下 wrap w 的行区间 [起, 止] (含) */
-function wrapRowRange(w) { return [4 + 3 * w, 4 + 3 * w + 2]; }
-function groupRowRange(g) { return [4 + 12 * g, 4 + 12 * g + 11]; }
+/* wrap / group 当前可见行区间 [起, 止] (含) */
+function taskSublane(t) {
+  if (t.primarySublane) return t.primarySublane;
+  const core = MODEL.cores[t.coreIdx];
+  const name = String(t.name || '');
+  if (core.kind === 'aic') {
+    if (/Pack/i.test(name)) return 'MTE_2';
+    if (/Accum/i.test(name)) return 'FixPipe';
+    if (/BMM|MatMul|GEMM/i.test(name)) return 'Cube';
+    return 'Scalar';
+  }
+  if (core.kind === 'aiv') {
+    if (/RMSNorm|Reduce/i.test(name)) return 'Scalar';
+    if (/Cast/i.test(name)) return 'MTE_3';
+    return 'Vector';
+  }
+  return null;
+}
+function taskRow(t) {
+  const core = MODEL.cores[t.coreIdx];
+  const sublane = taskSublane(t);
+  if (sublane && state.expandedLaneCores.has(core.idx)) {
+    const row = subRowOf[core.idx]?.[sublane];
+    if (Number.isFinite(row)) return row;
+  }
+  return rowOf[t.coreIdx];
+}
+function rowsForCore(coreIdx) {
+  const rows = [];
+  if (Number.isFinite(rowOf[coreIdx])) rows.push(rowOf[coreIdx]);
+  Object.values(subRowOf[coreIdx] || {}).forEach((row) => {
+    if (Number.isFinite(row)) rows.push(row);
+  });
+  return rows;
+}
+function visibleRowsForWrap(w) {
+  const coreIds = [...new Set(MODEL.tasks.filter((task) => task.wrap === w).map((task) => task.coreIdx))];
+  const rows = coreIds
+    .flatMap((coreIdx) => rowsForCore(coreIdx))
+    .filter((row) => Number.isFinite(row));
+  return rows;
+}
+function wrapRowRange(w) {
+  const rows = visibleRowsForWrap(w);
+  if (!rows.length) return null;
+  return [Math.min(...rows), Math.max(...rows)];
+}
+function groupRowRange(g) {
+  const rows = [];
+  (MODEL.groups[g]?.wraps || []).forEach((w) => rows.push(...visibleRowsForWrap(w)));
+  if (!rows.length) return null;
+  return [Math.min(...rows), Math.max(...rows)];
+}
+function groupForWrap(w) {
+  return MODEL.groups.find((group) => (group.wraps || []).includes(w))?.id ?? null;
+}
+function coreParticipates(coreIdx, group = null, wrap = null) {
+  return MODEL.tasks.some((task) => task.coreIdx === coreIdx
+    && (group == null || task.group === group)
+    && (wrap == null || task.wrap === wrap));
+}
 
 const bodyCanvas = document.getElementById('bodyCanvas');
 const axisCanvas = document.getElementById('axisCanvas');
@@ -1333,6 +2005,8 @@ const axisWrap = document.getElementById('axisWrap');
 const laneWrap = document.getElementById('laneWrap');
 const overviewWrap = document.getElementById('overviewWrap');
 const overviewBand = document.getElementById('overviewBand');
+const swimlaneScrollShell = document.querySelector('.sl-swimlane-scroll-shell');
+const timestampGuide = document.getElementById('timestampGuide');
 const globalRulerScale = document.getElementById('globalRulerScale');
 const globalRulerTicks = document.getElementById('globalRulerTicks');
 const globalRulerBrush = document.getElementById('globalRulerBrush');
@@ -1341,16 +2015,53 @@ const zoomSlider = document.getElementById('zoomSlider');
 const mixModeBtn = document.getElementById('mixModeBtn');
 const syncPathBtn = document.getElementById('syncPathBtn');
 const runHistoryBody = document.getElementById('runHistoryBody');
+const swimlanePaneTitle = document.getElementById('swimlanePaneTitle');
 const tooltip = document.getElementById('tooltip');
 const frameEl = document.querySelector('[data-ide-frame]');
 const canvasPane = document.getElementById('canvasPane');
 const inspectorPane = document.getElementById('inspectorPane');
 const topExplorerToggle = document.getElementById('topExplorerToggle');
 const topInspectorToggle = document.getElementById('topInspectorToggle');
+const railTerminalToggle = document.getElementById('railTerminalToggle');
+const blockGraphView = document.getElementById('blockGraphView');
+const blockGraphTitle = document.getElementById('blockGraphTitle');
+const blockGraphMount = document.getElementById('blockGraphMount');
+const blockGraphViewport = document.getElementById('blockGraphViewport');
+const blockGraphStage = document.getElementById('blockGraphStage');
+const compareSwimlaneView = document.getElementById('compareSwimlaneView');
+const compareGrid = document.getElementById('compareGrid');
+const compareLaneWrap = document.getElementById('compareLaneWrap');
+const compareBodyWrap = document.getElementById('compareBodyWrap');
+const compareLaneCanvas = document.getElementById('compareLaneCanvas');
+const compareBodyCanvas = document.getElementById('compareBodyCanvas');
+const compareTimestampGuide = document.getElementById('compareTimestampGuide');
+const blockGraphZoomOut = document.getElementById('blockGraphZoomOut');
+const blockGraphZoomIn = document.getElementById('blockGraphZoomIn');
+const blockGraphFit = document.getElementById('blockGraphFit');
+const closeBlockGraph = document.getElementById('closeBlockGraph');
 let bctx, actx, lctx;
 let frameController = null;
+let canvasTooltipController = null;
 let canvasResizeObserver = null;
+let frameResizeObserver = null;
+let graphResizeObserver = null;
+let panelActions = null;
+let responsivePaneMode = null;
+let autoCollapsedExplorer = false;
+let autoCollapsedInspector = false;
 let overviewMetricSeries = [];
+let syncingComparisonScroll = false;
+const blockGraphViewState = {
+  x: 0,
+  y: 0,
+  scale: 1,
+  dragging: false,
+  pointerId: null,
+  startClientX: 0,
+  startClientY: 0,
+  startX: 0,
+  startY: 0,
+};
 
 const LABEL_W = 184;
 function visibleTrackW() {
@@ -1361,11 +2072,172 @@ function bodyW() {
   return Math.ceil(visibleTrackW() * (state.zoomPct / 100));
 }
 function pxPerUs() { return Math.max(0.1, (bodyW() - 8) / MODEL.timelineEnd); }
-function bodyH() { return MODEL.cores.length * ROW_H; }
-function rowMidY(row) { return row * ROW_H + ROW_H / 2; }
+function bodyH() { return rowItems.reduce((sum, item) => sum + item.h, 0); }
+function rowTop(row) { return rowItems[row]?.y ?? 0; }
+function rowHeight(row) { return rowItems[row]?.h ?? ROW_H; }
+function rowBottom(row) { return rowTop(row) + rowHeight(row); }
+function rowMidY(row) { return rowTop(row) + rowHeight(row) / 2; }
+function hitRowAt(y) {
+  return rowItems.findIndex((item) => y >= item.y && y < item.y + item.h);
+}
+function rowLaneKey(row) {
+  const item = rowItems[row];
+  if (!item) return null;
+  if (item.type === 'core') return `core:${item.coreIdx}`;
+  if (item.type === 'subcore') return `sub:${item.coreIdx}:${item.sublane}`;
+  return null;
+}
+function laneKeyForTask(t) {
+  const core = MODEL.cores[t.coreIdx];
+  const sublane = taskSublane(t);
+  if (sublane && state.expandedLaneCores.has(core.idx)) return `sub:${core.idx}:${sublane}`;
+  return `core:${core.idx}`;
+}
+function isRowHovered(row) {
+  const key = rowLaneKey(row);
+  return key && key === state.hoverLaneKey;
+}
+function barMetricsForRow(row) {
+  const item = rowItems[row];
+  if (item?.type === 'subcore') return { pad: SUB_BAR_PAD, height: SUB_BAR_H };
+  return { pad: BAR_PAD, height: BAR_H };
+}
 function hexToRgba(hex, a) {
   const v = parseInt(hex.slice(1), 16);
   return `rgba(${v >> 16},${(v >> 8) & 0xff},${v & 0xff},${a})`;
+}
+function laneDieLabel(core) {
+  return core?.die != null ? `DIE ${core.die - 1}` : '';
+}
+function laneDisplayLabel(core) {
+  const die = laneDieLabel(core);
+  return die ? `${die} · ${core.label}` : core.label;
+}
+function laneDisplayWithSublane(core, sublane) {
+  return sublane ? `${laneDisplayLabel(core)} · ${sublane}` : laneDisplayLabel(core);
+}
+function taskLaneDisplayLabel(t) {
+  const core = MODEL.cores[t.coreIdx];
+  const sublane = state.expandedLaneCores.has(core.idx) ? taskSublane(t) : null;
+  return laneDisplayWithSublane(core, sublane);
+}
+function taskBaseColor(t) {
+  const grp = t.group != null ? MODEL.groups[t.group] : null;
+  return grp ? grp.color : KIND_ACCENT[t.kind];
+}
+
+const taskTooltipPayloads = new Map();
+const laneTooltipPayloads = new Map();
+
+function taskTooltipPayload(t) {
+  if (!t) return null;
+  const total = Math.max(1, t.end - t.start);
+  const wait = Math.max(0, t.end - t.computeEnd);
+  const grp = t.group != null ? MODEL.groups[t.group] : null;
+  let payload = taskTooltipPayloads.get(t.id);
+  if (!payload) {
+    payload = {};
+    taskTooltipPayloads.set(t.id, payload);
+  }
+  Object.assign(payload, {
+    tooltipKind: 'task',
+    displayName: t.name,
+    lane: taskLaneDisplayLabel(t),
+    totalCycle: total,
+    clcCycle: Math.max(0, t.computeEnd - t.start),
+    gap: wait,
+    gapRatio: wait / total,
+    status: wait / total >= 0.3 ? 'wait' : '',
+    dominantCounter: grp?.name || '',
+    wrapId: t.wrap == null ? '' : String(t.wrap).padStart(2, '0'),
+  });
+  return payload;
+}
+
+function laneTooltipPayload(hit) {
+  if (!hit) return null;
+  let payload = laneTooltipPayloads.get(hit.key);
+  if (!payload) {
+    payload = {};
+    laneTooltipPayloads.set(hit.key, payload);
+  }
+  Object.assign(payload, {
+    tooltipKind: 'utilization',
+    displayName: '泳道利用率',
+    lane: laneDisplayWithSublane(hit.core, hit.sublane),
+    totalCycle: hit.util.active,
+    utilization: hit.util.ratio,
+  });
+  return payload;
+}
+
+function canvasTooltipRow(label, value, className = '') {
+  if (value == null || value === '') return '';
+  const valueClass = className ? ` ${className}` : '';
+  return `<div class="pto-swimlane-task-tooltip__row"><span class="pto-swimlane-task-tooltip__key">${escapeHtml(label)}</span><span class="pto-swimlane-task-tooltip__value${valueClass}">${escapeHtml(value)}</span></div>`;
+}
+
+function formatCanvasTooltip(payload) {
+  if (payload.tooltipKind === 'utilization') {
+    return [
+      `<div class="pto-swimlane-task-tooltip__title">${escapeHtml(payload.displayName)}</div>`,
+      canvasTooltipRow('泳道', payload.lane),
+      canvasTooltipRow('活跃时长', `${Number(payload.totalCycle).toFixed(1)}μs`),
+      canvasTooltipRow('利用率', `${(Number(payload.utilization) * 100).toFixed(1)}%`),
+    ].join('');
+  }
+
+  const statusText = payload.status === 'wait'
+    ? '同步等待'
+    : payload.status === 'overlap'
+      ? '执行重叠'
+      : payload.status
+        ? '正常'
+        : '';
+  const statusClass = payload.status === 'wait' ? 'is-bad' : payload.status === 'overlap' ? 'is-warn' : '';
+  const gap = Number(payload.gap || 0);
+  const gapRatio = Number(payload.gapRatio || 0);
+  return [
+    `<div class="pto-swimlane-task-tooltip__title">${escapeHtml(payload.displayName)}</div>`,
+    canvasTooltipRow('泳道', payload.lane),
+    canvasTooltipRow('总耗时', `${Number(payload.totalCycle).toFixed(1)}μs`),
+    canvasTooltipRow('计算耗时', `${Number(payload.clcCycle).toFixed(1)}μs`),
+    canvasTooltipRow('同步等待', `${gap.toFixed(1)}μs (${(gapRatio * 100).toFixed(1)}%)`),
+    canvasTooltipRow('状态', statusText, statusClass),
+    canvasTooltipRow('主导指标', payload.dominantCounter),
+    canvasTooltipRow('Wrap', payload.wrapId),
+  ].join('');
+}
+
+function refreshCanvasTooltipTarget(target, previousKey, nextKey, event) {
+  if (previousKey === nextKey) return;
+  target.dispatchEvent(new PointerEvent(nextKey ? 'pointerenter' : 'pointerleave', {
+    clientX: event.clientX,
+    clientY: event.clientY,
+  }));
+}
+
+function initSharedCanvasTooltip() {
+  canvasTooltipController = window.PtoSwimlaneTaskPattern.initHoverTooltip({
+    root: frameEl,
+    targets: [bodyCanvas, laneCanvas],
+    tooltip,
+    appendTo: document.body,
+    bounds: document.body,
+    durationUnit: 'μs',
+    getTask: (target) => target === bodyCanvas
+      ? taskTooltipPayload(state.hoverTask)
+      : laneTooltipPayload(state.hoverLaneUtil),
+    getTooltipHtml: (payload) => formatCanvasTooltip(payload),
+  });
+  document.addEventListener('pointermove', (event) => {
+    if (!tooltip.classList.contains('is-visible')) return;
+    if (event.target === bodyCanvas || event.target === laneCanvas) return;
+    bodyCanvas.dispatchEvent(new PointerEvent('pointerleave', {
+      clientX: event.clientX,
+      clientY: event.clientY,
+    }));
+  });
 }
 function taskMatchesQuery(t) {
   const q = state.query.trim().toLowerCase();
@@ -1375,6 +2247,8 @@ function taskMatchesQuery(t) {
   return [
     t.name,
     core.label,
+    laneDisplayLabel(core),
+    laneDieLabel(core),
     core.section,
     grp?.name,
     grp?.short,
@@ -1392,6 +2266,65 @@ function setupCanvas(canvas, wCss, hCss) {
   return ctx;
 }
 
+function copyCanvasPixels(source, target) {
+  if (!source || !target || state.secondaryViewMode !== 'comparison') return;
+  if (target === compareBodyCanvas) {
+    renderComparisonBody();
+    return;
+  }
+  if (target.width !== source.width) target.width = source.width;
+  if (target.height !== source.height) target.height = source.height;
+  target.style.width = source.style.width;
+  target.style.height = source.style.height;
+  const ctx = target.getContext('2d');
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, target.width, target.height);
+  ctx.drawImage(source, 0, 0);
+}
+
+function renderComparisonBody() {
+  const run = RUN_BY_ID[state.comparisonRunId];
+  if (!run || !compareBodyCanvas) return;
+  const model = run.model;
+  const scale = pxPerUs();
+  const width = Math.max(bodyW(), Math.ceil(model.timelineEnd * scale + 8));
+  const height = bodyH();
+  const ctx = setupCanvas(compareBodyCanvas, width, height);
+  ctx.clearRect(0, 0, width, height);
+  rowItems.forEach((item, row) => {
+    if (item.type !== 'section') return;
+    ctx.fillStyle = 'rgba(255,255,255,0.026)';
+    ctx.fillRect(0, rowTop(row), width, rowHeight(row));
+  });
+  model.layerMarks.forEach((mark) => {
+    const x = Math.round(mark.t * scale) + 0.5;
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke();
+    ctx.setLineDash([]);
+  });
+  for (const task of model.tasks) {
+    const row = rowOf[task.coreIdx];
+    if (!Number.isFinite(row)) continue;
+    const bar = barMetricsForRow(row);
+    const x = task.start * scale;
+    const y = rowTop(row) + bar.pad;
+    const taskWidth = Math.max(0, task.end - task.start) * scale;
+    if (taskWidth < 1) continue;
+    const group = task.group != null ? model.groups[task.group] : null;
+    window.PtoSwimlaneTaskPattern.drawTaskBar(ctx, {
+      x, y, width: taskWidth, height: bar.height,
+      baseColor: group?.color || KIND_ACCENT[task.kind],
+      fontFamily: "'Inter', sans-serif", task,
+    });
+  }
+}
+
+function syncComparisonCanvases() {
+  copyCanvasPixels(laneCanvas, compareLaneCanvas);
+  copyCanvasPixels(bodyCanvas, compareBodyCanvas);
+}
+
 /* ============================================================
    7. 主体画布渲染
    ============================================================ */
@@ -1402,12 +2335,16 @@ function focusInfo() {
   let dimGroup = null, dimWrap = null;
   const focusTask = state.selTask || state.hoverTask;
   if (state.level === 'group' && state.selGroup != null) dimGroup = state.selGroup;
-  if (state.level === 'wrap' && state.selWrap != null) { dimGroup = Math.floor(state.selWrap / 4); dimWrap = state.selWrap; }
+  if (state.level === 'wrap' && state.selWrap != null) { dimGroup = groupForWrap(state.selWrap); dimWrap = state.selWrap; }
   if (state.level === 'task' && state.selTask) {
     dimGroup = state.selTask.group;
     dimWrap = state.selTask.wrap;
   }
-  if (focusTask) {
+  if (state.selTask) {
+    const dep = dependencyClosure(state.selTask);
+    dep.tasks.forEach((id) => relTasks.add(id));
+    dep.edges.forEach((id) => relEdges.add(id));
+  } else if (focusTask) {
     relTasks.add(focusTask.id);
     focusTask.syncIn.concat(focusTask.syncOut).forEach((eid) => {
       relEdges.add(eid);
@@ -1415,7 +2352,34 @@ function focusInfo() {
       relTasks.add(edgeById[eid].toTask);
     });
   }
-  return { relTasks, relEdges, dimGroup, dimWrap, focusTask };
+  return { relTasks, relEdges, dimGroup, dimWrap, focusTask, dependencyMode: Boolean(state.selTask) };
+}
+
+function dependencyClosure(rootTask) {
+  const tasks = new Set([rootTask.id]);
+  const edges = new Set();
+  const visit = (seed, edgeKey, nextKey) => {
+    const queue = [seed];
+    const seen = new Set([seed.id]);
+    while (queue.length) {
+      const cur = queue.shift();
+      cur[edgeKey].forEach((eid) => {
+        const e = edgeById[eid];
+        if (!e) return;
+        edges.add(eid);
+        const next = taskById[e[nextKey]];
+        if (!next) return;
+        tasks.add(next.id);
+        if (!seen.has(next.id)) {
+          seen.add(next.id);
+          queue.push(next);
+        }
+      });
+    }
+  };
+  visit(rootTask, 'syncIn', 'fromTask');
+  visit(rootTask, 'syncOut', 'toTask');
+  return { tasks, edges };
 }
 
 function drawBody() {
@@ -1423,27 +2387,25 @@ function drawBody() {
   bctx.clearRect(0, 0, w, h);
   const fi = focusInfo();
 
-  /* 行底纹: mix 按 wrap 隔行, 经典按 section */
-  for (let row = 0; row < MODEL.cores.length; row++) {
-    let stripe = false;
-    if (state.mixMode) {
-      if (row >= 4 && row <= 75) stripe = Math.floor((row - 4) / 3) % 2 === 1;
-    } else {
-      const k = MODEL.cores[rowToCore[row]].kind;
-      stripe = k === 'aic' || k === 'mte';
+  /* 行底纹 */
+  for (let row = 0; row < rowItems.length; row++) {
+    const item = rowItems[row];
+    const y = rowTop(row), rh = rowHeight(row);
+    if (item.type === 'section') {
+      bctx.fillStyle = 'rgba(255,255,255,0.026)';
+      bctx.fillRect(0, y, w, rh);
+      continue;
     }
-    if (stripe) { bctx.fillStyle = 'rgba(255,255,255,0.014)'; bctx.fillRect(0, row * ROW_H, w, ROW_H); }
+    if (isRowHovered(row)) {
+      bctx.fillStyle = 'rgba(255,255,255,0.045)';
+      bctx.fillRect(0, y, w, rh);
+    }
   }
 
   /* mix: group 染色带 (连续 12 行/子图, 圆角虚线框) */
   if (state.mixMode) drawGroupBands(fi);
 
-  /* 时间网格 + 迭代 barrier */
-  bctx.strokeStyle = 'rgba(255,255,255,0.05)'; bctx.lineWidth = 1;
-  for (let t = 0; t <= MODEL.timelineEnd; t += 100) {
-    const x = Math.round(t * scale) + 0.5;
-    bctx.beginPath(); bctx.moveTo(x, 0); bctx.lineTo(x, h); bctx.stroke();
-  }
+  /* 调用范围 barrier：任务区只保留虚线，不延伸局部时间刻度实线。 */
   MODEL.layerMarks.forEach((m) => {
     const x = Math.round(m.t * scale) + 0.5;
     bctx.strokeStyle = 'rgba(255,255,255,0.15)'; bctx.setLineDash([4, 4]);
@@ -1457,49 +2419,74 @@ function drawBody() {
   /* task bars */
   const fontFamily = "'Inter', sans-serif";
   for (const t of MODEL.tasks) {
-    const row = rowOf[t.coreIdx];
-    const x = t.start * scale;
-    const computeW = (t.computeEnd - t.start) * scale;
-    const y = row * ROW_H + BAR_PAD;
-    const grp = t.group != null ? MODEL.groups[t.group] : null;
-    const baseColor = grp ? grp.color : KIND_ACCENT[t.kind];
+    const row = taskRow(t);
+    if (!Number.isFinite(row)) continue;
+    const related = !fi.dependencyMode || fi.relTasks.has(t.id);
+    const baseColor = related ? taskBaseColor(t) : '#6F7480';
 
     let alpha = 1;
     if (state.syncPathOnly && t.syncIn.length === 0 && t.syncOut.length === 0) alpha = 0.16;
-    if (fi.dimWrap != null) { if (t.wrap !== fi.dimWrap) alpha = Math.min(alpha, 0.2); }
-    else if (fi.dimGroup != null) { if (t.group !== fi.dimGroup) alpha = Math.min(alpha, 0.2); }
-    if (fi.focusTask && !fi.relTasks.has(t.id)) alpha = Math.min(alpha, 0.34);
+    if (fi.dependencyMode) {
+      if (!related) alpha = Math.min(alpha, 0.24);
+    } else {
+      if (fi.dimWrap != null) { if (t.wrap !== fi.dimWrap) alpha = Math.min(alpha, 0.2); }
+      else if (fi.dimGroup != null) { if (t.group !== fi.dimGroup) alpha = Math.min(alpha, 0.2); }
+      if (fi.focusTask && !fi.relTasks.has(t.id)) alpha = Math.min(alpha, 0.34);
+    }
     if (!taskMatchesQuery(t)) alpha = Math.min(alpha, 0.15);
 
-    bctx.globalAlpha = alpha;
-    if (computeW >= 1) {
-      window.PtoSwimlaneTaskPattern.drawTaskBar(bctx, {
-        x, y, width: computeW, height: BAR_H, baseColor, fontFamily, task: t,
-        isSelected: state.selTask && state.selTask.id === t.id,
-        isRelated: fi.relTasks.has(t.id) && fi.focusTask && fi.focusTask.id !== t.id,
-        isEmphasized: state.hoverTask && state.hoverTask.id === t.id,
-      });
-    }
-    const waitW = (t.end - t.computeEnd) * scale;
-    if (waitW >= 1) drawWaitSegment(x + computeW, y, waitW, BAR_H);
+    const core = MODEL.cores[t.coreIdx];
+    const expanded = state.expandedLaneCores.has(core.idx);
+    const sourceSegments = expanded
+      ? (t.pipelineSegments || [])
+      : (state.mixMode && t.microSegments?.length ? t.microSegments : [
+        { kind: 'compute', start: t.start, end: t.end },
+      ]);
+    sourceSegments.forEach((segment) => {
+      const segmentRow = expanded ? subRowOf[core.idx]?.[segment.sublane] : row;
+      if (!Number.isFinite(segmentRow)) return;
+      const bar = barMetricsForRow(segmentRow);
+      const x = segment.start * scale;
+      const width = Math.max(0, segment.end - segment.start) * scale;
+      const y = rowTop(segmentRow) + bar.pad;
+      bctx.globalAlpha = alpha;
+      if (segment.kind === 'wait') {
+        if (width >= 1) drawWaitSegment(x, y, width, bar.height, fi.dependencyMode && !related);
+      } else if (segment.kind === 'set') {
+        bctx.fillStyle = '#1FB6C9';
+        bctx.fillRect(Math.round(x), y - 1, 2, bar.height + 2);
+      } else if (width >= 1) {
+        window.PtoSwimlaneTaskPattern.drawTaskBar(bctx, {
+          x, y, width, height: bar.height, baseColor, fontFamily, task: t,
+          isSelected: state.selTask && state.selTask.id === t.id,
+          isRelated: fi.relTasks.has(t.id) && fi.focusTask && fi.focusTask.id !== t.id,
+          isEmphasized: state.hoverTask && state.hoverTask.id === t.id,
+        });
+      }
+    });
     bctx.globalAlpha = 1;
   }
 
-  /* mix: 同步弧线 (按层级渐进显示) */
-  if (state.mixMode) drawArcs(fi);
+  if (fi.dependencyMode) drawDependencyCurves(fi);
+  else if (state.mixMode) drawSyncCurves(fi);
+  copyCanvasPixels(bodyCanvas, compareBodyCanvas);
 }
 
 function drawGroupBands(fi) {
   const scale = pxPerUs();
   for (let L = 0; L < MODEL.LAYERS; L++) {
-    for (let g = 0; g < 6; g++) {
+    for (let g = 0; g < MODEL.groups.length; g++) {
+      const range = groupRowRange(g);
+      if (!range) continue;
       const isFocus = fi.dimGroup === g;
       const faded = fi.dimGroup != null && !isFocus;
       const grp = MODEL.groups[g];
-      const winStart = (MODEL.LAYER0 + L * MODEL.LAYER_SPAN + g * MODEL.STAGGER - 40) * scale;
-      const winW = (MODEL.STAGGER + 320) * scale;
-      const [r0] = groupRowRange(g);
-      const y = r0 * ROW_H, bh = 12 * ROW_H;
+      const windowSpec = grp.windows?.find((windowItem) => windowItem.iteration === L);
+      if (!windowSpec) continue;
+      const winStart = windowSpec.start * scale;
+      const winW = Math.max(1, (windowSpec.end - windowSpec.start) * scale);
+      const [r0, r1] = range;
+      const y = rowTop(r0), bh = rowBottom(r1) - rowTop(r0);
       bctx.fillStyle = hexToRgba(grp.color, faded ? 0.025 : (isFocus ? 0.085 : 0.045));
       bctx.fillRect(winStart, y, winW, bh);
       bctx.strokeStyle = hexToRgba(grp.color, faded ? 0.18 : (isFocus ? 0.62 : 0.32));
@@ -1509,12 +2496,19 @@ function drawGroupBands(fi) {
       bctx.stroke();
       bctx.setLineDash([]);
       /* wrap 选中: 在 group 带内再描出 wrap 子框 */
-      if (fi.dimWrap != null && Math.floor(fi.dimWrap / 4) === g) {
-        const [wr0] = wrapRowRange(fi.dimWrap);
+      if (fi.dimWrap != null && (grp.wraps || []).includes(fi.dimWrap)) {
+        const wrapRange = wrapRowRange(fi.dimWrap);
+        if (!wrapRange) continue;
+        const wrapTasks = MODEL.tasks.filter((task) => task.wrap === fi.dimWrap && task.iteration === L);
+        if (!wrapTasks.length) continue;
+        const wrapStart = (Math.min(...wrapTasks.map((task) => task.start)) - 1) * scale;
+        const wrapWidth = (Math.max(...wrapTasks.map((task) => task.end))
+          - Math.min(...wrapTasks.map((task) => task.start)) + 2) * scale;
+        const [wr0, wr1] = wrapRange;
         bctx.strokeStyle = hexToRgba(grp.color, 0.92);
         bctx.lineWidth = 1.4;
         bctx.beginPath();
-        bctx.roundRect(winStart + 2.5, wr0 * ROW_H + 1.5, winW - 5, 3 * ROW_H - 3, 6);
+        bctx.roundRect(wrapStart, rowTop(wr0) + 1.5, wrapWidth, rowBottom(wr1) - rowTop(wr0) - 3, 6);
         bctx.stroke();
       }
     }
@@ -1523,47 +2517,48 @@ function drawGroupBands(fi) {
 
 function drawSeparators(ctx, w) {
   const line = (row, color, weight) => {
-    const y = row * ROW_H + 0.5;
+    const y = rowTop(row) + 0.5;
     ctx.strokeStyle = color; ctx.lineWidth = weight;
     ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
   };
-  if (state.mixMode) {
-    line(4, 'rgba(255,255,255,0.16)', 1);
-    line(76, 'rgba(255,255,255,0.16)', 1);
-    for (let g = 1; g < 6; g++) line(4 + 12 * g, 'rgba(255,255,255,0.12)', 1);
-    for (let wgap = 1; wgap < 24; wgap++) {
-      if (wgap % 4 === 0) continue;
-      line(4 + 3 * wgap, 'rgba(255,255,255,0.045)', 1);
-    }
-  } else {
-    [4, 28, 76].forEach((r) => line(r, 'rgba(255,255,255,0.14)', 1));
-  }
+  rowItems.forEach((item, row) => {
+    if (item.type === 'section') line(row, 'rgba(255,255,255,0.16)', 1);
+  });
+  copyCanvasPixels(laneCanvas, compareLaneCanvas);
 }
 
-function drawWaitSegment(x, y, w, h) {
+function drawWaitSegment(x, y, w, h, muted = false) {
+  const waitColor = muted ? '#6F7480' : '#FFAA3B';
   bctx.save();
   bctx.beginPath(); bctx.roundRect(x, y, w, h, 2); bctx.clip();
-  bctx.fillStyle = hexToRgba('#FFAA3B', 0.14);
+  bctx.fillStyle = hexToRgba(waitColor, muted ? 0.18 : 0.14);
   bctx.fillRect(x, y, w, h);
-  bctx.strokeStyle = 'rgba(255,170,59,0.5)'; bctx.lineWidth = 1;
+  bctx.strokeStyle = muted ? 'rgba(111,116,128,0.48)' : 'rgba(255,170,59,0.5)';
+  bctx.lineWidth = 1;
   for (let i = -h; i < w + h; i += 5) {
     bctx.beginPath(); bctx.moveTo(x + i, y + h); bctx.lineTo(x + i + h, y); bctx.stroke();
   }
   bctx.restore();
-  bctx.strokeStyle = 'rgba(255,170,59,0.4)'; bctx.lineWidth = 1;
+  bctx.strokeStyle = muted ? 'rgba(111,116,128,0.44)' : 'rgba(255,170,59,0.4)';
+  bctx.lineWidth = 1;
   bctx.beginPath(); bctx.roundRect(x + 0.5, y + 0.5, Math.max(0, w - 1), h - 1, 2); bctx.stroke();
   if (w >= 6) {
-    bctx.fillStyle = '#FFAA3B';
+    bctx.fillStyle = waitColor;
     bctx.beginPath();
     bctx.moveTo(x, y - 1); bctx.lineTo(x + 5, y - 1); bctx.lineTo(x + 2.5, y + 3.5);
     bctx.closePath(); bctx.fill();
   }
 }
 
-/* 同步弧线: 渐进显示
+/* 依赖贝塞尔曲线：渐进显示
    overview -> 不画; group -> 该子图弧线中等; wrap -> 该 wrap 弧线强;
    任务 -> 选中任务弧线最强, 同 Wrap 其余弱 */
-function drawArcs(fi) {
+function drawDependencyCurves(fi) {
+  const edges = MODEL.edges.filter((e) => fi.relEdges.has(e.id));
+  edges.forEach((e) => drawDependencyCurve(e, true));
+}
+
+function drawSyncCurves(fi) {
   let visible, strongPred;
   if (fi.focusTask) {
     visible = MODEL.edges.filter((e) => e.wrap === fi.focusTask.wrap);
@@ -1578,8 +2573,8 @@ function drawArcs(fi) {
     return; /* overview: 保持干净, 不画弧线 */
   }
   /* 先弱后强, 保证强线在上层 */
-  visible.filter((e) => !strongPred(e)).forEach((e) => drawArc(e, false));
-  visible.filter((e) => strongPred(e)).forEach((e) => drawArc(e, true));
+  visible.filter((e) => !strongPred(e)).forEach((e) => drawDependencyCurve(e, false));
+  visible.filter((e) => strongPred(e)).forEach((e) => drawDependencyCurve(e, true));
   /* 选中 task 的同步点 barrier 竖线 */
   if (fi.focusTask) {
     fi.focusTask.syncIn.concat(fi.focusTask.syncOut).forEach((eid) => {
@@ -1590,32 +2585,37 @@ function drawArcs(fi) {
   }
 }
 
-function drawArc(e, strong) {
+function drawDependencyCurve(e, strong) {
   const scale = pxPerUs();
-  const x1 = e.fromT * scale, y1 = rowMidY(rowOf[e.fromCore]);
-  const x2 = e.toT * scale, y2 = rowMidY(rowOf[e.toCore]);
-  const color = MODEL.groups[e.group].color;
-  const bow = Math.max(14, Math.abs(y2 - y1) * 0.55) * (strong ? 1.15 : 1);
+  const fromRow = taskRow(taskById[e.fromTask]), toRow = taskRow(taskById[e.toTask]);
+  if (!Number.isFinite(fromRow) || !Number.isFinite(toRow)) return;
+  const x1 = e.fromT * scale, y1 = rowMidY(fromRow);
+  const x2 = e.toT * scale, y2 = rowMidY(toRow);
+  const fromColor = taskBaseColor(taskById[e.fromTask]);
+  const toColor = taskBaseColor(taskById[e.toTask]);
+  const grad = bctx.createLinearGradient(x1, y1, x2, y2);
+  grad.addColorStop(0, hexToRgba(fromColor, strong ? 0.98 : 0.32));
+  grad.addColorStop(1, hexToRgba(toColor, strong ? 0.98 : 0.32));
+  const midX = x1 + (x2 - x1) * 0.5;
   bctx.save();
-  bctx.strokeStyle = hexToRgba(color, strong ? 0.95 : 0.3);
+  bctx.strokeStyle = grad;
   bctx.lineWidth = strong ? 1.7 : 1;
-  if (e.dir === 'aiv2aic') bctx.setLineDash(strong ? [5, 3] : [3, 3]);
-  /* 控制点右推 -> 平滑外凸曲线; 终点水平进入便于统一箭头 */
+  /* 中间控制轴形成清晰的 S 型贝塞尔关系线，不使用圆弧。 */
   bctx.beginPath();
   bctx.moveTo(x1, y1);
-  bctx.bezierCurveTo(x1 + bow, y1, x2 + bow, y2, x2, y2);
+  bctx.bezierCurveTo(midX, y1, midX, y2, x2, y2);
   bctx.stroke();
-  bctx.setLineDash([]);
-  /* 起点 (SyncSet) 实心圆点 */
-  bctx.fillStyle = hexToRgba(color, strong ? 1 : 0.55);
+  bctx.fillStyle = hexToRgba(fromColor, strong ? 1 : 0.5);
   bctx.beginPath(); bctx.arc(x1, y1, strong ? 2.6 : 1.8, 0, Math.PI * 2); bctx.fill();
-  /* 终点 (SyncWait) 箭头, 水平指向 -x */
-  const ah = strong ? 5 : 3.6;
+  bctx.fillStyle = hexToRgba(toColor, strong ? 1 : 0.5);
+  const arrow = strong ? 5.2 : 4.2;
+  const direction = Math.sign(x2 - x1) || 1;
   bctx.beginPath();
   bctx.moveTo(x2, y2);
-  bctx.lineTo(x2 + ah, y2 - ah * 0.72);
-  bctx.lineTo(x2 + ah, y2 + ah * 0.72);
-  bctx.closePath(); bctx.fill();
+  bctx.lineTo(x2 - direction * arrow, y2 - arrow * 0.72);
+  bctx.lineTo(x2 - direction * arrow, y2 + arrow * 0.72);
+  bctx.closePath();
+  bctx.fill();
   bctx.restore();
 }
 
@@ -1645,17 +2645,26 @@ function drawAxis() {
   }
   MODEL.layerMarks.forEach((m) => {
     const x = m.t * scale;
-    actx.fillStyle = 'rgba(255,255,255,0.62)';
+    const hovered = state.hoverLayer === m.layer;
+    if (hovered) {
+      actx.fillStyle = 'rgba(255,255,255,0.10)';
+      actx.beginPath();
+      actx.roundRect(x + 1, 12, 52, 18, 4);
+      actx.fill();
+    }
+    actx.fillStyle = hovered ? 'rgba(255,255,255,0.94)' : 'rgba(255,255,255,0.62)';
     actx.font = "600 10px 'Inter', sans-serif";
     actx.textAlign = 'left';
-    actx.fillText('迭代 ' + m.label, x + 4, 22);
+    actx.fillText('调用 ' + m.label, x + 4, 22);
+    if (hovered) {
+      actx.fillStyle = 'rgba(255,255,255,0.78)';
+      actx.fillRect(x + 4, 29, 44, 1);
+    }
   });
 }
 
 function layerWindow(layer) {
-  const startBound = MODEL.LAYER0 + layer * MODEL.LAYER_SPAN - 60;
-  const endBound = MODEL.LAYER0 + (layer + 1) * MODEL.LAYER_SPAN;
-  const tasks = MODEL.tasks.filter((t) => t.start >= startBound && t.start < endBound);
+  const tasks = MODEL.tasks.filter((t) => t.iteration === layer);
   if (!tasks.length) return null;
   const start = Math.max(0, Math.min(...tasks.map((t) => t.start)) - 8);
   const end = Math.min(MODEL.timelineEnd, Math.max(...tasks.map((t) => t.end)) + 8);
@@ -1685,63 +2694,176 @@ function hitLayerLabel(canvasX, canvasY) {
   }) || null;
 }
 
+function laneUtil(coreIdx, sublane = null) {
+  const core = MODEL.cores[coreIdx];
+  const explicit = sublane ? core?.sublaneUtilization?.[sublane] : core?.utilization;
+  if (Number.isFinite(explicit)) {
+    return { active: explicit * MODEL.timelineEnd, ratio: explicit };
+  }
+  let active = 0;
+  MODEL.tasks.forEach((t) => {
+    if (t.coreIdx !== coreIdx) return;
+    if (sublane) {
+      (t.pipelineSegments || []).forEach((segment) => {
+        if (segment.sublane === sublane) active += Math.max(0, segment.end - segment.start);
+      });
+      return;
+    }
+    active += t.end - t.start;
+  });
+  const ratio = Math.max(0, Math.min(1, active / Math.max(1, MODEL.timelineEnd)));
+  return { active, ratio };
+}
+function laneUtilForItem(item) {
+  if (!item || (item.type !== 'core' && item.type !== 'subcore')) return null;
+  return laneUtil(item.coreIdx, item.type === 'subcore' ? item.sublane : null);
+}
+
+function hitLaneUtil(canvasX, canvasY) {
+  const row = hitRowAt(canvasY);
+  if (row < 0 || row >= rowItems.length) return null;
+  if (canvasX < 104 || canvasX > LABEL_W - 2) return null;
+  const item = rowItems[row];
+  const coreIdx = rowToCore[row];
+  if (coreIdx == null || (item.type !== 'core' && item.type !== 'subcore')) return null;
+  return { core: MODEL.cores[coreIdx], sublane: item.sublane || null, item, util: laneUtilForItem(item), key: rowLaneKey(row) };
+}
+
+function hitLaneSection(canvasX, canvasY) {
+  const row = hitRowAt(canvasY);
+  if (row < 0 || row >= rowItems.length) return null;
+  const item = rowItems[row];
+  if (item.type !== 'section') return null;
+  return item;
+}
+
+function hitExpandableLane(canvasX, canvasY) {
+  const row = hitRowAt(canvasY);
+  if (row < 0 || row >= rowItems.length) return null;
+  const item = rowItems[row];
+  if (item.type !== 'core') return null;
+  const core = MODEL.cores[item.coreIdx];
+  if (!isExpandableCore(core)) return null;
+  return { item, core, row, inIcon: canvasX >= 4 && canvasX <= 22 };
+}
+
 /* ---- 泳道标签列 ---- */
 function drawLanes() {
   const h = bodyH();
   lctx.clearRect(0, 0, LABEL_W, h);
   lctx.textBaseline = 'middle';
   const fi = focusInfo();
-  for (let row = 0; row < MODEL.cores.length; row++) {
-    const c = MODEL.cores[rowToCore[row]];
-    const y = row * ROW_H;
-    /* 行底纹同步 */
-    let stripe = false;
-    if (state.mixMode && row >= 4 && row <= 75) stripe = Math.floor((row - 4) / 3) % 2 === 1;
-    else if (!state.mixMode) stripe = c.kind === 'aic' || c.kind === 'mte';
-    if (stripe) { lctx.fillStyle = 'rgba(255,255,255,0.014)'; lctx.fillRect(0, y, LABEL_W, ROW_H); }
-    /* kind 强调条 */
-    lctx.fillStyle = KIND_ACCENT[c.kind]; lctx.globalAlpha = 0.85;
-    lctx.fillRect(0, y + 3, 3, ROW_H - 6); lctx.globalAlpha = 1;
-
-    const dim = (fi.dimWrap != null && c.wrap !== fi.dimWrap)
-      || (fi.dimWrap == null && fi.dimGroup != null && c.group !== fi.dimGroup);
-    /* group 色点 */
-    if (c.group != null) {
-      const grp = MODEL.groups[c.group];
-      lctx.fillStyle = hexToRgba(grp.color, dim ? 0.28 : 1);
+  for (let row = 0; row < rowItems.length; row++) {
+    const item = rowItems[row];
+    const y = rowTop(row), rh = rowHeight(row);
+    if (item.type === 'section') {
+      const collapsed = state.collapsedLaneGroups.has(item.id);
+      lctx.fillStyle = 'rgba(255,255,255,0.04)';
+      lctx.fillRect(0, y, LABEL_W, rh);
+      lctx.fillStyle = 'rgba(255,255,255,0.72)';
+      lctx.font = "700 10px 'Inter', sans-serif";
+      lctx.textAlign = 'left';
       lctx.beginPath();
-      lctx.roundRect(LABEL_W - 16, y + ROW_H / 2 - 4, 8, 8, 2);
+      if (collapsed) {
+        lctx.moveTo(9, y + ROW_H / 2 - 4);
+        lctx.lineTo(15, y + ROW_H / 2);
+        lctx.lineTo(9, y + ROW_H / 2 + 4);
+      } else {
+        lctx.moveTo(7, y + ROW_H / 2 - 2);
+        lctx.lineTo(16, y + ROW_H / 2 - 2);
+        lctx.lineTo(11.5, y + ROW_H / 2 + 4);
+      }
+      lctx.closePath();
       lctx.fill();
-    }
-    /* 标签 */
-    lctx.fillStyle = dim ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.8)';
-    lctx.font = "500 11px 'Inter', sans-serif";
-    lctx.textAlign = 'left';
-    lctx.fillText(c.label, 11, y + ROW_H / 2 + 0.5);
-    /* mix: AIC 行附 wrap 号 */
-    if (state.mixMode && c.kind === 'aic') {
-      lctx.fillStyle = dim ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.42)';
+      lctx.fillText(item.label, 24, y + ROW_H / 2 + 0.5);
+      lctx.fillStyle = 'rgba(255,255,255,0.34)';
       lctx.font = "600 9px 'JetBrains Mono', monospace";
       lctx.textAlign = 'right';
-      lctx.fillText('W' + String(c.wrap).padStart(2, '0'), LABEL_W - 22, y + ROW_H / 2 + 0.5);
+      lctx.fillText(String(item.count), LABEL_W - 8, y + ROW_H / 2 + 0.5);
+      continue;
     }
+    if (item.type !== 'core' && item.type !== 'subcore') continue;
+
+    const c = MODEL.cores[item.coreIdx];
+    const hovered = isRowHovered(row);
+    if (hovered) {
+      lctx.fillStyle = 'rgba(255,255,255,0.055)';
+      lctx.fillRect(0, y, LABEL_W, rh);
+    }
+    const dim = (fi.dimWrap != null && !coreParticipates(c.idx, null, fi.dimWrap))
+      || (fi.dimWrap == null && fi.dimGroup != null && !coreParticipates(c.idx, fi.dimGroup));
+
+    if (item.type === 'core' && c.kind === 'aic') {
+      lctx.fillStyle = dim ? 'rgba(124,141,184,0.24)' : 'rgba(124,141,184,0.68)';
+      lctx.fillRect(0, y + 2, 3, Math.max(2, rh - 4));
+    }
+
+    if (item.type === 'core' && hovered && isExpandableCore(c)) {
+      const expanded = state.expandedLaneCores.has(c.idx);
+      lctx.fillStyle = 'rgba(255,255,255,0.62)';
+      lctx.beginPath();
+      if (expanded) {
+        lctx.moveTo(8, y + rh / 2 - 2);
+        lctx.lineTo(17, y + rh / 2 - 2);
+        lctx.lineTo(12.5, y + rh / 2 + 4);
+      } else {
+        lctx.moveTo(10, y + rh / 2 - 4);
+        lctx.lineTo(16, y + rh / 2);
+        lctx.lineTo(10, y + rh / 2 + 4);
+      }
+      lctx.closePath();
+      lctx.fill();
+    }
+
+    /* 标签 */
+    lctx.fillStyle = dim ? 'rgba(255,255,255,0.3)' : (item.type === 'subcore' ? 'rgba(255,255,255,0.56)' : 'rgba(255,255,255,0.8)');
+    lctx.font = item.type === 'subcore' ? "500 10px 'Inter', sans-serif" : "500 11px 'Inter', sans-serif";
+    lctx.textAlign = 'left';
+    const label = item.type === 'subcore' ? item.sublane : c.label;
+    const labelX = item.type === 'subcore' ? 38 : 24;
+    const labelMax = item.type === 'subcore' ? 62 : 80;
+    lctx.fillText(label, labelX, y + rh / 2 + 0.5, labelMax);
+
+    const util = laneUtilForItem(item);
+    const ux = 108;
+    const uh = item.type === 'subcore' ? 5 : 8;
+    const uy = y + rh / 2 - uh / 2;
+    const uw = 42;
+    const utilHovered = state.hoverLaneUtilKey === rowLaneKey(row);
+    lctx.fillStyle = utilHovered ? 'rgba(255,255,255,0.11)' : 'rgba(255,255,255,0.055)';
+    lctx.beginPath();
+    lctx.roundRect(ux, uy, uw, uh, 2);
+    lctx.fill();
+    const utilColor = util.ratio >= CURRENT_RUN.utilizationThreshold
+      ? (utilHovered ? 'rgba(124,141,184,0.86)' : 'rgba(124,141,184,0.62)')
+      : (utilHovered ? 'rgba(255,170,59,0.94)' : 'rgba(255,170,59,0.72)');
+    lctx.fillStyle = dim ? 'rgba(124,141,184,0.28)' : utilColor;
+    lctx.beginPath();
+    lctx.roundRect(ux, uy, Math.max(2, uw * util.ratio), uh, 2);
+    lctx.fill();
+    if (utilHovered) {
+      lctx.strokeStyle = 'rgba(255,255,255,0.24)';
+      lctx.lineWidth = 1;
+      lctx.beginPath();
+      lctx.roundRect(ux + 0.5, uy + 0.5, uw - 1, uh - 1, 2);
+      lctx.stroke();
+    }
+    lctx.fillStyle = dim
+      ? 'rgba(255,255,255,0.22)'
+      : (util.ratio >= CURRENT_RUN.utilizationThreshold ? 'rgba(255,255,255,0.42)' : 'rgba(255,170,59,0.88)');
+    lctx.font = item.type === 'subcore' ? "600 8px 'JetBrains Mono', monospace" : "600 9px 'JetBrains Mono', monospace";
+    lctx.textAlign = 'right';
+    lctx.fillText(Math.round(util.ratio * 100) + '%', LABEL_W - 7, y + rh / 2 + 0.5);
   }
   /* 分隔线 */
   const line = (row, color, weight) => {
-    const yy = row * ROW_H + 0.5;
+    const yy = rowTop(row) + 0.5;
     lctx.strokeStyle = color; lctx.lineWidth = weight;
     lctx.beginPath(); lctx.moveTo(0, yy); lctx.lineTo(LABEL_W, yy); lctx.stroke();
   };
-  if (state.mixMode) {
-    line(4, 'rgba(255,255,255,0.16)', 1); line(76, 'rgba(255,255,255,0.16)', 1);
-    for (let g = 1; g < 6; g++) line(4 + 12 * g, 'rgba(255,255,255,0.12)', 1);
-    for (let wgap = 1; wgap < 24; wgap++) {
-      if (wgap % 4 === 0) continue;
-      line(4 + 3 * wgap, 'rgba(255,255,255,0.045)', 1);
-    }
-  } else {
-    [4, 28, 76].forEach((r) => line(r, 'rgba(255,255,255,0.14)', 1));
-  }
+  rowItems.forEach((item, row) => {
+    if (item.type === 'section') line(row, 'rgba(255,255,255,0.16)', 1);
+  });
 }
 
 function smoothPath(points) {
@@ -1770,7 +2892,7 @@ function buildOverviewMetrics() {
   const samples = 72;
   const metricDefs = [
     { key: 'hostQueue', label: 'Host CPU 队列', unit: '', max: 8, color: '#7C8DB8' },
-    { key: 'activeAi', label: '活跃 AI Core', unit: ' 核', max: 72, color: '#5A92E6' },
+    { key: 'activeAi', label: '活跃 AI Core', unit: ' 核', max: 32, color: '#5A92E6' },
     { key: 'aivIdle', label: 'AIV 空闲', unit: '%', max: 100, color: '#FFAA3B' },
     { key: 'ubLive', label: 'UB Live', unit: '%', max: 100, color: '#9B6BF0' },
     { key: 'mteBw', label: 'MTE 带宽', unit: ' GB/s', max: 900, color: '#04D793' },
@@ -1779,24 +2901,26 @@ function buildOverviewMetrics() {
   for (let i = 0; i < samples; i++) {
     const f = i / Math.max(1, samples - 1);
     const t = f * MODEL.timelineEnd;
-    let hostActive = 0, aiCompute = 0, aivTotal = 0, aivWaiting = 0, mteActive = 0;
+    let hostActive = 0, aivTotal = 0, aivWaiting = 0, mteActive = 0;
+    const activeWraps = new Set();
     MODEL.tasks.forEach((task) => {
       const core = MODEL.cores[task.coreIdx];
       const active = t >= task.start && t <= task.end;
       const computing = t >= task.start && t <= task.computeEnd;
       const waiting = t > task.computeEnd && t <= task.end;
       if (core.kind === 'cpu' && active) hostActive++;
-      if ((core.kind === 'aic' || core.kind === 'aiv') && computing) aiCompute++;
+      if ((core.kind === 'aic' || core.kind === 'aiv') && computing) activeWraps.add(core.wrap);
       if (core.kind === 'aiv') {
         aivTotal++;
         if (waiting) aivWaiting++;
       }
       if (core.kind === 'mte' && active) mteActive++;
     });
+    const aiCompute = activeWraps.size;
     const pulse = 0.5 + 0.5 * Math.sin(f * Math.PI * 9);
     const bottleneck = Math.exp(-Math.pow((t - (MODEL.LAYER0 + MODEL.LAYER_SPAN + MODEL.STAGGER * 1.4)) / 230, 2));
     series[0].values.push(clampMetric(hostActive + 1.6 * pulse + 2.2 * bottleneck, 0, 8));
-    series[1].values.push(clampMetric(aiCompute, 0, 72));
+    series[1].values.push(clampMetric(aiCompute, 0, 32));
     series[2].values.push(clampMetric((aivWaiting / Math.max(1, aivTotal)) * 100 + 20 * bottleneck, 0, 100));
     series[3].values.push(clampMetric(34 + aiCompute * 0.72 + mteActive * 8 + 18 * bottleneck + 8 * pulse, 0, 100));
     series[4].values.push(clampMetric(120 + mteActive * 230 + 90 * pulse + 140 * Math.max(0, Math.sin(f * Math.PI * 6)), 0, 900));
@@ -1813,6 +2937,10 @@ function renderOverviewBand() {
   const grid = [0.25, 0.5, 0.75].map((p) => {
     const y = top + (h - top - bottom) * p;
     return `<path d="M0 ${y.toFixed(2)} H${w}" stroke="rgba(255,255,255,0.055)" stroke-width="1"></path>`;
+  }).join('');
+  const layerGuides = MODEL.layerMarks.map((mark) => {
+    const x = mark.t * pxPerUs();
+    return `<path d="M${x.toFixed(2)} 0 V${h}" stroke="rgba(255,255,255,0.24)" stroke-width="1" stroke-dasharray="4 4"></path>`;
   }).join('');
   const paths = overviewMetricSeries.map((metric) => {
     const points = metric.values.map((value, i) => {
@@ -1831,7 +2959,7 @@ function renderOverviewBand() {
     marker = `<div class="sl-overview-marker" style="left:${x}px;width:${mw}px"></div>`;
   }
   overviewBand.style.width = w + 'px';
-  overviewBand.innerHTML = `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">${grid}${paths}</svg>${marker}<div class="sl-overview-cursor" id="overviewCursor" hidden></div><div class="sl-overview-tooltip pto-swimlane-task-tooltip" id="overviewTooltip" hidden aria-hidden="true"></div>`;
+  overviewBand.innerHTML = `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">${grid}${layerGuides}${paths}</svg>${marker}<div class="sl-overview-tooltip pto-swimlane-task-tooltip" id="overviewTooltip" hidden aria-hidden="true"></div>`;
 }
 
 function renderGlobalRuler() {
@@ -1865,6 +2993,33 @@ function formatMetricValue(metric, value) {
   return value.toFixed(1) + metric.unit;
 }
 
+function showTimestampGuideAt(clientX) {
+  if (!timestampGuide || !swimlaneScrollShell) return;
+  const shellRect = swimlaneScrollShell.getBoundingClientRect();
+  const left = Math.max(LABEL_W, Math.min(shellRect.width - 1, clientX - shellRect.left));
+  timestampGuide.style.left = left + 'px';
+  timestampGuide.hidden = false;
+  timestampGuide.setAttribute('aria-hidden', 'false');
+  if (state.secondaryViewMode === 'comparison' && compareTimestampGuide && compareGrid) {
+    const compareRect = compareGrid.getBoundingClientRect();
+    const compareLeft = Math.max(LABEL_W, Math.min(compareRect.width - 1, clientX - compareRect.left));
+    compareTimestampGuide.style.left = compareLeft + 'px';
+    compareTimestampGuide.hidden = false;
+    compareTimestampGuide.setAttribute('aria-hidden', 'false');
+  }
+}
+
+function hideTimestampGuide() {
+  if (timestampGuide) {
+    timestampGuide.hidden = true;
+    timestampGuide.setAttribute('aria-hidden', 'true');
+  }
+  if (compareTimestampGuide) {
+    compareTimestampGuide.hidden = true;
+    compareTimestampGuide.setAttribute('aria-hidden', 'true');
+  }
+}
+
 function showOverviewTooltip(e) {
   if (!overviewMetricSeries.length) return;
   const rect = overviewBand.getBoundingClientRect();
@@ -1873,11 +3028,9 @@ function showOverviewTooltip(e) {
   const f = x / rect.width;
   const idx = Math.max(0, Math.min(overviewMetricSeries[0].values.length - 1, Math.round(f * (overviewMetricSeries[0].values.length - 1))));
   const t = f * MODEL.timelineEnd;
-  const cursor = document.getElementById('overviewCursor');
   const tip = document.getElementById('overviewTooltip');
-  if (!cursor || !tip) return;
-  cursor.hidden = false;
-  cursor.style.left = x + 'px';
+  if (!tip) return;
+  showTimestampGuideAt(e.clientX);
   const rows = overviewMetricSeries.map((metric) => (
     `<div class="pto-swimlane-task-tooltip__row"><span class="pto-swimlane-task-tooltip__key"><span class="sl-overview-tip-swatch" style="background:${metric.color}"></span>${metric.label}</span><span class="pto-swimlane-task-tooltip__value">${formatMetricValue(metric, metric.values[idx])}</span></div>`
   )).join('');
@@ -1892,9 +3045,8 @@ function showOverviewTooltip(e) {
 }
 
 function hideOverviewTooltip() {
-  const cursor = document.getElementById('overviewCursor');
   const tip = document.getElementById('overviewTooltip');
-  if (cursor) cursor.hidden = true;
+  hideTimestampGuide();
   if (tip) {
     tip.classList.remove('is-visible');
     tip.setAttribute('aria-hidden', 'true');
@@ -1902,11 +3054,41 @@ function hideOverviewTooltip() {
   }
 }
 
+function artifactMenuKey(runId, artifactName) {
+  return `${runId}:${artifactName}`;
+}
+
+function artifactRowHtml(runId, artifact) {
+  const key = artifactMenuKey(runId, artifact.name);
+  const available = Boolean(artifact.available);
+  const supportsCompare = available && runId !== state.selectedRunId;
+  const menuOpen = state.openArtifactMenu === key;
+  const selected = available && runId === state.selectedRunId;
+  const menu = menuOpen ? `<div class="sl-history-artifact-menu" role="menu" aria-label="${escapeHtml(artifact.name)} 更多操作">
+    ${available ? `<button class="btn btn-sm btn-ghost" type="button" role="menuitem" data-artifact-action="compare" data-run-id="${escapeHtml(runId)}"
+      ${supportsCompare ? '' : 'disabled aria-disabled="true" title="不能与当前运行记录自身对比"'}>对比...</button>
+    <button class="btn btn-sm btn-ghost" type="button" role="menuitem" data-artifact-action="open-script" data-run-id="${escapeHtml(runId)}">打开脚本文件</button>`
+    : '<button class="btn btn-sm btn-ghost" type="button" role="menuitem" disabled aria-disabled="true">暂无可用数据</button>'}
+  </div>` : '';
+  return `<div class="sl-history-artifact ${selected ? 'is-selected' : ''} ${menuOpen ? 'is-menu-open' : ''}" data-artifact-name="${escapeHtml(artifact.name)}">
+    <button class="sl-history-artifact-select" type="button" data-artifact-select="${escapeHtml(artifact.name)}" data-run-id="${escapeHtml(runId)}"
+      ${available ? '' : 'disabled aria-disabled="true" title="当前 demo 尚未接入该产物数据"'}>
+      <span class="nm" title="${escapeHtml(artifact.name)}">${escapeHtml(artifact.name)}</span>
+      <span class="rl">${escapeHtml(ARTIFACT_ZH[artifact.role] || artifact.role || '')}</span>
+    </button>
+    <button class="btn btn-icon btn-ghost sl-history-artifact-more" type="button"
+      data-artifact-more="${escapeHtml(key)}" aria-label="${escapeHtml(artifact.name)} 更多"
+      aria-haspopup="menu" aria-expanded="${String(menuOpen)}">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.7"></circle><circle cx="12" cy="12" r="1.7"></circle><circle cx="19" cy="12" r="1.7"></circle></svg>
+    </button>
+    ${menu}
+  </div>`;
+}
+
 function runCardHtml(r) {
   const expanded = state.expandedRuns.has(r.id);
-  const artifactHtml = RUN_ARTIFACTS.map((a) => (
-    `<div class="sl-history-artifact"><span class="nm">${escapeHtml(a.name)}</span><span class="rl">${escapeHtml(ARTIFACT_ZH[a.role] || '')}</span></div>`
-  )).join('');
+  const selected = state.selectedRunId === r.id;
+  const artifactHtml = (RUN_BY_ID[r.id]?.artifacts || []).map((artifact) => artifactRowHtml(r.id, artifact)).join('');
   const detail = expanded
     ? `<dl class="sl-history-kv">
         <dt>算子</dt><dd class="sl-history-sm">${escapeHtml(r.operator)}</dd>
@@ -1922,7 +3104,7 @@ function runCardHtml(r) {
         <dt>总耗时</dt><dd>${escapeHtml(r.dur)}μs</dd>
         <dt>运行时间</dt><dd class="sl-history-sm">${escapeHtml(r.timestamp)}</dd>
       </dl>`;
-  return `<section class="sl-run-card ${r.current ? 'is-selected' : 'sl-run-card--past'} ${expanded ? 'is-expanded' : ''}">
+  return `<section class="sl-run-card ${selected ? 'is-selected' : 'sl-run-card--past'} ${expanded ? 'is-expanded' : ''}">
     <button class="sl-run-card__head" type="button" data-run-id="${escapeHtml(r.id)}" aria-expanded="${String(expanded)}">
       <span class="sl-run-id">${escapeHtml(r.id)}</span>
       <svg class="sl-run-card__toggle ${expanded ? 'is-open' : ''}" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>
@@ -1933,17 +3115,90 @@ function runCardHtml(r) {
 
 function renderRunHistory() {
   if (!runHistoryBody) return;
+  if (swimlanePaneTitle) swimlanePaneTitle.textContent = `${state.selectedRunId} · merged_swimlane`;
   runHistoryBody.innerHTML = `<div class="sl-history-stack">${runList().map(runCardHtml).join('')}</div>`;
-  runHistoryBody.querySelectorAll('[data-run-id]').forEach((btn) => {
+  runHistoryBody.querySelectorAll('.sl-run-card__head[data-run-id]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const id = btn.dataset.runId;
+      state.openArtifactMenu = null;
       if (state.expandedRuns.has(id)) state.expandedRuns.delete(id);
       else state.expandedRuns.add(id);
       renderRunHistory();
     });
   });
+  runHistoryBody.querySelectorAll('[data-artifact-select][data-run-id]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (btn.disabled || btn.dataset.artifactSelect !== 'merged_swimlane.json') return;
+      state.openArtifactMenu = null;
+      loadRun(btn.dataset.runId);
+      renderRunHistory();
+    });
+  });
+  runHistoryBody.querySelectorAll('[data-artifact-more]').forEach((btn) => {
+    btn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      if (btn.disabled) return;
+      const key = btn.dataset.artifactMore;
+      state.openArtifactMenu = state.openArtifactMenu === key ? null : key;
+      renderRunHistory();
+    });
+  });
+  runHistoryBody.querySelectorAll('[data-artifact-action]').forEach((btn) => {
+    btn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      if (btn.disabled) return;
+      const action = btn.dataset.artifactAction;
+      const runId = btn.dataset.runId;
+      state.openArtifactMenu = null;
+      renderRunHistory();
+      if (action === 'compare' && runId && runId !== state.selectedRunId) openRunComparison(runId);
+    });
+  });
   const meta = document.getElementById('runHistoryMeta');
   if (meta) meta.textContent = '';
+}
+
+function loadRun(runId) {
+  const next = RUN_BY_ID[runId];
+  if (!next || next === CURRENT_RUN) return;
+  CURRENT_RUN = next;
+  MODEL = next.model;
+  rebuildModelIndexes();
+  taskTooltipPayloads.clear();
+  laneTooltipPayloads.clear();
+  Object.assign(state, {
+    selectedRunId: runId,
+    level: 'overview',
+    selGroup: null,
+    selWrap: null,
+    selTask: null,
+    hoverTask: null,
+    comparisonRunId: null,
+    reportTab: 'overview',
+    taskReportTab: 'overview',
+    pmuGroup: next.pmu.group || 2,
+  });
+  state.expandedLaneCores.clear();
+  state.expandedRuns.add(runId);
+  setBlockGraphOpen(false);
+  buildOrder();
+  layout();
+  renderInspector();
+  document.getElementById('projectName').textContent = next.projectName;
+}
+
+function bindRunHistoryDismiss() {
+  document.addEventListener('click', (event) => {
+    if (!state.openArtifactMenu) return;
+    if (event.target.closest('[data-artifact-more], .sl-history-artifact-menu')) return;
+    state.openArtifactMenu = null;
+    renderRunHistory();
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || !state.openArtifactMenu) return;
+    state.openArtifactMenu = null;
+    renderRunHistory();
+  });
 }
 
 function layout() {
@@ -1958,13 +3213,21 @@ function layout() {
 function refresh() { renderGlobalRuler(); renderOverviewBand(); drawLanes(); drawBody(); }
 
 function hitTest(px, py) {
-  const row = Math.floor(py / ROW_H);
-  if (row < 0 || row >= MODEL.cores.length) return null;
+  const row = hitRowAt(py);
+  if (row < 0 || row >= rowItems.length) return null;
   const coreIdx = rowToCore[row];
+  if (coreIdx == null) return null;
   const scale = pxPerUs();
   for (const t of MODEL.tasks) {
     if (t.coreIdx !== coreIdx) continue;
-    if (px >= t.start * scale - 1 && px <= t.end * scale + 1) return t;
+    if (state.expandedLaneCores.has(coreIdx)) {
+      const sublane = rowItems[row]?.sublane;
+      const hit = (t.pipelineSegments || []).some((segment) => segment.sublane === sublane
+        && px >= segment.start * scale - 1 && px <= segment.end * scale + 1);
+      if (hit) return t;
+      continue;
+    }
+    if (taskRow(t) === row && px >= t.start * scale - 1 && px <= t.end * scale + 1) return t;
   }
   return null;
 }
@@ -1976,37 +3239,126 @@ bodyWrap.addEventListener('scroll', () => {
   axisWrap.scrollLeft = bodyWrap.scrollLeft;
   overviewWrap.scrollLeft = bodyWrap.scrollLeft;
   laneWrap.scrollTop = bodyWrap.scrollTop;
+  if (!syncingComparisonScroll && state.secondaryViewMode === 'comparison' && compareBodyWrap) {
+    syncingComparisonScroll = true;
+    compareBodyWrap.scrollLeft = bodyWrap.scrollLeft;
+    syncingComparisonScroll = false;
+  }
   syncGlobalRulerBrush();
+  hideTimestampGuide();
+});
+compareBodyWrap?.addEventListener('scroll', () => {
+  if (compareLaneWrap) compareLaneWrap.scrollTop = compareBodyWrap.scrollTop;
+  if (!syncingComparisonScroll && bodyWrap.scrollLeft !== compareBodyWrap.scrollLeft) {
+    syncingComparisonScroll = true;
+    bodyWrap.scrollLeft = compareBodyWrap.scrollLeft;
+    axisWrap.scrollLeft = compareBodyWrap.scrollLeft;
+    overviewWrap.scrollLeft = compareBodyWrap.scrollLeft;
+    syncingComparisonScroll = false;
+    syncGlobalRulerBrush();
+  }
+  hideTimestampGuide();
 });
 overviewBand.addEventListener('mousemove', showOverviewTooltip);
 overviewBand.addEventListener('mouseleave', hideOverviewTooltip);
 axisCanvas.addEventListener('mousemove', (e) => {
   const rect = axisCanvas.getBoundingClientRect();
-  axisCanvas.style.cursor = hitLayerLabel(e.clientX - rect.left, e.clientY - rect.top) ? 'pointer' : 'default';
+  const mark = hitLayerLabel(e.clientX - rect.left, e.clientY - rect.top);
+  const nextLayer = mark?.layer ?? null;
+  if (state.hoverLayer !== nextLayer) {
+    state.hoverLayer = nextLayer;
+    drawAxis();
+  }
+  axisCanvas.style.cursor = mark ? 'pointer' : 'crosshair';
+  showTimestampGuideAt(e.clientX);
 });
 axisCanvas.addEventListener('mouseleave', () => {
   axisCanvas.style.cursor = 'default';
+  state.hoverLayer = null;
+  drawAxis();
+  hideTimestampGuide();
 });
 axisCanvas.addEventListener('click', (e) => {
   const rect = axisCanvas.getBoundingClientRect();
   const mark = hitLayerLabel(e.clientX - rect.left, e.clientY - rect.top);
   if (mark) fitLayer(mark.layer);
 });
+laneCanvas.addEventListener('pointermove', (e) => {
+  const rect = laneCanvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  const hit = hitLaneUtil(x, y);
+  const section = hitLaneSection(x, y);
+  const expandable = hitExpandableLane(x, y);
+  const hitRow = hitRowAt(y);
+  const nextLaneKey = hitRow >= 0 ? rowLaneKey(hitRow) : null;
+  const nextUtilKey = hit ? hit.key : null;
+  const previousUtilKey = state.hoverLaneUtilKey;
+  if (state.hoverLaneKey !== nextLaneKey || state.hoverLaneUtilKey !== nextUtilKey) {
+    state.hoverLaneKey = nextLaneKey;
+    state.hoverLaneUtilKey = nextUtilKey;
+    state.hoverLaneUtil = hit;
+    drawLanes();
+    drawBody();
+  }
+  laneCanvas.style.cursor = section || expandable?.inIcon ? 'pointer' : 'default';
+  refreshCanvasTooltipTarget(laneCanvas, previousUtilKey, nextUtilKey, e);
+});
+laneCanvas.addEventListener('mouseleave', () => {
+  laneCanvas.style.cursor = 'default';
+  state.hoverLaneKey = null;
+  state.hoverLaneUtilKey = null;
+  state.hoverLaneUtil = null;
+  drawLanes();
+  drawBody();
+});
+laneCanvas.addEventListener('click', (e) => {
+  const rect = laneCanvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  const expandable = hitExpandableLane(x, y);
+  if (expandable?.inIcon) {
+    if (state.expandedLaneCores.has(expandable.core.idx)) state.expandedLaneCores.delete(expandable.core.idx);
+    else state.expandedLaneCores.add(expandable.core.idx);
+    buildOrder();
+    state.hoverLaneKey = null;
+    state.hoverLaneUtilKey = null;
+    layout();
+    return;
+  }
+  const section = hitLaneSection(x, y);
+  if (section) {
+    if (state.collapsedLaneGroups.has(section.id)) state.collapsedLaneGroups.delete(section.id);
+    else state.collapsedLaneGroups.add(section.id);
+    buildOrder();
+    state.hoverLaneKey = null;
+    state.hoverLaneUtilKey = null;
+    layout();
+  }
+});
 
-bodyCanvas.addEventListener('mousemove', (e) => {
+bodyCanvas.addEventListener('pointermove', (e) => {
   const rect = bodyCanvas.getBoundingClientRect();
-  const t = hitTest(e.clientX - rect.left, e.clientY - rect.top);
+  const px = e.clientX - rect.left;
+  const py = e.clientY - rect.top;
+  const row = hitRowAt(py);
+  const nextLaneKey = row >= 0 ? rowLaneKey(row) : null;
+  const t = hitTest(px, py);
+  const previousTaskId = state.hoverTask?.id || null;
+  const taskLaneKey = t ? laneKeyForTask(t) : nextLaneKey;
   if (t !== state.hoverTask) {
     state.hoverTask = t;
     bodyCanvas.style.cursor = t ? 'pointer' : 'default';
-    drawBody();
   }
-  if (t) showTooltip(t, e.clientX, e.clientY);
-  else hideTaskTooltip();
+  if (state.hoverLaneKey !== taskLaneKey) state.hoverLaneKey = taskLaneKey;
+  drawLanes();
+  drawBody();
+  refreshCanvasTooltipTarget(bodyCanvas, previousTaskId, t?.id || null, e);
 });
 bodyCanvas.addEventListener('mouseleave', () => {
   state.hoverTask = null;
-  hideTaskTooltip();
+  state.hoverLaneKey = null;
+  drawLanes();
   drawBody();
 });
 bodyCanvas.addEventListener('click', (e) => {
@@ -2014,70 +3366,62 @@ bodyCanvas.addEventListener('click', (e) => {
   const px = e.clientX - rect.left, py = e.clientY - rect.top;
   const t = hitTest(px, py);
   if (t) { selectTask(t); return; }
-  /* 点空白: Mix 模式下按所在 wrap / group 下钻 */
-  if (state.mixMode) {
-    const row = Math.floor(py / ROW_H);
-    if (row >= 4 && row <= 75) {
-      const w = Math.floor((row - 4) / 3);
-      const g = Math.floor(w / 4);
-      if (state.level === 'wrap' && state.selWrap === w) selectGroup(g);
-      else if (state.selGroup === g && state.level !== 'overview') selectWrap(w);
-      else selectGroup(g);
-      return;
-    }
-  }
   goOverview();
 });
 
 function selectTask(t) {
   state.level = 'task'; state.selTask = t;
   state.selGroup = t.group; state.selWrap = t.wrap;
+  state.taskReportTab = 'overview';
   refresh(); renderInspector();
+  document.getElementById('inspBody').scrollTop = 0;
 }
 function selectGroup(g) {
   state.level = 'group'; state.selGroup = g; state.selWrap = null; state.selTask = null;
   refresh(); renderInspector();
 }
 function selectWrap(w) {
-  state.level = 'wrap'; state.selWrap = w; state.selGroup = Math.floor(w / 4); state.selTask = null;
+  state.level = 'wrap'; state.selWrap = w; state.selGroup = groupForWrap(w); state.selTask = null;
   refresh(); renderInspector(); scrollWrapIntoView(w);
 }
 function goOverview() {
   state.level = 'overview'; state.selGroup = null; state.selWrap = null; state.selTask = null;
   refresh(); renderInspector();
+  document.getElementById('inspBody').scrollTop = 0;
 }
 function scrollWrapIntoView(w) {
-  const [r0, r1] = wrapRowRange(w);
-  const top = r0 * ROW_H, mid = (top + r1 * ROW_H) / 2;
+  let range = wrapRowRange(w);
+  if (!range) {
+    const coreIds = [...new Set(MODEL.tasks.filter((task) => task.wrap === w).map((task) => task.coreIdx))];
+    coreIds.forEach((coreIdx) => state.collapsedLaneGroups.delete(MODEL.cores[coreIdx]?.laneGroup));
+    buildOrder();
+    layout();
+    range = wrapRowRange(w);
+  }
+  if (!range) return;
+  const [r0, r1] = range;
+  const top = rowTop(r0), mid = (top + rowBottom(r1)) / 2;
   bodyWrap.scrollTop = Math.max(0, mid - bodyWrap.clientHeight / 2);
 }
 
-function showTooltip(t, cx, cy) {
-  const grp = t.group != null ? MODEL.groups[t.group] : null;
-  const compute = (t.computeEnd - t.start).toFixed(1);
-  const wait = (t.end - t.computeEnd).toFixed(1);
-  const total = (t.end - t.start) || 1;
-  const ratio = ((t.end - t.computeEnd) / total * 100).toFixed(0);
-  const color = grp ? grp.color : KIND_ACCENT[t.kind];
-  tooltip.innerHTML = `
-    <div class="pto-swimlane-task-tooltip__title"><span class="sl-task-tooltip-dot" style="background:${color}"></span>${t.name}</div>
-    <div class="pto-swimlane-task-tooltip__row"><span class="pto-swimlane-task-tooltip__key">泳道</span><span class="pto-swimlane-task-tooltip__value">${MODEL.cores[t.coreIdx].label}${t.wrap != null ? ' · W' + String(t.wrap).padStart(2, '0') : ''}</span></div>
-    <div class="pto-swimlane-task-tooltip__row"><span class="pto-swimlane-task-tooltip__key">Mix 子图</span><span class="pto-swimlane-task-tooltip__value">${grp ? grp.name : '—'}</span></div>
-    <div class="pto-swimlane-task-tooltip__row"><span class="pto-swimlane-task-tooltip__key">区间</span><span class="pto-swimlane-task-tooltip__value">${t.start.toFixed(0)}–${t.end.toFixed(0)}μs</span></div>
-    <div class="pto-swimlane-task-tooltip__row"><span class="pto-swimlane-task-tooltip__key">计算 / 等待</span><span class="pto-swimlane-task-tooltip__value">${compute} / ${wait}μs</span></div>
-    <div class="pto-swimlane-task-tooltip__row"><span class="pto-swimlane-task-tooltip__key">等待占比</span><span class="pto-swimlane-task-tooltip__value ${ratio >= 30 ? 'is-warn' : 'is-ok'}">${ratio}%</span></div>`;
-  tooltip.classList.add('is-visible');
-  tooltip.setAttribute('aria-hidden', 'false');
-  const tw = tooltip.offsetWidth, th = tooltip.offsetHeight;
-  let x = cx + 16, y = cy + 16;
-  if (x + tw > window.innerWidth - 8) x = cx - tw - 16;
-  if (y + th > window.innerHeight - 8) y = cy - th - 16;
-  tooltip.style.left = x + 'px'; tooltip.style.top = y + 'px';
-}
-
-function hideTaskTooltip() {
-  tooltip.classList.remove('is-visible');
-  tooltip.setAttribute('aria-hidden', 'true');
+function scrollTaskIntoView(t) {
+  let row = taskRow(t);
+  if (!Number.isFinite(row)) {
+    const core = MODEL.cores[t.coreIdx];
+    if (core?.laneGroup) state.collapsedLaneGroups.delete(core.laneGroup);
+    buildOrder();
+    layout();
+    row = taskRow(t);
+  }
+  if (!Number.isFinite(row)) return;
+  const y = rowMidY(row);
+  const x = (t.start + t.end) / 2 * pxPerUs();
+  bodyWrap.scrollTop = Math.max(0, y - bodyWrap.clientHeight / 2);
+  bodyWrap.scrollLeft = Math.max(0, x - bodyWrap.clientWidth / 2);
+  axisWrap.scrollLeft = bodyWrap.scrollLeft;
+  overviewWrap.scrollLeft = bodyWrap.scrollLeft;
+  laneWrap.scrollTop = bodyWrap.scrollTop;
+  syncGlobalRulerBrush();
 }
 
 function setMixMode(active) {
@@ -2085,7 +3429,12 @@ function setMixMode(active) {
   state.mixMode = active;
   mixModeBtn.classList.toggle('is-selected', active);
   mixModeBtn.setAttribute('aria-pressed', String(active));
-  if (!active) goOverview();
+  state.level = 'overview';
+  state.selGroup = null;
+  state.selWrap = null;
+  state.selTask = null;
+  state.reportTab = 'overview';
+  state.taskReportTab = 'overview';
   buildOrder();
   layout();
   renderInspector();
@@ -2144,9 +3493,17 @@ function groupStats(g) {
   return { compute, wait, ratio: wait / (compute + wait || 1) };
 }
 function wrapStats(w) {
-  const aic = MODEL.aicIdxOfWrap(w), aiv = MODEL.aivIdxOfWrap(w);
-  const s = (ci) => coreStats(ci);
-  const all = [s(aic), s(aiv[0]), s(aiv[1])];
+  const tasks = MODEL.tasks.filter((task) => task.wrap === w);
+  const s = (kind, vector = null) => {
+    const selected = tasks.filter((task) => {
+      const core = MODEL.cores[task.coreIdx];
+      return core.kind === kind && (vector == null || core.vector === vector);
+    });
+    const compute = selected.reduce((sum, task) => sum + task.computeEnd - task.start, 0);
+    const wait = selected.reduce((sum, task) => sum + task.end - task.computeEnd, 0);
+    return { compute, wait, n: selected.length, ratio: wait / (compute + wait || 1) };
+  };
+  const all = [s('aic'), s('aiv', 0), s('aiv', 1)];
   let compute = 0, wait = 0;
   all.forEach((x) => { compute += x.compute; wait += x.wait; });
   return { aic: all[0], aiv0: all[1], aiv1: all[2], ratio: wait / (compute + wait || 1) };
@@ -2157,47 +3514,203 @@ function runMetricChips() {
   MODEL.tasks.forEach((t) => { compute += t.computeEnd - t.start; wait += t.end - t.computeEnd; });
   const ratio = (wait / (compute + wait) * 100).toFixed(1);
   return `<div class="sl-report-metrics">
-    <span class="stat-chip">78 条泳道</span>
+    <span class="stat-chip">${MODEL.cores.length} 条泳道</span>
     <span class="stat-chip">${MODEL.tasks.length} 个任务</span>
     <span class="stat-chip">${MODEL.edges.length} 条同步边</span>
     <span class="stat-chip" style="color:var(--warning)">同步等待 ${ratio}%</span>
   </div>`;
 }
-function renderLegend() {
-  let html = '';
-  MODEL.groups.forEach((g) => {
-    html += `<span class="sl-legend-item"><span class="sl-legend-swatch" style="background:${g.color}"></span>${g.short}</span>`;
+
+function runAggregateStats() {
+  let compute = 0, wait = 0, active = 0;
+  const laneUtils = MODEL.cores.map((_, coreIdx) => laneUtil(coreIdx).ratio);
+  MODEL.tasks.forEach((t) => {
+    compute += t.computeEnd - t.start;
+    wait += t.end - t.computeEnd;
+    active += t.end - t.start;
   });
-  html += `<span class="sl-legend-item"><span class="sl-legend-swatch is-wait"></span>同步等待段</span>`;
-  document.getElementById('legend').innerHTML = html;
+  const total = compute + wait || 1;
+  const avgLaneUtil = laneUtils.reduce((sum, ratio) => sum + ratio, 0) / Math.max(1, laneUtils.length);
+  const minUtil = Math.min(...laneUtils);
+  const maxUtil = Math.max(...laneUtils);
+  const balance = maxUtil > 0 ? minUtil / maxUtil : 1;
+  return {
+    tasks: MODEL.tasks.length,
+    syncEdges: MODEL.edges.length,
+    duration: MODEL.timelineEnd,
+    waitRatio: wait / total,
+    avgLaneUtil,
+    avgBubble: 1 - avgLaneUtil,
+    loadBalance: balance,
+    extraGmUbKiB: CURRENT_RUN.summaryMetrics.extraGmUbKiB,
+    ubHeadroomKiB: CURRENT_RUN.summaryMetrics.ubHeadroomKiB,
+    mte2Util: CURRENT_RUN.summaryMetrics.mte2Util,
+  };
 }
 
-function crumbHtml() {
-  const parts = [{ k: 'overview', label: '概览' }];
+function topTasks() {
+  return CURRENT_RUN.anomalies.map((anomaly) => {
+    const task = taskById[anomaly.taskId];
+    const compute = task.computeEnd - task.start;
+    const wait = task.end - task.computeEnd;
+    return { task, anomaly, compute, wait, total: task.end - task.start || 1 };
+  });
+}
+
+function defaultReportHtml() {
+  return `${reportTabsHtml()}${reportTabPanelHtml()}`;
+}
+
+function reportTabsHtml() {
+  return `<div class="sl-report-tabs" role="tablist" aria-label="性能统计视图">
+    ${REPORT_TABS.map((tab) => `<button class="btn btn-sm sl-report-tab ${state.reportTab === tab.id ? 'is-selected' : ''}" type="button" role="tab" data-report-tab="${tab.id}" aria-selected="${state.reportTab === tab.id}">${tab.label}</button>`).join('')}
+  </div>`;
+}
+
+function reportTabPanelHtml() {
+  if (state.reportTab === 'pmu') return pmuReportHtml();
+  if (state.reportTab === 'latency') return latencyReportHtml();
+  if (state.reportTab === 'optimize') return optimizeReportHtml();
+  if (state.reportTab === 'core') return coreReportHtml();
+  return overviewReportHtml();
+}
+
+function overviewReportHtml() {
+  const s = runAggregateStats();
+  const metrics = [
+    { label: '总耗时', value: `${s.duration.toFixed(0)}μs` },
+    { label: '总任务数', value: String(s.tasks) },
+    { label: '平均核心利用率', value: `${(s.avgLaneUtil * 100).toFixed(1)}%` },
+    { label: '平均气泡率', value: `${(s.avgBubble * 100).toFixed(1)}%`, warn: s.avgBubble >= 0.42 },
+    { label: '负载均衡度', value: `${(s.loadBalance * 100).toFixed(1)}%`, warn: s.loadBalance < 0.38 },
+    { label: '额外 GM / UB 搬运', value: `${s.extraGmUbKiB.toFixed(0)} KiB`, warn: s.extraGmUbKiB >= 192 },
+    { label: 'UB 余量', value: `${s.ubHeadroomKiB.toFixed(1)} KiB`, warn: s.ubHeadroomKiB < 32 },
+    { label: 'MTE 2 利用率', value: `${(s.mte2Util * 100).toFixed(1)}%`, warn: s.mte2Util >= 0.65 },
+    { label: '同步路径数量', value: String(s.syncEdges) },
+    { label: '同步等待占比', value: `${(s.waitRatio * 100).toFixed(1)}%`, warn: s.waitRatio >= 0.18 },
+  ];
+  return `<div class="sl-report-card">
+    <div class="sl-report-card__title">运行聚合指标</div>
+    <div class="sl-metric-grid">
+      ${metrics.map((m) => `<div class="sl-metric-card ${m.warn ? 'is-warn' : ''}">
+        <div class="sl-metric-card__label">${m.label}</div>
+        <div class="sl-metric-card__value">${m.value}</div>
+      </div>`).join('')}
+    </div>
+    <div class="sl-insp-hint">额外 GM/UB 搬运、UB 余量与 MTE 2 利用率为 L2 诊断指标，用于保持三条 run 的同口径比较。</div>
+  </div>
+  <div class="sl-report-card">
+    <div class="sl-report-card__title">Top 任务</div>
+    ${topTasks().map(({ task, anomaly, wait, total }, idx) => {
+      const core = MODEL.cores[task.coreIdx];
+      const active = state.selTask && state.selTask.id === task.id;
+      return `<div class="sl-top-task ${active ? 'is-active' : ''}" data-task-id="${escapeHtml(task.id)}">
+        <div class="sl-top-task__top">
+          <span class="sl-top-task__id">${escapeHtml(task.name)}</span>
+          <span class="sl-pill is-warn">${escapeHtml(anomaly.label)}</span>
+        </div>
+        <div class="sl-top-task__row"><span>位置</span><span class="v">${escapeHtml(laneDisplayLabel(core))}</span></div>
+        <div class="sl-top-task__row"><span>总耗时</span><span class="v">${total.toFixed(1)}μs</span></div>
+        <div class="sl-meter"><div class="sl-meter-fill" style="width:${Math.min(100, wait / total * 100)}%;background:var(--warning)"></div></div>
+        <div class="sl-top-task__sub">${escapeHtml(anomaly.reason)}</div>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
+function pmuReportHtml() {
+  const groupButtons = `<div class="sl-pmu-groups" aria-label="PMU Group">
+    ${PMU_GROUPS.map((g) => `<button class="btn btn-sm sl-pmu-group ${state.pmuGroup === g ? 'is-selected' : ''}" type="button" data-pmu-group="${g}">Group ${g}</button>`).join('')}
+  </div>`;
+  if (!CURRENT_RUN.pmu.available || state.pmuGroup !== CURRENT_RUN.pmu.group) {
+    return `${groupButtons}<div class="sl-report-card">
+      <div class="sl-report-card__title">Group ${state.pmuGroup}</div>
+      <div class="sl-empty-state">该运行记录没有采集 PMU Group ${state.pmuGroup}。单次运行只展示实际启用的一个 PMU Group。</div>
+    </div>`;
+  }
+  const PMU_G2_COUNTERS = PMU_G2_META.map((counter) => ({
+    ...counter,
+    value: CURRENT_RUN.pmu.counters[counter.key] || 0,
+  }));
+  const total = PMU_G2_COUNTERS.reduce((sum, c) => sum + c.value, 0) || 1;
+  const rows = PMU_G2_COUNTERS.map((c) => `<div class="sl-counter-row">
+    <div class="sl-counter-name" title="${c.key}">${c.key}</div>
+    <div class="sl-counter-val">${c.value.toLocaleString()}</div>
+    <div class="sl-counter-note" title="${c.label} · ${c.summary}">${c.label} · ${(c.value / total * 100).toFixed(1)}%</div>
+  </div>`).join('');
+  const dominant = [...PMU_G2_COUNTERS].sort((a, b) => b.value - a.value)[0];
+  const clock = CURRENT_RUN.pmu.counters['total cycle'] || 1;
+  const mte2Ratio = (CURRENT_RUN.pmu.counters.mte2_instr_busy || 0) / clock;
+  const missRate = (CURRENT_RUN.pmu.counters.icache_miss || 0) / (CURRENT_RUN.pmu.counters.icache_req || 1);
+  return `${groupButtons}<div class="sl-report-card">
+    <div class="sl-report-card__title">A5 PMU Group 2 · 全图 counters 明细</div>
+    <div class="sl-counter-table">
+      <div class="sl-counter-row is-head"><div>Counter</div><div class="sl-counter-val">Value</div><div>Summary</div></div>
+      ${rows}
+    </div>
+  </div>
+  <div class="sl-report-card">
+    <div class="sl-report-card__title">PMU summary</div>
+    <div class="sl-metric-grid">
+      <div class="sl-metric-card is-warn"><div class="sl-metric-card__label">主导 counter</div><div class="sl-metric-card__value">${dominant.key}</div></div>
+      <div class="sl-metric-card ${mte2Ratio >= 0.65 ? 'is-warn' : ''}"><div class="sl-metric-card__label">MTE 2 / total cycle</div><div class="sl-metric-card__value">${(mte2Ratio * 100).toFixed(1)}%</div></div>
+      <div class="sl-metric-card"><div class="sl-metric-card__label">I-Cache miss rate</div><div class="sl-metric-card__value">${(missRate * 100).toFixed(1)}%</div></div>
+      <div class="sl-metric-card"><div class="sl-metric-card__label">Counter 覆盖</div><div class="sl-metric-card__value">Group 2</div></div>
+    </div>
+  </div>`;
+}
+
+function latencyReportHtml() {
+  const s = runAggregateStats();
+  return `<div class="sl-report-card">
+    <div class="sl-report-card__title">耗时</div>
+    <div class="sl-metric-grid">
+      <div class="sl-metric-card"><div class="sl-metric-card__label">总耗时</div><div class="sl-metric-card__value">${s.duration.toFixed(0)}μs</div></div>
+      <div class="sl-metric-card is-warn"><div class="sl-metric-card__label">同步等待占比</div><div class="sl-metric-card__value">${(s.waitRatio * 100).toFixed(1)}%</div></div>
+    </div>
+  </div>`;
+}
+
+function optimizeReportHtml() {
+  return `<div class="sl-report-card">
+    <div class="sl-report-card__title">优化建议</div>
+    ${CURRENT_RUN.recommendations.map((recommendation, index) => `<div class="sl-sync-item"><b>${index + 1}.</b> ${escapeHtml(recommendation)}</div>`).join('')}
+  </div>`;
+}
+
+function coreReportHtml() {
+  return `<div class="sl-report-card">
+    <div class="sl-report-card__title">核心详情</div>
+    <div class="sl-empty-state">点击泳道任务后可查看该任务所在核心、Wrap 和同步事件。当前默认态暂不展开单核心详情。</div>
+  </div>`;
+}
+
+function objectSelectionHeaderHtml() {
+  const parts = [];
   if (state.selGroup != null) parts.push({ k: 'group', label: MODEL.groups[state.selGroup].short });
   if (state.selWrap != null) parts.push({ k: 'wrap', label: 'Wrap ' + String(state.selWrap).padStart(2, '0') });
-  if (state.selTask) parts.push({ k: 'task', label: state.selTask.name });
-  return '<div class="sl-crumb">' + parts.map((p, i) => {
-    const cur = i === parts.length - 1;
-    return (i ? '<span class="sl-crumb-sep">›</span>' : '')
-      + `<span class="sl-crumb-item ${cur ? 'is-current' : ''}" data-nav="${p.k}">${p.label}</span>`;
-  }).join('') + '</div>';
+  return `<div class="sl-task-summary"><div class="sl-task-detail-head">
+      <button class="btn btn-sm btn-ghost sl-task-back" type="button" data-return-mix-overview aria-label="返回 Mix 性能统计默认态">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
+        <span>返回</span>
+      </button>
+      <div class="sl-task-detail-title sl-object-path">${parts.map((part, index) => {
+        const current = index === parts.length - 1;
+        return `${index ? '<span class="sl-object-path__sep">›</span>' : ''}<span class="sl-object-path__item ${current ? 'is-current' : ''}" ${current ? '' : `data-object-nav="${part.k}"`}>${part.label}</span>`;
+      }).join('')}</div>
+    </div></div>`;
 }
 
 function renderInspector() {
   const title = document.getElementById('inspTitle');
   const body = document.getElementById('inspBody');
-  let html = crumbHtml();
-  title.textContent = '性能报告';
+  let html = '';
+  title.textContent = '性能统计';
 
   if (!state.mixMode) {
     html = '';
     if (state.selTask) html += taskDetailHtml(state.selTask);
-    else html += `${runMetricChips()}<div class="sl-insp-section"><div class="sl-insp-hint">
-      <b>经典视图</b> —— 78 条泳道按 AI CPU → AIC → AIV → MTE 排布, 即 UX 分析的「第一层嗅探视图」:
-      任务条末尾的<b>斜纹段</b>即同步等待, 无需打开 Mix 模式也能嗅到瓶颈。<br><br>
-      切到 <b>Mix</b> 模式可按 1C2V Wrap 重排泳道, 并逐层下钻核间同步关系。
-      点击任意任务查看计算/等待拆解。</div></div>`;
+    else html += defaultReportHtml();
     body.innerHTML = html;
     bindInspector();
     return;
@@ -2206,9 +3719,9 @@ function renderInspector() {
   if (state.level === 'task' && state.selTask) {
     html += taskDetailHtml(state.selTask);
   } else if (state.level === 'wrap' && state.selWrap != null) {
-    html += wrapDetailHtml(state.selWrap);
+    html += objectSelectionHeaderHtml() + wrapDetailHtml(state.selWrap);
   } else if (state.level === 'group' && state.selGroup != null) {
-    html += groupDetailHtml(state.selGroup);
+    html += objectSelectionHeaderHtml() + groupDetailHtml(state.selGroup);
   } else {
     html += overviewHtml();
   }
@@ -2217,15 +3730,20 @@ function renderInspector() {
 }
 
 function overviewHtml() {
-  let html = `${runMetricChips()}<div class="sl-insp-section">
-    <div class="sl-insp-hint">3 次迭代的解码层, 切成 <b>6 个 Mix 子图</b>流水执行,
-    各子图静态绑定 4 个 <b>1C2V Wrap</b> (1 AIC + 2 AIV)。点击子图逐层下钻。</div>
+  const primaryAnomaly = topTasks()[0];
+  const primaryGroup = primaryAnomaly?.task.group;
+  let html = defaultReportHtml();
+  if (state.reportTab !== 'overview') return html;
+  html += `<div class="sl-insp-section">
+    <div class="sl-insp-hint">3 次算子调用，按 <b>${MODEL.groups.length} 个诊断分组</b>组织。Wrap 是运行时任务分组，
+    不等同于物理 Core 编号；同一物理泳道在不同调用中可承载不同 Wrap。${escapeHtml(CURRENT_RUN.iterationDefinition)}<br>
+    任务颜色按<b>语义诊断分组</b>编码，不按 Core、Wrap 或异常等级编码。虚线框表示跨多个 Wrap 的 L2 诊断分组；选中 Wrap 后出现的实线框表示当前 Wrap 的任务范围。</div>
   </div>
-  <div class="sl-insp-section"><div class="sl-insp-section-label">6 个 Mix 子图 · 同步等待占比</div>`;
+  <div class="sl-insp-section"><div class="sl-insp-section-label">${MODEL.groups.length} 个 Mix 子图 · 同步等待占比</div>`;
   MODEL.groups.forEach((g) => {
     const st = groupStats(g.id);
     const pct = (st.ratio * 100).toFixed(0);
-    const bn = g.id === SCENARIO.bottleneckGroup;
+    const bn = g.id === primaryGroup;
     html += `<div class="sl-row ${bn ? 'is-flag' : ''}" data-group="${g.id}">
         <span class="sl-dot" style="background:${g.color}"></span>
         <span class="sl-row-name">${g.name}${bn ? ' <small>· 瓶颈</small>' : ''}</span>
@@ -2233,7 +3751,7 @@ function overviewHtml() {
       <div class="sl-meter"><div class="sl-meter-fill" style="width:${pct}%;background:${pct >= 35 ? 'var(--warning)' : g.color}"></div></div>`;
   });
   html += `</div>`;
-  const bg = MODEL.groups[SCENARIO.bottleneckGroup];
+  const bg = MODEL.groups[primaryGroup];
   html += `<div class="sl-callout">
     <b>剧本 · 定位提示</b><br>
     <b>${bg.name}</b> 的同步等待占比明显高于其它子图。根因疑似落在它的某个
@@ -2242,9 +3760,9 @@ function overviewHtml() {
   </div>
   <div class="sl-insp-section"><div class="sl-insp-section-label">硬件拓扑</div>
     <div class="sl-kv"><span class="sl-kv-key">AI CPU</span><span class="sl-kv-val">1 个控制核 + 3 个调度核</span></div>
-    <div class="sl-kv"><span class="sl-kv-key">1C2V Wrap</span><span class="sl-kv-val">24 · 每组 1 AIC + 2 AIV</span></div>
-    <div class="sl-kv"><span class="sl-kv-key">AIC / AIV</span><span class="sl-kv-val">24 / 48</span></div>
-    <div class="sl-kv"><span class="sl-kv-key">MTE</span><span class="sl-kv-val">输入 / 输出</span></div>
+    <div class="sl-kv"><span class="sl-kv-key">1C2V Wrap</span><span class="sl-kv-val">32 · 每组 1 AIC + 2 AIV</span></div>
+    <div class="sl-kv"><span class="sl-kv-key">AIC / AIV</span><span class="sl-kv-val">32 / 64</span></div>
+    <div class="sl-kv"><span class="sl-kv-key">DIE</span><span class="sl-kv-val">2 · 每 DIE 16 AIC + 32 AIV</span></div>
   </div>`;
   return html;
 }
@@ -2253,7 +3771,7 @@ function groupDetailHtml(g) {
   const grp = MODEL.groups[g];
   const st = groupStats(g);
   const pct = (st.ratio * 100).toFixed(0);
-  let html = `<div class="sl-insp-section">
+  let html = `<div class="sl-report-card sl-task-basic-card">
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
       <span class="sl-pill" style="color:${grp.color}"><span class="sl-dot" style="width:8px;height:8px;background:${grp.color}"></span>${grp.short}</span>
       <span class="sl-pill ${st.ratio >= 0.35 ? 'is-warn' : 'is-ok'}">${st.ratio >= 0.35 ? '同步瓶颈' : '同步健康'}</span>
@@ -2261,7 +3779,7 @@ function groupDetailHtml(g) {
     <div class="sl-kv"><span class="sl-kv-key">绑定 Wrap</span><span class="sl-kv-val">W${String(g * 4).padStart(2, '0')}–W${String(g * 4 + 3).padStart(2, '0')}</span></div>
     <div class="sl-kv"><span class="sl-kv-key">同步等待占比</span><span class="sl-kv-val" style="color:${pct >= 35 ? 'var(--warning)' : 'inherit'}">${pct}%</span></div>
   </div>
-  <div class="sl-insp-section"><div class="sl-insp-section-label">4 个 1C2V Wrap · 等待占比</div>`;
+  <div class="sl-report-card"><div class="sl-report-card__title">4 个 1C2V Wrap · 等待占比</div>`;
   let slowW = -1, slowR = -1;
   for (let k = 0; k < 4; k++) {
     const w = g * 4 + k;
@@ -2275,12 +3793,12 @@ function groupDetailHtml(g) {
     const flag = w === slowW;
     html += `<div class="sl-row ${flag ? 'is-flag' : ''}" data-wrap="${w}">
         <span class="sl-dot" style="background:${grp.color}"></span>
-        <span class="sl-row-name">Wrap ${String(w).padStart(2, '0')} <small>AIC${String(w).padStart(2, '0')} + AIV${String(w * 2).padStart(2, '0')}/${String(w * 2 + 1).padStart(2, '0')}</small></span>
+        <span class="sl-row-name">Wrap ${String(w).padStart(2, '0')} <small>跨 3 次调用动态映射到物理泳道</small></span>
         <span class="sl-row-meta">${pctw}%</span></div>
       <div class="sl-meter"><div class="sl-meter-fill" style="width:${pctw}%;background:${flag ? 'var(--warning)' : grp.color}"></div></div>`;
   }
   html += `</div>`;
-  if (g === SCENARIO.bottleneckGroup) {
+  if (g === topTasks()[0]?.task.group) {
     html += `<div class="sl-callout">
       <b>Wrap ${String(slowW).padStart(2, '0')}</b> 的等待占比远高于同组其它 Wrap。
       该 Wrap 的 AIC 在跑一个超大 BMM, 同组其它 Wrap 早早算完后空转 —— 典型的<b>核间负载不均</b>。
@@ -2290,29 +3808,32 @@ function groupDetailHtml(g) {
 }
 
 function wrapDetailHtml(w) {
-  const g = Math.floor(w / 4);
+  const g = groupForWrap(w);
   const grp = MODEL.groups[g];
   const ws = wrapStats(w);
-  const aicCore = MODEL.aicIdxOfWrap(w), aivCores = MODEL.aivIdxOfWrap(w);
+  const wrap = MODEL.wraps.find((item) => item.id === w);
+  const representative = wrap?.instances?.[0];
+  const aicCore = representative?.aicCoreIdx;
+  const aivCores = representative?.aivCoreIdxs || [];
   const cores3 = [
     { ci: aicCore, st: ws.aic, role: 'AIC (Cube)' },
     { ci: aivCores[0], st: ws.aiv0, role: 'AIV-0 (Vector)' },
     { ci: aivCores[1], st: ws.aiv1, role: 'AIV-1 (Vector)' },
   ];
-  let html = `<div class="sl-insp-section">
+  let html = `<div class="sl-report-card sl-task-basic-card">
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
       <span class="sl-pill" style="color:${grp.color}"><span class="sl-dot" style="width:8px;height:8px;background:${grp.color}"></span>${grp.short}</span>
       <span class="sl-pill ${ws.ratio >= 0.4 ? 'is-warn' : 'is-ok'}">${ws.ratio >= 0.4 ? '同步瓶颈' : '健康'}</span>
     </div>
-    <div class="sl-insp-hint">1C2V 单元 = 1 个 Cube 核 + 2 个 Vector 核, 物理上协同执行。</div>
+    <div class="sl-insp-hint">Wrap 是运行时 1C2V 任务分组，不是物理 Core 编号。下表泳道名取调用 1 的映射；后续调用会重映射。</div>
   </div>
-  <div class="sl-insp-section"><div class="sl-insp-section-label">单元内三核 · 计算与同步等待</div>`;
+  <div class="sl-report-card"><div class="sl-report-card__title">单元内三核 · 计算与同步等待</div>`;
   cores3.forEach((c) => {
     const tot = c.st.compute + c.st.wait || 1;
     const cp = (c.st.compute / tot * 100), wp = (c.st.wait / tot * 100);
     html += `<div style="margin-top:8px">
       <div class="sl-kv" style="padding-bottom:3px;border:0">
-        <span class="sl-kv-key">${MODEL.cores[c.ci].label} · ${c.role}</span>
+        <span class="sl-kv-key">${c.ci != null ? laneDisplayLabel(MODEL.cores[c.ci]) : '—'} · ${c.role}</span>
         <span class="sl-kv-val">计算 ${c.st.compute.toFixed(0)} / 等待 ${c.st.wait.toFixed(0)}μs</span></div>
       <div class="sl-meter">
         <div class="sl-meter-fill" style="width:${cp}%;background:${grp.color};float:left"></div>
@@ -2321,12 +3842,12 @@ function wrapDetailHtml(w) {
   });
   html += `</div>`;
   const edgeN = MODEL.edges.filter((e) => e.wrap === w).length;
-  html += `<div class="sl-insp-section">
+  html += `<div class="sl-report-card">
     <div class="sl-kv"><span class="sl-kv-key">单元内同步边</span><span class="sl-kv-val">${edgeN}</span></div>
   </div>`;
-  if (w === SCENARIO.slowWrap) {
+  if (w === topTasks()[0]?.task.wrap) {
     html += `<div class="sl-callout">
-      <b>根因锁定</b> —— <b>${MODEL.cores[aicCore].label}</b> 在跑一个「K 维未切分」的超大 BMM,
+      <b>根因锁定</b> —— <b>${laneDisplayLabel(MODEL.cores[aicCore])}</b> 在跑一个「K 维未切分」的超大 BMM,
       单任务计算量约为正常 tile 的 2.5x。它一直没发出 SyncSet,
       配对的两个 AIV 算完一小段后就长时间停等。<br>
       优化方向: 对该 BMM 做 K-split, 把单核长任务拆成多个 tile, 让 AIV 不必整段等待。</div>`;
@@ -2337,53 +3858,356 @@ function wrapDetailHtml(w) {
   return html;
 }
 
-function taskDetailHtml(t) {
-  const grp = t.group != null ? MODEL.groups[t.group] : null;
-  const compute = t.computeEnd - t.start, wait = t.end - t.computeEnd;
-  const total = (t.end - t.start) || 1, ratio = wait / total;
-  const pct = (ratio * 100).toFixed(0);
-  let html = `<div class="sl-insp-section">
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
-      <span class="sl-pill" style="color:${grp ? grp.color : 'var(--accent)'}">
-        <span class="sl-dot" style="width:8px;height:8px;background:${grp ? grp.color : 'var(--accent)'}"></span>
-        ${grp ? grp.short : MODEL.cores[t.coreIdx].section}</span>
-      <span class="sl-pill ${ratio >= 0.3 ? 'is-warn' : 'is-ok'}">${ratio >= 0.3 ? '同步瓶颈' : '计算主导'}</span>
-    </div>
-    <div class="sl-kv"><span class="sl-kv-key">泳道</span><span class="sl-kv-val">${MODEL.cores[t.coreIdx].label}</span></div>
-    <div class="sl-kv"><span class="sl-kv-key">所属 Wrap</span><span class="sl-kv-val">${t.wrap != null ? 'W' + String(t.wrap).padStart(2, '0') : '—'}</span></div>
-    <div class="sl-kv"><span class="sl-kv-key">区间</span><span class="sl-kv-val">${t.start.toFixed(1)}–${t.end.toFixed(1)}μs</span></div>
-    <div class="sl-kv"><span class="sl-kv-key">输入 / 输出</span><span class="sl-kv-val">输入 ${t.inputRawMagic.length} · 输出 ${t.outputRawMagic.length}</span></div>
-  </div>
-  <div class="sl-insp-section"><div class="sl-insp-section-label">计算与同步等待</div>
-    <div class="sl-meter" style="height:14px">
-      <div class="sl-meter-fill" style="width:${compute / total * 100}%;background:${grp ? grp.color : 'var(--accent)'};float:left"></div>
-      <div class="sl-meter-fill" style="width:${pct}%;background:repeating-linear-gradient(135deg,rgba(255,170,59,0.9) 0 3px,rgba(255,170,59,0.35) 3px 6px);float:left"></div>
-    </div>
-    <div class="sl-kv"><span class="sl-kv-key">计算段</span><span class="sl-kv-val">${compute.toFixed(1)}μs</span></div>
-    <div class="sl-kv"><span class="sl-kv-key">同步等待段</span><span class="sl-kv-val" style="color:var(--warning)">${wait.toFixed(1)}μs · ${pct}%</span></div>
+function taskReportTabsHtml() {
+  return `<div class="sl-report-tabs" role="tablist" aria-label="单任务性能统计视图">
+    ${TASK_REPORT_TABS.map((tab) => `<button class="btn btn-sm sl-report-tab ${state.taskReportTab === tab.id ? 'is-selected' : ''}" type="button" role="tab" data-task-report-tab="${tab.id}" aria-selected="${state.taskReportTab === tab.id}">${tab.label}</button>`).join('')}
   </div>`;
+}
+
+function taskReportPlaceholderHtml(tabId) {
+  const label = TASK_REPORT_TABS.find((tab) => tab.id === tabId)?.label || '';
+  return `<div class="sl-task-tab-panel"><div class="sl-empty-state">当前 demo 暂未接入单任务${label}数据；已有任务信息统一保留在“概览”。</div></div>`;
+}
+
+function taskOverviewHtml(t) {
+  const grp = t.group != null ? MODEL.groups[t.group] : null;
+  const compute = t.computeEnd - t.start;
+  const wait = t.end - t.computeEnd;
+  const total = (t.end - t.start) || 1;
+  const ratio = wait / total;
+  const pct = (ratio * 100).toFixed(0);
   const ins = t.syncIn.map((id) => edgeById[id]);
   const outs = t.syncOut.map((id) => edgeById[id]);
-  html += `<div class="sl-insp-section"><div class="sl-insp-section-label">同步事件 (${ins.length + outs.length})</div>`;
+  let html = `<div class="sl-task-tab-panel">
+    <div class="sl-insp-section">
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+        <span class="sl-pill" style="color:${grp ? grp.color : 'var(--accent)'}">
+          <span class="sl-dot" style="width:8px;height:8px;background:${grp ? grp.color : 'var(--accent)'}"></span>
+          ${grp ? grp.short : MODEL.cores[t.coreIdx].section}</span>
+        <span class="sl-pill ${ratio >= 0.3 ? 'is-warn' : 'is-ok'}">${ratio >= 0.3 ? '同步瓶颈' : '计算主导'}</span>
+      </div>
+      <div class="sl-kv"><span class="sl-kv-key">输入 / 输出</span><span class="sl-kv-val">输入 ${t.inputRawMagic.length} · 输出 ${t.outputRawMagic.length}</span></div>
+      ${t.coveredTaskIds ? `<div class="sl-kv"><span class="sl-kv-key">调度覆盖</span><span class="sl-kv-val">${t.coveredTaskIds.length} 个 AI Core 任务</span></div>` : ''}
+    </div>
+    <div class="sl-insp-section"><div class="sl-insp-section-label">计算与同步等待</div>
+      <div class="sl-meter" style="height:14px">
+        <div class="sl-meter-fill" style="width:${compute / total * 100}%;background:${grp ? grp.color : 'var(--accent)'};float:left"></div>
+        <div class="sl-meter-fill" style="width:${pct}%;background:repeating-linear-gradient(135deg,rgba(255,170,59,0.9) 0 3px,rgba(255,170,59,0.35) 3px 6px);float:left"></div>
+      </div>
+      <div class="sl-kv"><span class="sl-kv-key">计算段</span><span class="sl-kv-val">${compute.toFixed(1)}μs</span></div>
+      <div class="sl-kv"><span class="sl-kv-key">同步等待段</span><span class="sl-kv-val" style="color:var(--warning)">${wait.toFixed(1)}μs · ${pct}%</span></div>
+    </div>
+    <div class="sl-insp-section"><div class="sl-insp-section-label">同步事件 (${ins.length + outs.length})</div>`;
   if (ins.length + outs.length === 0) {
     html += `<div class="sl-insp-hint">该任务无登记的核间同步边。${wait > 0 ? '末段为未归因的屏障等待。' : ''}</div>`;
   }
   ins.forEach((e) => {
-    html += `<div class="sl-sync-item">▼ <b>SyncWait</b> · 等待 <span class="mono">${MODEL.cores[e.fromCore].label}</span>
+    html += `<div class="sl-sync-item">▼ <b>SyncWait</b> · 等待 <span class="mono">${laneDisplayLabel(MODEL.cores[e.fromCore])}</span>
       的 SyncSet @ <span class="mono">${e.fromT.toFixed(1)}μs</span>, 等待耗时 <span class="mono">${e.wait.toFixed(1)}μs</span></div>`;
   });
   outs.forEach((e) => {
-    html += `<div class="sl-sync-item">▲ <b>SyncSet</b> · 向 <span class="mono">${MODEL.cores[e.toCore].label}</span>
+    html += `<div class="sl-sync-item">▲ <b>SyncSet</b> · 向 <span class="mono">${laneDisplayLabel(MODEL.cores[e.toCore])}</span>
       发出信号 @ <span class="mono">${e.fromT.toFixed(1)}μs</span></div>`;
   });
   html += `</div>`;
   if (wait > 0) {
     html += `<div class="sl-callout">
       该任务实际计算仅 <b>${compute.toFixed(0)}μs</b>, 另有 <b>${wait.toFixed(0)}μs</b> 在等待同步。
-      ${ins.length ? '优先缩短上游 <b>' + MODEL.cores[ins[0].fromCore].label + '</b> 的前序计算量。'
+      ${ins.length ? '优先缩短上游 <b>' + laneDisplayLabel(MODEL.cores[ins[0].fromCore]) + '</b> 的前序计算量。'
         : '检查同 Wrap 内核间负载是否均衡。'}</div>`;
   }
-  return html;
+  return `${html}</div>`;
+}
+
+function taskPmuHtml(t) {
+  if (!t.pmu) {
+    return `<div class="sl-task-tab-panel"><div class="sl-empty-state">该任务所在运行记录未采集单任务 PMU；不能用其它 run 的 counter 补齐。</div></div>`;
+  }
+  const rows = PMU_G2_META.map((counter) => `<div class="sl-counter-row">
+    <div class="sl-counter-name">${counter.key}</div>
+    <div class="sl-counter-val">${Number(t.pmu[counter.key] || 0).toLocaleString()}</div>
+    <div class="sl-counter-note">${counter.summary}</div>
+  </div>`).join('');
+  return `<div class="sl-task-tab-panel"><div class="sl-report-card">
+    <div class="sl-report-card__title">A5 PMU Group ${t.pmu.group} · 单任务</div>
+    <div class="sl-counter-table">${rows}</div>
+    <div class="sl-insp-hint">${escapeHtml(CURRENT_RUN.pmu.mappingRule)}</div>
+  </div></div>`;
+}
+
+function taskDetailHtml(t) {
+  const total = (t.end - t.start) || 0;
+  const tabPanel = state.taskReportTab === 'overview'
+    ? taskOverviewHtml(t)
+    : state.taskReportTab === 'pmu'
+      ? taskPmuHtml(t)
+    : taskReportPlaceholderHtml(state.taskReportTab);
+  return `<section class="sl-task-summary">
+    <div class="sl-task-detail-head">
+      <button class="btn btn-sm btn-ghost sl-task-back" type="button" data-return-default aria-label="返回性能统计默认态">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
+        <span>返回</span>
+      </button>
+      <div class="sl-task-detail-title" title="${escapeHtml(t.name)}">${escapeHtml(t.name)}</div>
+    </div>
+    <div class="sl-report-card sl-task-basic-card">
+      <div class="sl-kv"><span class="sl-kv-key">泳道</span><span class="sl-kv-val">${taskLaneDisplayLabel(t)}</span></div>
+      <div class="sl-kv"><span class="sl-kv-key">所属 Wrap</span><span class="sl-kv-val">${t.wrap != null ? 'Wrap ' + String(t.wrap).padStart(2, '0') : '—'}</span></div>
+      <div class="sl-kv"><span class="sl-kv-key">调用</span><span class="sl-kv-val">${t.iteration != null ? '调用 ' + (t.iteration + 1) : '—'}</span></div>
+      <div class="sl-kv"><span class="sl-kv-key">原始 wrapId 示例</span><span class="sl-kv-val">${t.rawWrapId ?? '—'}</span></div>
+      <div class="sl-kv"><span class="sl-kv-key">执行区间</span><span class="sl-kv-val">${t.start.toFixed(1)}–${t.end.toFixed(1)}μs</span></div>
+      <div class="sl-kv"><span class="sl-kv-key">耗时</span><span class="sl-kv-val">${total.toFixed(1)}μs</span></div>
+      <div class="sl-task-basic-actions">
+        <button class="btn btn-sm" type="button" data-view-block-graph>查看计算图</button>
+        <button class="btn btn-sm" type="button" title="后续接入 CCE 代码映射" disabled aria-disabled="true">查看 CCE 代码</button>
+      </div>
+    </div>
+  </section>
+  ${taskReportTabsHtml()}
+  ${tabPanel}`;
+}
+
+function blockGraphSpec(t) {
+  const wrapLabel = t?.wrap == null ? '00' : String(t.wrap).padStart(2, '0');
+  const total = t ? Math.max(0, t.end - t.start) : 0;
+  const wait = t ? Math.max(0, t.end - t.computeEnd) : 0;
+  return {
+    name: `attention_score_block_${wrapLabel}`,
+    nodes: [
+      {
+        id: 'block_input', type: 'incast', frame: { width: 180 },
+        data: { slotIdx: 0, shape: [1, 128, 128], rawShape: [1, 128, 128], offset: [0, 0, 0], format: 'L1', dtype: 'fp16' },
+      },
+      {
+        id: 'block_task', type: 'op', frame: { width: 180 },
+        data: { subgraphId: t?.group ?? 0, magic: t?.id || 'task', semanticLabel: t?.name || 'BMM K-split', opcode: 'BLOCK_OP', latency: total.toFixed(1), outShape: [1, 128, 128], ioperands: [0], ooperands: [1] },
+      },
+      {
+        id: 'block_sync', type: 'op', frame: { width: 180 },
+        data: { subgraphId: t?.group ?? 0, magic: 'sync', semanticLabel: 'SyncSet', opcode: 'SYNC', latency: wait.toFixed(1), outShape: [1], ioperands: [1], ooperands: [2] },
+      },
+      {
+        id: 'block_output', type: 'outcast', frame: { width: 180 },
+        data: { slotIdx: 1, shape: [1, 128, 128], rawShape: [1, 128, 128], offset: [0, 0, 0], format: 'GM', dtype: 'fp16' },
+      },
+    ],
+  };
+}
+
+function renderBlockGraph(t) {
+  const helper = window.PtoPassIrGraphNodePattern;
+  if (!helper || !blockGraphMount || !blockGraphTitle) return;
+  const graph = blockGraphSpec(t);
+  blockGraphTitle.textContent = graph.name;
+  blockGraphMount.innerHTML = '';
+  graph.nodes.forEach((node, index) => {
+    const slot = document.createElement('div');
+    slot.className = 'sl-block-graph-node';
+    const card = helper.buildNodeCardElement(node, {
+      compact: true,
+      selected: false,
+    });
+    card.addEventListener('click', (event) => {
+      event.stopPropagation();
+      blockGraphMount.querySelectorAll('.node-card.selected').forEach((item) => item.classList.remove('selected'));
+      card.classList.add('selected');
+    });
+    slot.appendChild(card);
+    blockGraphMount.appendChild(slot);
+    if (index < graph.nodes.length - 1) {
+      const edge = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      edge.setAttribute('class', 'sl-block-graph-edge');
+      edge.setAttribute('viewBox', '0 0 34 16');
+      edge.setAttribute('aria-hidden', 'true');
+      edge.innerHTML = '<path d="M1 8h29"></path><path d="m24 3 6 5-6 5"></path>';
+      blockGraphMount.appendChild(edge);
+    }
+  });
+}
+
+function blockGraphIsOpen() {
+  return Boolean(blockGraphView && !blockGraphView.hidden);
+}
+
+function renderSecondaryViewMode() {
+  const graphMode = state.secondaryViewMode === 'graph';
+  const comparisonMode = state.secondaryViewMode === 'comparison';
+  if (blockGraphViewport) blockGraphViewport.hidden = !graphMode;
+  if (compareSwimlaneView) {
+    compareSwimlaneView.hidden = !comparisonMode;
+    compareSwimlaneView.setAttribute('aria-hidden', String(!comparisonMode));
+  }
+}
+
+function blockGraphGutter() {
+  const previous = blockGraphView?.previousElementSibling;
+  return previous?.classList.contains('pto-workbench-shell__split-gutter') ? previous : null;
+}
+
+function applyBlockGraphTransform() {
+  if (!blockGraphStage) return;
+  blockGraphStage.style.transform = `translate(${blockGraphViewState.x}px, ${blockGraphViewState.y}px) scale(${blockGraphViewState.scale})`;
+}
+
+function blockGraphContentSize() {
+  return {
+    width: Math.max(1, blockGraphMount?.offsetWidth || blockGraphMount?.scrollWidth || 1),
+    height: Math.max(1, blockGraphMount?.offsetHeight || blockGraphMount?.scrollHeight || 1),
+  };
+}
+
+function centerBlockGraph(scale = 1) {
+  if (!blockGraphViewport || !blockGraphMount || !blockGraphIsOpen() || state.secondaryViewMode !== 'graph') return;
+  const content = blockGraphContentSize();
+  blockGraphViewState.scale = Math.max(0.45, Math.min(1.8, scale));
+  blockGraphViewState.x = (blockGraphViewport.clientWidth - content.width * blockGraphViewState.scale) / 2;
+  blockGraphViewState.y = (blockGraphViewport.clientHeight - content.height * blockGraphViewState.scale) / 2;
+  applyBlockGraphTransform();
+}
+
+function fitBlockGraph() {
+  if (!blockGraphViewport || !blockGraphMount || !blockGraphIsOpen() || state.secondaryViewMode !== 'graph') return;
+  const content = blockGraphContentSize();
+  const inset = 24;
+  const availableWidth = Math.max(1, blockGraphViewport.clientWidth - inset * 2);
+  const availableHeight = Math.max(1, blockGraphViewport.clientHeight - inset * 2);
+  const scale = Math.max(0.45, Math.min(1.25, Math.min(
+    availableWidth / content.width,
+    availableHeight / content.height,
+  )));
+  centerBlockGraph(scale);
+}
+
+function zoomBlockGraph(nextScale, anchorX = null, anchorY = null) {
+  if (!blockGraphViewport || !blockGraphIsOpen() || state.secondaryViewMode !== 'graph') return;
+  const previousScale = blockGraphViewState.scale;
+  const scale = Math.max(0.45, Math.min(1.8, nextScale));
+  const x = Number.isFinite(anchorX) ? anchorX : blockGraphViewport.clientWidth / 2;
+  const y = Number.isFinite(anchorY) ? anchorY : blockGraphViewport.clientHeight / 2;
+  const worldX = (x - blockGraphViewState.x) / previousScale;
+  const worldY = (y - blockGraphViewState.y) / previousScale;
+  blockGraphViewState.scale = scale;
+  blockGraphViewState.x = x - worldX * scale;
+  blockGraphViewState.y = y - worldY * scale;
+  applyBlockGraphTransform();
+}
+
+function setBlockGraphOpen(open) {
+  if (!blockGraphView) return;
+  if (!open) {
+    state.secondaryViewMode = null;
+    state.comparisonRunId = null;
+    hideTimestampGuide();
+  }
+  renderSecondaryViewMode();
+  blockGraphView.hidden = !open;
+  blockGraphView.setAttribute('aria-hidden', String(!open));
+  const gutter = blockGraphGutter();
+  if (gutter) gutter.hidden = !open;
+  window.requestAnimationFrame(() => {
+    frameController?.refresh?.();
+    layout();
+    if (open && state.secondaryViewMode === 'graph') window.requestAnimationFrame(fitBlockGraph);
+    if (open && state.secondaryViewMode === 'comparison') {
+      window.requestAnimationFrame(() => {
+        syncComparisonCanvases();
+        compareBodyWrap.scrollLeft = bodyWrap.scrollLeft;
+        compareLaneWrap.scrollTop = compareBodyWrap.scrollTop;
+      });
+    }
+  });
+}
+
+function openBlockGraph(t) {
+  if (!t || !blockGraphView) return;
+  state.secondaryViewMode = 'graph';
+  state.comparisonRunId = null;
+  renderBlockGraph(t);
+  setBlockGraphOpen(true);
+}
+
+function openRunComparison(runId) {
+  if (!runId || runId === state.selectedRunId || !blockGraphView) return;
+  const comparedRun = RUN_BY_ID[runId];
+  if (!comparedRun) return;
+  state.secondaryViewMode = 'comparison';
+  state.comparisonRunId = runId;
+  blockGraphTitle.textContent = `${comparedRun.id} · merged_swimlane`;
+  setBlockGraphOpen(true);
+}
+
+function bindBlockGraphPanel() {
+  setBlockGraphOpen(false);
+  closeBlockGraph?.addEventListener('click', () => setBlockGraphOpen(false));
+  blockGraphFit?.addEventListener('click', fitBlockGraph);
+  blockGraphZoomOut?.addEventListener('click', () => zoomBlockGraph(blockGraphViewState.scale / 1.15));
+  blockGraphZoomIn?.addEventListener('click', () => zoomBlockGraph(blockGraphViewState.scale * 1.15));
+
+  if (blockGraphViewport) {
+    blockGraphViewport.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0) return;
+      if (event.target.closest('button, .node-card, .sl-block-graph-canvas-tools')) return;
+      blockGraphViewState.dragging = true;
+      blockGraphViewState.pointerId = event.pointerId;
+      blockGraphViewState.startClientX = event.clientX;
+      blockGraphViewState.startClientY = event.clientY;
+      blockGraphViewState.startX = blockGraphViewState.x;
+      blockGraphViewState.startY = blockGraphViewState.y;
+      blockGraphViewport.classList.add('is-panning');
+      blockGraphViewport.setPointerCapture?.(event.pointerId);
+    });
+    blockGraphViewport.addEventListener('pointermove', (event) => {
+      if (!blockGraphViewState.dragging || event.pointerId !== blockGraphViewState.pointerId) return;
+      blockGraphViewState.x = blockGraphViewState.startX + event.clientX - blockGraphViewState.startClientX;
+      blockGraphViewState.y = blockGraphViewState.startY + event.clientY - blockGraphViewState.startClientY;
+      applyBlockGraphTransform();
+    });
+    const stopPanning = (event) => {
+      if (!blockGraphViewState.dragging || event.pointerId !== blockGraphViewState.pointerId) return;
+      blockGraphViewState.dragging = false;
+      blockGraphViewState.pointerId = null;
+      blockGraphViewport.classList.remove('is-panning');
+      blockGraphViewport.releasePointerCapture?.(event.pointerId);
+    };
+    blockGraphViewport.addEventListener('pointerup', stopPanning);
+    blockGraphViewport.addEventListener('pointercancel', stopPanning);
+    blockGraphViewport.addEventListener('click', (event) => {
+      if (event.target.closest('button, .node-card, .sl-block-graph-canvas-tools')) return;
+      blockGraphMount.querySelectorAll('.node-card.selected').forEach((item) => item.classList.remove('selected'));
+    });
+    blockGraphViewport.addEventListener('wheel', (event) => {
+      event.preventDefault();
+      const rect = blockGraphViewport.getBoundingClientRect();
+      const factor = event.deltaY < 0 ? 1.1 : 1 / 1.1;
+      zoomBlockGraph(
+        blockGraphViewState.scale * factor,
+        event.clientX - rect.left,
+        event.clientY - rect.top,
+      );
+    }, { passive: false });
+    blockGraphViewport.addEventListener('dblclick', fitBlockGraph);
+    blockGraphViewport.addEventListener('keydown', (event) => {
+      if (event.key === '+' || event.key === '=') zoomBlockGraph(blockGraphViewState.scale * 1.15);
+      else if (event.key === '-') zoomBlockGraph(blockGraphViewState.scale / 1.15);
+      else if (event.key.toLowerCase() === 'f') fitBlockGraph();
+      else return;
+      event.preventDefault();
+    });
+  }
+
+  if ('ResizeObserver' in window && blockGraphViewport) {
+    graphResizeObserver = new ResizeObserver(() => {
+      if (blockGraphIsOpen() && state.secondaryViewMode === 'graph') window.requestAnimationFrame(fitBlockGraph);
+    });
+    graphResizeObserver.observe(blockGraphViewport);
+  }
+  frameEl.addEventListener('pto-ide-bottom-panel-change', () => {
+    window.requestAnimationFrame(() => {
+      layout();
+      if (blockGraphIsOpen() && state.secondaryViewMode === 'graph') window.requestAnimationFrame(fitBlockGraph);
+      if (blockGraphIsOpen() && state.secondaryViewMode === 'comparison') window.requestAnimationFrame(syncComparisonCanvases);
+    });
+  });
 }
 
 function bindInspector() {
@@ -2396,14 +4220,61 @@ function bindInspector() {
       else if (nav === 'wrap' && state.selWrap != null) selectWrap(state.selWrap);
     });
   });
+  body.querySelectorAll('[data-object-nav]').forEach((el) => {
+    el.addEventListener('click', () => {
+      if (el.dataset.objectNav === 'group' && state.selGroup != null) selectGroup(state.selGroup);
+    });
+  });
   body.querySelectorAll('[data-group]').forEach((el) => {
     el.addEventListener('click', () => selectGroup(Number(el.dataset.group)));
   });
   body.querySelectorAll('[data-wrap]').forEach((el) => {
     el.addEventListener('click', () => selectWrap(Number(el.dataset.wrap)));
   });
+  body.querySelectorAll('[data-report-tab]').forEach((el) => {
+    el.addEventListener('click', () => {
+      state.reportTab = el.dataset.reportTab;
+      renderInspector();
+      document.getElementById('inspBody').scrollTop = 0;
+    });
+  });
+  body.querySelectorAll('[data-task-report-tab]').forEach((el) => {
+    el.addEventListener('click', () => {
+      state.taskReportTab = el.dataset.taskReportTab;
+      renderInspector();
+      document.getElementById('inspBody').scrollTop = 0;
+    });
+  });
+  body.querySelectorAll('[data-pmu-group]').forEach((el) => {
+    el.addEventListener('click', () => {
+      state.pmuGroup = Number(el.dataset.pmuGroup);
+      renderInspector();
+      document.getElementById('inspBody').scrollTop = 0;
+    });
+  });
+  body.querySelectorAll('[data-task-id]').forEach((el) => {
+    el.addEventListener('click', () => {
+      const task = taskById[el.dataset.taskId];
+      if (!task) return;
+      selectTask(task);
+      scrollTaskIntoView(task);
+    });
+  });
+  const returnDefault = body.querySelector('[data-return-default]');
+  if (returnDefault) returnDefault.addEventListener('click', () => {
+    state.reportTab = 'overview';
+    state.taskReportTab = 'overview';
+    goOverview();
+  });
+  const returnMixOverview = body.querySelector('[data-return-mix-overview]');
+  if (returnMixOverview) returnMixOverview.addEventListener('click', () => {
+    state.reportTab = 'overview';
+    goOverview();
+  });
+  const viewBlockGraph = body.querySelector('[data-view-block-graph]');
+  if (viewBlockGraph) viewBlockGraph.addEventListener('click', () => openBlockGraph(state.selTask));
   const drill = body.querySelector('[data-drill="bottleneck"]');
-  if (drill) drill.addEventListener('click', () => selectWrap(SCENARIO.slowWrap));
+  if (drill) drill.addEventListener('click', () => selectWrap(topTasks()[0].task.wrap));
 }
 
 function refreshFrameLayout() {
@@ -2415,9 +4286,27 @@ function refreshFrameLayout() {
 
 function bindTopPanelActions() {
   const railExplorerToggle = frameEl.querySelector('[data-ide-toggle="explorer"]');
+  const terminalToggle = frameEl.querySelector('[data-ide-toggle="terminal"]');
+  const explorerIsOpen = () => railExplorerToggle?.getAttribute('aria-expanded') !== 'false';
+  const setExplorerOpen = (open) => {
+    if (railExplorerToggle && explorerIsOpen() !== open) railExplorerToggle.click();
+  };
+  const setInspectorOpen = (open) => {
+    if (!topInspectorToggle || !inspectorPane) return;
+    inspectorPane.hidden = !open;
+    const leftGutter = inspectorPane.previousElementSibling;
+    if (leftGutter?.classList.contains('pto-workbench-shell__split-gutter')) {
+      leftGutter.hidden = !open;
+    }
+    topInspectorToggle.classList.toggle('is-selected', open);
+    topInspectorToggle.setAttribute('aria-expanded', String(open));
+    topInspectorToggle.setAttribute('aria-pressed', String(open));
+    refreshFrameLayout();
+  };
+
   if (topExplorerToggle && railExplorerToggle) {
     const syncExplorerState = () => {
-      const expanded = railExplorerToggle.getAttribute('aria-expanded') !== 'false';
+      const expanded = explorerIsOpen();
       topExplorerToggle.classList.toggle('is-selected', expanded);
       topExplorerToggle.setAttribute('aria-expanded', String(expanded));
       topExplorerToggle.setAttribute('aria-pressed', String(expanded));
@@ -2431,19 +4320,71 @@ function bindTopPanelActions() {
   }
 
   if (topInspectorToggle && inspectorPane) {
-    const setInspectorOpen = (open) => {
-      inspectorPane.hidden = !open;
-      const leftGutter = inspectorPane.previousElementSibling;
-      if (leftGutter?.classList.contains('pto-workbench-shell__split-gutter')) {
-        leftGutter.hidden = !open;
-      }
-      topInspectorToggle.classList.toggle('is-selected', open);
-      topInspectorToggle.setAttribute('aria-expanded', String(open));
-      topInspectorToggle.setAttribute('aria-pressed', String(open));
-      refreshFrameLayout();
-    };
     topInspectorToggle.addEventListener('click', () => setInspectorOpen(inspectorPane.hidden));
     setInspectorOpen(!inspectorPane.hidden);
+  }
+
+  if (railTerminalToggle && terminalToggle) {
+    const syncTerminalState = () => {
+      const expanded = terminalToggle.getAttribute('aria-expanded') === 'true';
+      railTerminalToggle.classList.toggle('is-selected', expanded);
+      railTerminalToggle.setAttribute('aria-expanded', String(expanded));
+      railTerminalToggle.setAttribute('aria-pressed', String(expanded));
+    };
+    railTerminalToggle.addEventListener('click', () => terminalToggle.click());
+    new MutationObserver(syncTerminalState).observe(terminalToggle, {
+      attributes: true,
+      attributeFilter: ['aria-expanded', 'aria-pressed', 'class'],
+    });
+    syncTerminalState();
+  }
+
+  return {
+    explorerIsOpen,
+    setExplorerOpen,
+    inspectorIsOpen: () => !inspectorPane.hidden,
+    setInspectorOpen,
+  };
+}
+
+function applyResponsivePaneState() {
+  if (!panelActions) return;
+  const width = frameEl.getBoundingClientRect().width;
+  const nextMode = width <= 840 ? 'compact' : width <= 1180 ? 'medium' : 'wide';
+  if (nextMode === responsivePaneMode) return;
+  responsivePaneMode = nextMode;
+
+  if (nextMode === 'compact') {
+    if (panelActions.explorerIsOpen()) {
+      autoCollapsedExplorer = true;
+      panelActions.setExplorerOpen(false);
+    }
+    if (panelActions.inspectorIsOpen()) {
+      autoCollapsedInspector = true;
+      panelActions.setInspectorOpen(false);
+    }
+    return;
+  }
+
+  if (nextMode === 'medium') {
+    if (panelActions.explorerIsOpen()) {
+      autoCollapsedExplorer = true;
+      panelActions.setExplorerOpen(false);
+    }
+    if (autoCollapsedInspector) {
+      panelActions.setInspectorOpen(true);
+      autoCollapsedInspector = false;
+    }
+    return;
+  }
+
+  if (autoCollapsedExplorer) {
+    panelActions.setExplorerOpen(true);
+    autoCollapsedExplorer = false;
+  }
+  if (autoCollapsedInspector) {
+    panelActions.setInspectorOpen(true);
+    autoCollapsedInspector = false;
   }
 }
 
@@ -2451,6 +4392,17 @@ function bindTopPanelActions() {
    10. 启动
    ============================================================ */
 function init() {
+  document.getElementById('projectName').textContent = CURRENT_RUN.projectName;
+  const initialFrameWidth = frameEl.getBoundingClientRect().width;
+  if (initialFrameWidth <= 1180) {
+    frameEl.dataset.explorerCollapsed = 'true';
+    document.getElementById('scenarioPane').hidden = true;
+    autoCollapsedExplorer = true;
+  }
+  if (initialFrameWidth <= 840) {
+    inspectorPane.hidden = true;
+    autoCollapsedInspector = true;
+  }
   frameController = window.PtoIdeFrame?.init(frameEl, {
     splitOptions: {
       default: {
@@ -2459,14 +4411,19 @@ function init() {
     },
   });
   buildOrder();
-  renderLegend();
   renderRunHistory();
+  bindRunHistoryDismiss();
   layout();
   renderInspector();
-  bindTopPanelActions();
+  panelActions = bindTopPanelActions();
+  bindBlockGraphPanel();
+  initSharedCanvasTooltip();
+  applyResponsivePaneState();
   if ('ResizeObserver' in window && canvasPane) {
     canvasResizeObserver = new ResizeObserver(() => window.requestAnimationFrame(() => layout()));
     canvasResizeObserver.observe(canvasPane);
+    frameResizeObserver = new ResizeObserver(() => window.requestAnimationFrame(applyResponsivePaneState));
+    frameResizeObserver.observe(frameEl);
   }
 }
 init();

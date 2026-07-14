@@ -163,9 +163,9 @@
       },
     },
     deepseek: {
-      name: "DeepSeek V3.2",
-      title: "DeepSeek V3.2 整网图",
-      meta: "params=671B/37B · MoE=256+1(top-8) · MLA=128h · MTP=1 · TP=1 · PP=16 · EP=64 · CP=1 · DP=2 · ranks=2048",
+      name: "Pangu 2.0 flash",
+      title: "Pangu 2.0 flash 整网图",
+      meta: "",
       graphKind: "moe",
       trainingGraph: makeDeepSeekTrainingGraph(),
       phaseMap: {
@@ -602,11 +602,12 @@
       },
       // 问题标注：对应进度条上 5 个诊断标记，标在整网图的首个问题节点上
       problemMarkers: [
-        { id: "1", nodeId: "router",              diagnosisKey: "moe-a2a",                  label: "问题1：MoE all-to-all 超时", sub: "layer 38 router → rank 23 死锁 → loss NaN" },
-        { id: "2", nodeId: "query_projection",    diagnosisKey: "q-lora-fp8",               label: "问题2：q_lora FP8 溢出", sub: "hidden dim[6400,7168] 超 FP8 max → grad_norm 发散" },
-        { id: "3", nodeId: "routed_experts",      diagnosisKey: "nvlink",                   label: "问题3：NVLINK 链路掉线", sub: "node2 GPU3 lane5 inactive → MFU 骤降至 20%" },
-        { id: "4", nodeId: "lm_head",             diagnosisKey: "perf-compute-bottleneck",  label: "问题4：lm_head 带宽瓶颈", sub: "vocab 129280 非对齐256 → cube_util 仅 49%" },
-        { id: "5", nodeId: "topk_expert_select",  diagnosisKey: "perf-comm-straggler",      label: "问题5：all-to-all 快慢卡", sub: "rank 17/23/41 负载 5× → 步耗时周期性尖峰" },
+        { id: "1", nodeId: "router",              diagnosisKey: "moe-a2a",                  label: "问题1：MoE all-to-all 超时", sub: "layer 30 router → rank 23 死锁 → loss NaN" },
+        { id: "2", nodeId: "query_tensor",        diagnosisKey: "qproj-overflow",           label: "问题2：q_proj FP8 溢出", sub: "layer 33 q_proj 输入 3.2% 超 FP8 E4M3 max(448)" },
+        { id: "3", nodeId: "query_projection",    diagnosisKey: "low-precision-training",    label: "问题3：低精训练 loss 不收敛", sub: "FP8 深层数值退化 → layer 47 偏差起点 → 梯度消失" },
+        { id: "4", nodeId: "routed_experts",      diagnosisKey: "nvlink",                   label: "问题4：NVLINK 链路掉线", sub: "node2 GPU3 lane5 inactive → MFU 骤降至 20%" },
+        { id: "5", nodeId: "lm_head",             diagnosisKey: "perf-compute-bottleneck",  label: "问题5：lm_head 带宽瓶颈", sub: "vocab 129280 非对齐256 → cube_util 仅 49%" },
+        { id: "6", nodeId: "topk_expert_select",  diagnosisKey: "perf-comm-straggler",      label: "问题6：all-to-all 快慢卡", sub: "rank 17/23/41 负载 5× → 步耗时周期性尖峰" },
       ],
     };
   }
@@ -615,7 +616,7 @@
     single8: { label: "8 × Ascend 910B · 1 节点", devices: 64, world: 8, cols: 16, unit: "AI Core 槽位", unitHint: "单节点细粒度视图" },
     cluster64: { label: "64 × Ascend 910B · 8 节点", devices: 64, world: 64, cols: 16, unit: "NPU 卡槽", unitHint: "集群聚合视图" },
     cluster512: { label: "512 × Ascend NPU · 64 节点", devices: 512, world: 512, cols: 32, unit: "NPU 卡槽", unitHint: "集群聚合视图" },
-    cluster2048: { label: "2048 × H800 · 256 节点", devices: 2048, world: 2048, cols: 64, unit: "H800 GPU", unitHint: "PP16×EP64×DP 集群视图" },
+    cluster2048: { label: "2048 × Ascend 910B · 256 节点", devices: 2048, world: 2048, cols: 64, unit: "910B NPU 卡槽", unitHint: "PP8×EP64×DP 集群视图" },
   };
 
   const phaseSteps = [
@@ -702,28 +703,112 @@
     renderHeatShell();
   }
 
-  function renderHeatShell() {
-    const heat = $("heat");
+  // EP64 列背景色：8 色调循环，区分 64 个 EP rank 所在列
+  var EP_TINT_COLORS = [
+    "rgba(59,130,246,0.06)", "rgba(16,185,129,0.06)", "rgba(245,158,11,0.06)", "rgba(139,92,246,0.06)",
+    "rgba(6,182,212,0.06)", "rgba(239,68,68,0.06)", "rgba(34,197,94,0.06)", "rgba(168,85,247,0.06)"
+  ];
+
+  var PP_STAGE_COUNT = 8;
+  var PP_COLS_PER_STAGE = 8; // 64 cols / 8 PP stages = 8 cols per stage
+
+  function renderHeatShell(heatEl) {
+    const heat = heatEl || $("heat");
     const profile = hardwareProfiles[state.hardware];
-    heat.style.gridTemplateColumns = `repeat(${profile.cols}, minmax(0, 1fr))`;
+    const cols = profile.cols; // 64
+    const rows = profile.devices / cols; // 32
+
+    // DP4: 4 组,每组 8 行 × 64 列
+    var dpGroups = 4;
+    var rowsPerDp = rows / dpGroups; // 8
+
+    heat.style.display = "flex";
+    heat.style.flexDirection = "column";
+    heat.style.gap = "4px";
     heat.innerHTML = "";
-    state.devices.forEach((_, index) => {
-      const cell = document.createElement("div");
-      cell.className = "twin-heat-cell";
-      cell.dataset.index = String(index);
-      heat.appendChild(cell);
-    });
+
+    // PP 阶段标签行
+    var ppLabelRow = document.createElement("div");
+    ppLabelRow.className = "twin-heat-pp-labels";
+    ppLabelRow.style.display = "grid";
+    ppLabelRow.style.gridTemplateColumns = "repeat(" + PP_STAGE_COUNT + ", 1fr)";
+    ppLabelRow.style.gap = "2px";
+    ppLabelRow.style.padding = "0 3px";
+    for (var s = 0; s < PP_STAGE_COUNT; s++) {
+      var lbl = document.createElement("span");
+      lbl.textContent = "Stage" + s;
+      lbl.style.textAlign = "center";
+      lbl.style.fontSize = "9px";
+      lbl.style.fontWeight = "600";
+      lbl.style.color = "var(--foreground-muted)";
+      ppLabelRow.appendChild(lbl);
+    }
+    heat.appendChild(ppLabelRow);
+
+    for (var dp = 0; dp < dpGroups; dp++) {
+      var dpGroup = document.createElement("div");
+      dpGroup.className = "twin-heat-dp-group";
+      dpGroup.dataset.dpLabel = "DP" + dp;
+      dpGroup.style.display = "grid";
+      dpGroup.style.gridTemplateColumns = "repeat(" + cols + ", minmax(0, 1fr))";
+      dpGroup.style.gap = "2px";
+      dpGroup.style.padding = "3px";
+      dpGroup.style.borderRadius = "4px";
+      dpGroup.style.border = "1.5px solid var(--border-default)";
+
+      for (var row = 0; row < rowsPerDp; row++) {
+        for (var col = 0; col < cols; col++) {
+          var index = dp * rowsPerDp * cols + row * cols + col;
+          var ppStage = Math.floor(col / PP_COLS_PER_STAGE);
+          var cell = document.createElement("div");
+          cell.className = "twin-heat-cell";
+          cell.dataset.index = String(index);
+          cell.dataset.epRank = String(col);
+          cell.dataset.ppStage = String(ppStage);
+          cell.style.background = EP_TINT_COLORS[col % EP_TINT_COLORS.length];
+          // PP 阶段分界：每 8 列右侧加粗分隔
+          if ((col + 1) % PP_COLS_PER_STAGE === 0 && col < cols - 1) {
+            cell.style.marginRight = "3px";
+            cell.style.boxShadow = "inset -3px 0 0 0 var(--border-strong)";
+          }
+          dpGroup.appendChild(cell);
+        }
+      }
+      heat.appendChild(dpGroup);
+    }
+
+    // EP 标签行：每列是一个 EP rank，只标 EP0, EP8, EP16, ... EP56
+    var epLabelRow = document.createElement("div");
+    epLabelRow.className = "twin-heat-ep-labels";
+    epLabelRow.style.display = "grid";
+    epLabelRow.style.gridTemplateColumns = "repeat(" + cols + ", minmax(0, 1fr))";
+    epLabelRow.style.gap = "2px";
+    epLabelRow.style.padding = "0 3px";
+    for (var c = 0; c < cols; c++) {
+      var el = document.createElement("span");
+      if (c % 8 === 0) {
+        el.textContent = "EP" + c;
+      }
+      el.style.textAlign = "center";
+      el.style.fontSize = "8px";
+      el.style.fontWeight = "500";
+      el.style.color = "var(--foreground-muted)";
+      epLabelRow.appendChild(el);
+    }
+    heat.appendChild(epLabelRow);
   }
 
   function renderHeat() {
-    const cells = $("heat").children;
-    const profile = hardwareProfiles[state.hardware];
+    var cells = $("heat").querySelectorAll(".twin-heat-cell");
+    var profile = hardwareProfiles[state.hardware];
+    var cols = profile.cols;
     let peak = 0;
     let thermalRisk = 0;
     let lowUtil = 0;
     let total = 0;
     let totalUtil = 0;
     state.devices.forEach((device, index) => {
+      var col = index % cols;
       const targetTemp = 54 + device.util * 23 + (device.bad ? 8 : 0);
       device.temp = clamp(device.temp * 0.86 + (targetTemp + rand(-2.2, 2.2)) * 0.14, 50, 92);
       device.util = clamp(device.util + (Math.random() - 0.5) * 0.025, 0.45, 1);
@@ -734,28 +819,38 @@
       if (device.util < 0.7) lowUtil += 1;
       const cell = cells[index];
       if (!cell) return;
+      // 在 EP 底色之上叠加 util 着色（保留 EP rank 列背景作为基底）
       cell.className = "twin-heat-cell";
-      if (device.util < 0.7) cell.classList.add("is-util-low");
-      else if (device.util > 0.92) cell.classList.add("is-util-high");
-      else cell.classList.add("is-util-mid");
+      cell.style.background = EP_TINT_COLORS[col % EP_TINT_COLORS.length];
+      var utilOverlay = "";
+      // PP 分界线保留
+      var ppShadow = (col + 1) % PP_COLS_PER_STAGE === 0 && col < cols - 1
+        ? ", inset -3px 0 0 0 var(--border-strong)" : "";
+      if (device.util < 0.7) utilOverlay = "var(--twin-util-low)";
+      else if (device.util > 0.92) utilOverlay = "var(--twin-util-high)";
+      else utilOverlay = "var(--twin-util-mid)";
+      cell.style.boxShadow = "inset 0 0 0 2px " + utilOverlay + ppShadow;
       if (device.temp > 82 || device.bad) cell.classList.add("is-thermal-risk");
       if (device.bad) cell.classList.add("is-straggler");
+      var dpGroup = Math.floor(index / (8 * cols)); // DP0~3
+      var ppStage = Math.floor(col / PP_COLS_PER_STAGE) + 1;
+      var epRank = col + 1;
       const tip = [
         `${profile.unit} ${index}`,
         `node-${Math.floor(index / 8)} / rank-${index}`,
         `算力占用率 ${(device.util * 100).toFixed(0)}%`,
         `温度 ${device.temp.toFixed(0)}°C`,
         `HBM ${(device.mem * 100).toFixed(0)}%`,
-        profile.unitHint,
+        `DP${dpGroup} · Stage${Math.floor(col / 8)} · EP${col}`,
         device.bad ? `风险 ${device.bad}` : "",
       ].filter(Boolean).join("\n");
       cell.dataset.tip = tip;
     });
     const avgUtil = totalUtil / state.devices.length;
-    $("heatStat").textContent = `util ${(avgUtil * 100).toFixed(0)}% · peak ${peak.toFixed(0)}°C · low ${lowUtil} · risk ${thermalRisk}`;
     $("hwUtil").textContent = `${(avgUtil * 100).toFixed(0)}%`;
     $("hwLow").textContent = `${lowUtil}`;
     $("hwThermal").textContent = `${thermalRisk}`;
+    $("hwThermal").style.color = thermalRisk > 0 ? "var(--danger, #dc2626)" : "";
     $("hwAction").textContent = lowUtil > state.devices.length * 0.05
       ? "查低利用 rank"
       : thermalRisk > 0
@@ -791,19 +886,27 @@
     if (selectedDiagnosis) applyDiagnosisFocus(selectedDiagnosis.dataset.diagnosis);
   }
 
+  // 月亮(切到深色)/太阳(切到浅色)图标,与 pangu-moe-trainviz/op-rank-time.html 的 .opv-theme-toggle 一致
+  const THEME_TOGGLE_ICONS = {
+    toDark: '<path d="M12 3a6.5 6.5 0 0 0 7.8 8.8A8 8 0 1 1 12 3z"></path>',
+    toLight: '<circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path>',
+  };
+
   function applyTheme(theme, options = {}) {
     currentTheme = theme === "light" ? "light" : "dark";
     document.documentElement.dataset.theme = currentTheme;
     document.body.dataset.theme = currentTheme;
     const themeToggle = $("themeToggle");
-    const themeToggleLabel = $("themeToggleLabel");
-    const nextMode = currentTheme === "light" ? "深色模式" : "浅色模式";
+    const themeToggleIcon = $("themeToggleIcon");
+    const toDark = currentTheme === "light";
+    const nextMode = toDark ? "深色模式" : "浅色模式";
     if (themeToggle) {
       themeToggle.setAttribute("aria-pressed", String(currentTheme === "light"));
       themeToggle.setAttribute("title", `切换${nextMode}`);
+      themeToggle.setAttribute("aria-label", `切换${nextMode}`);
     }
-    if (themeToggleLabel) {
-      themeToggleLabel.textContent = nextMode;
+    if (themeToggleIcon) {
+      themeToggleIcon.innerHTML = toDark ? THEME_TOGGLE_ICONS.toDark : THEME_TOGGLE_ICONS.toLight;
     }
     if (!options.skipRender) renderArchitecture();
   }
@@ -832,7 +935,7 @@
   function currentTokps() {
     const model = models[state.model];
     const profile = hardwareProfiles[state.hardware];
-    return Math.max(300, (state.mfu * profile.world * 312e12) / (6 * model.params));
+    return Math.max(300, (state.mfu * profile.world * 320e12) / (6 * model.params));
   }
 
   /* ===== 精度指标图表：loss/acc/precision/recall/grad_norm/corr 六项指标的合成时序卡组 =====
@@ -849,10 +952,13 @@
   }
   let accSteps = computeAccSteps();
 
-  /* loss/grad_norm 事故点:固定在当前训练进度往回一段距离的绝对 step 上,不随窗口滑动而改变。
-     判据是绝对 step 的不等式(step >= INCIDENT_STEP),所以只要越过这一步就永久保持 NaN/inf——
-     即便窗口随进度条继续往前滑,已经跨过事故点的部分不会"自愈"回到健康值。 */
-  const INCIDENT_STEP = state.step - Math.round(ACC_WINDOW * ACC_STRIDE * 0.35);
+  /* 事故点 + 恢复窗口：step 41230 出现 NaN → AI 重跑定位 → 修复代码 → 恢复训练。
+     INCIDENT_STEP 为固定的绝对 step；RECOVERY_STEPS 为恢复所需的步数。
+     事故步本身显示 NaN/inf；恢复期内指标从异常值平滑过渡回正常趋势；
+     恢复完成后继续朝好的方向发展（loss 降低、acc 升高等）。 */
+  const INCIDENT_STEP = 41230;
+  const RECOVERY_STEPS = 15;
+  const RECOVERY_END = INCIDENT_STEP + RECOVERY_STEPS;
 
   // 以绝对 step 为种子的确定性伪随机,保证同一 step 无论何时被计算、被哪张卡片引用,取值都一致
   function stepNoise(seed, step, amp) {
@@ -862,16 +968,50 @@
 
   function metricsAtStep(step, t) {
     const targetLoss = state.loss, targetMfu = state.mfu;
-    const tl = Math.max(0.15, targetLoss * (1.7 - 0.7 * t) + stepNoise(1, step, 0.05));
-    const vl = tl + 0.05 + stepNoise(2, step, 0.03);
-    const ta = clamp(1 - tl / 6, 0.05, 0.99);
-    const va = clamp(1 - vl / 6, 0.05, 0.99);
-    const mf = clamp(targetMfu * (0.72 + 0.28 * t) + stepNoise(3, step, 0.015), 0.05, 0.9);
-    const pc = clamp(0.62 + 0.3 * t + stepNoise(4, step, 0.02), 0.05, 0.99);
-    const rc = clamp(0.58 + 0.32 * t + stepNoise(5, step, 0.024), 0.05, 0.99);
-    const cr = clamp(0.7 + 0.28 * t + stepNoise(6, step, 0.02), -0.3, 0.999);
-    const loss = step >= INCIDENT_STEP ? NaN : +(3.08 + stepNoise(7, step, 0.06)).toFixed(3);
-    const grad_norm = step >= INCIDENT_STEP ? Infinity : +(12.0 + stepNoise(8, step, 0.9)).toFixed(2);
+    // 恢复进度：0 = 事故步，1 = 完全恢复
+    const recRaw = (step - INCIDENT_STEP - 1) / (RECOVERY_STEPS - 1 || 1);
+    const rec = step <= INCIDENT_STEP ? 0 : step >= RECOVERY_END ? 1 : Math.min(1, Math.max(0, recRaw));
+    // ease-in-out 平滑过渡
+    const ease = rec < 0.5 ? 2 * rec * rec : -1 + (4 - 2 * rec) * rec;
+    const atIncident = step === INCIDENT_STEP;
+    const inRecovery = step > INCIDENT_STEP && step < RECOVERY_END;
+
+    // 事故步本身：loss NaN / grad_norm inf / 其余指标也 NaN（训练中断）
+    // 恢复期：从异常值平滑过渡回正常趋势
+    // 恢复后：继续正常训练，趋势朝好的方向发展
+    const baseLoss = 3.08 + stepNoise(7, step, 0.06);
+    const shockLoss = atIncident ? NaN : inRecovery ? (6.0 * (1 - ease) + baseLoss * ease) : baseLoss;
+    const loss = atIncident ? NaN : +(shockLoss).toFixed(3);
+
+    const baseGn = 12.0 + stepNoise(8, step, 0.9);
+    const shockGn = atIncident ? Infinity : inRecovery ? (50.0 * (1 - ease) + baseGn * ease) : baseGn;
+    const grad_norm = atIncident ? Infinity : +(shockGn).toFixed(2);
+
+    const tlBase = Math.max(0.15, targetLoss * (1.7 - 0.7 * t) + stepNoise(1, step, 0.05));
+    const tl = atIncident ? NaN : inRecovery ? (tlBase + 0.8 * (1 - ease)) : tlBase;
+    const vlBase = tlBase + 0.05 + stepNoise(2, step, 0.03);
+    const vl = atIncident ? NaN : inRecovery ? (vlBase + 0.5 * (1 - ease)) : vlBase;
+
+    const taBase = clamp(1 - tlBase / 6, 0.05, 0.99);
+    const ta = atIncident ? NaN : inRecovery ? (taBase - 0.12 * (1 - ease)) : taBase;
+    const vaBase = clamp(1 - vlBase / 6, 0.05, 0.99);
+    const va = atIncident ? NaN : inRecovery ? (vaBase - 0.08 * (1 - ease)) : vaBase;
+
+    const mfBase = clamp(targetMfu * (0.72 + 0.28 * t) + stepNoise(3, step, 0.015), 0.05, 0.9);
+    const mf = atIncident ? 0 : inRecovery ? (mfBase * ease) : mfBase;
+
+    const pcBase = clamp(0.62 + 0.3 * t + stepNoise(4, step, 0.02), 0.05, 0.99);
+    const pc = atIncident ? NaN : inRecovery ? (pcBase - 0.1 * (1 - ease)) : pcBase;
+    const rcBase = clamp(0.58 + 0.32 * t + stepNoise(5, step, 0.024), 0.05, 0.99);
+    const rc = atIncident ? NaN : inRecovery ? (rcBase - 0.1 * (1 - ease)) : rcBase;
+
+    const crBase = clamp(0.7 + 0.28 * t + stepNoise(6, step, 0.02), -0.3, 0.999);
+    const cr = atIncident ? NaN : inRecovery ? (crBase - 0.15 * (1 - ease)) : crBase;
+
+    // HBM 显存利用率：事故步跌至 0（训练中断），恢复期从低位回升，恢复后继续正常波动
+    const memBase = clamp(0.72 + 0.12 * t + stepNoise(11, step, 0.025), 0.45, 0.95);
+    const avg_mem = atIncident ? 0 : inRecovery ? (memBase * ease) : memBase;
+
     // 单卡重跑同一 step(定位链.md 案例一 · 分叉判定):不经历多卡 all-to-all,不受事故影响,全程健康——
     // loss≈3.21、grad_norm≈11.8,用于和上面的多卡曲线对照,证明问题只在多卡复现。
     const loss_single = +(3.21 + stepNoise(9, step, 0.05)).toFixed(3);
@@ -881,13 +1021,14 @@
       train_acc: +ta.toFixed(4), val_acc: +va.toFixed(4),
       mfu: +mf.toFixed(4), precision: +pc.toFixed(4), recall: +rc.toFixed(4),
       rollout_actor_probs_pearson_corr: +cr.toFixed(4),
+      avg_mem: +avg_mem.toFixed(4),
       loss, grad_norm, loss_single, grad_norm_single,
     };
   }
 
   function buildAccuracyData(steps) {
     const n = steps.length;
-    const cols = { train_loss: [], val_loss: [], train_acc: [], val_acc: [], mfu: [], precision: [], recall: [], rollout_actor_probs_pearson_corr: [], loss: [], grad_norm: [], loss_single: [], grad_norm_single: [] };
+    const cols = { train_loss: [], val_loss: [], train_acc: [], val_acc: [], mfu: [], precision: [], recall: [], rollout_actor_probs_pearson_corr: [], avg_mem: [], loss: [], grad_norm: [], loss_single: [], grad_norm_single: [] };
     steps.forEach((s, i) => {
       const m = metricsAtStep(s, n > 1 ? i / (n - 1) : 1);
       const isEpoch = i % ACC_EPOCH_STRIDE === 0 || i === n - 1;
@@ -899,6 +1040,7 @@
       cols.precision.push(m.precision);
       cols.recall.push(m.recall);
       cols.rollout_actor_probs_pearson_corr.push(m.rollout_actor_probs_pearson_corr);
+      cols.avg_mem.push(m.avg_mem);
       cols.loss.push(m.loss);
       cols.grad_norm.push(m.grad_norm);
       cols.loss_single.push(m.loss_single);
@@ -917,12 +1059,12 @@
   const fmtAccPct = (v) => (v == null ? "—" : `${(v * 100).toFixed(1)}%`);
 
   const ACC_CARD_DEFS = [
-    { id: "loss", name: "loss", legend: false,
-      note: `案例:MoE all-to-all 超时 → step ${INCIDENT_STEP} loss 跳变为 NaN,此后不再恢复`,
-      formatValue: (v) => (v == null ? "—" : Number.isNaN(v) ? "NaN" : v.toFixed(3)),
+    { id: "loss", name: "loss", legend: true,
+      formatValue: (v) => (v == null ? "—" : v.toFixed(3)),
       tipCarryForward: false, markerStep: INCIDENT_STEP,
       series: [
-        { id: "loss", label: "loss", key: "loss", colorVar: "--twin-chart-loss", emphasis: true },
+        { id: "train_loss", label: "train loss", key: "train_loss", colorVar: "--twin-chart-loss" },
+        { id: "val_loss", label: "val loss", key: "val_loss", colorVar: "--twin-chart-gradnorm", emphasis: true },
       ] },
     { id: "acc", name: "acc", legend: true, formatValue: fmtAccPct, series: [
       { id: "train_acc", label: "train acc", key: "train_acc", colorVar: "--twin-chart-acc" },
@@ -935,7 +1077,7 @@
       { id: "recall", label: "recall", key: "recall", colorVar: "--twin-chart-recall", emphasis: true },
     ] },
     { id: "gradnorm", name: "grad_norm", legend: false,
-      note: `同一根因:grad_norm 从 step ${INCIDENT_STEP} 起跳至 inf,此后不再恢复`,
+      note: `step ${INCIDENT_STEP} MoE all-to-all 超时 → grad_norm 跳至 inf，AI 定位修复后 ${RECOVERY_STEPS} 步内恢复`,
       formatValue: (v) => (v == null ? "—" : !isFinite(v) ? "inf" : v.toFixed(2)),
       tipCarryForward: false, markerStep: INCIDENT_STEP,
       series: [
@@ -946,7 +1088,22 @@
     ] },
   ];
 
-  let accSmoothing = 0;
+  const INFRA_CARD_DEFS = [
+    { id: "mfu", name: "MFU", legend: false,
+      note: "Model FLOPS Utilization · 训练算力利用效率",
+      formatValue: (v) => (v == null ? "—" : `${(v * 100).toFixed(1)}%`),
+      series: [
+        { id: "mfu", label: "MFU", key: "mfu", colorVar: "--twin-chart-mfu", emphasis: true },
+      ] },
+    { id: "avg_mem", name: "显存利用率", legend: false,
+      note: "HBM 平均占用率 · 跨卡均值",
+      formatValue: (v) => (v == null ? "—" : `${(v * 100).toFixed(1)}%`),
+      series: [
+        { id: "avg_mem", label: "HBM", key: "avg_mem", colorVar: "--twin-chart-mem", emphasis: true },
+      ] },
+  ];
+
+  let accSmoothing = 0.1;
   let accCards = []; // [{cfg, valEl, wrap, ctrl, size}]
 
   function buildAccLegend(series) {
@@ -998,9 +1155,9 @@
     if (!window.PtoTrainingMetricsChart || !el) return null;
     const steps = cfg.steps || accSteps;
     let ctrl = null;
-    // regions 按当前 steps 窗口的右边界动态算(窗口会随 state.step 往前滑),而非写死一个终点
+    // regions 标记事故+恢复窗口（而非从事故点一直拉到图表末尾）
     const regions = cfg.markerStep != null
-      ? [{ start: cfg.markerStep, end: steps[steps.length - 1], label: "loss NaN" }]
+      ? [{ start: cfg.markerStep, end: Math.min(RECOVERY_END, steps[steps.length - 1]), label: "事故 · 恢复" }]
       : (cfg.regions || null);
     const renderOpts = {
       steps,
@@ -1018,10 +1175,15 @@
       // 需要图例时改由调用方在容器外自行渲染(见 mountLocateMetricCharts 的 buildAccLegend)
       legend: false,
     };
-    // 悬浮离开后把游标线收回问题点,而不是停在鼠标最后划过的位置
-    if (cfg.markerStep != null) {
-      renderOpts.onCursorLeave = () => { if (ctrl) ctrl.setCursor(cfg.markerStep); };
-    }
+    // 精度 6 图联动：鼠标悬浮任一图表时同步游标 + 指标气泡到所有精度图表
+    renderOpts.onCursorHover = (step) => {
+      accCards.forEach((c) => { if (c.ctrl) { c.ctrl.setCursor(step); c.ctrl.setTooltip(true); } });
+    };
+    // 鼠标离开后收起所有图表的气泡；对于有 markerStep 的图表（loss / grad_norm）收回问题点
+    renderOpts.onCursorLeave = () => {
+      accCards.forEach((c) => { if (c.ctrl) c.ctrl.setTooltip(false); });
+      if (cfg.markerStep != null && ctrl) ctrl.setCursor(cfg.markerStep);
+    };
     ctrl = window.PtoTrainingMetricsChart.render(el, renderOpts);
     return ctrl;
   }
@@ -1069,6 +1231,7 @@
       out.textContent = accSmoothing.toFixed(2);
       syncAccCards(true);
       syncLocateMetricCharts(true);
+      renderCase6MetricCharts(); // 问题二迭代层的 loss/grad_norm 也随滑条重画(无对应容器时内部自动跳过)
     });
     wrap.appendChild(lab);
     wrap.appendChild(range);
@@ -1099,6 +1262,49 @@
     renderAccReadouts();
   }
 
+  // ── infra 图表（MFU / 显存利用率）────────────────────────────────────────
+  let infraCards = []; // [{cfg, valEl, wrap, ctrl, size}]
+
+  function syncInfraCard(card, force) {
+    const w = Math.round(card.wrap.clientWidth || 0);
+    const h = Math.round(card.wrap.clientHeight || 0);
+    if (w < 2 || h < 2) return;
+    if (!force && card.ctrl && w === card.size.w && h === card.size.h) return;
+    card.size = { w, h };
+    card.ctrl = renderMetricChart(card.wrap, card.cfg, w, h);
+  }
+
+  function syncInfraCards(force) {
+    infraCards.forEach((c) => syncInfraCard(c, force));
+  }
+
+  function renderInfraReadouts() {
+    infraCards.forEach((c) => {
+      const steps = c.cfg.steps || accSteps;
+      const data = c.cfg.data || ACC_DATA;
+      const v = data[c.cfg.series[0].key][steps.length - 1];
+      c.valEl.textContent = c.cfg.formatValue ? c.cfg.formatValue(v) : (v == null ? "—" : v);
+    });
+  }
+
+  function initInfraCharts() {
+    const host = $("infraCharts");
+    if (!host || !window.PtoTrainingMetricsChart) return;
+    host.innerHTML = "";
+    const cardsWrap = document.createElement("div");
+    cardsWrap.className = "twin-accuracy-cards";
+    cardsWrap.style.gridTemplateRows = "1fr"; // 单行 2 列
+    infraCards = INFRA_CARD_DEFS.map((cfg) => {
+      const b = buildAccCard(cfg);
+      cardsWrap.appendChild(b.card);
+      return { cfg, valEl: b.valEl, wrap: b.wrap, ctrl: null, size: { w: 0, h: 0 } };
+    });
+    host.appendChild(cardsWrap);
+    syncInfraCards(true);
+    requestAnimationFrame(() => syncInfraCards(true));
+    renderInfraReadouts();
+  }
+
   function renderVitals() {
     const acc = clamp(1 - state.loss / 6, 0, 1);
     const accEMA = clamp(1 - state.lossEMA / 6, 0, 1);
@@ -1120,7 +1326,8 @@
     const totalEpochs = Math.ceil(state.totalSteps / state.stepsPerEpoch);
     $("progressPct").textContent = `${(pct * 100).toFixed(1)}%`;
     $("progressFill").style.width = `${(pct * 100).toFixed(2)}%`;
-    $("progressStep").textContent = `${state.step.toLocaleString()} / ${state.totalSteps.toLocaleString()}`;
+    $("progressStepCurrent").textContent = state.step.toLocaleString();
+    $("progressStepTotal").textContent = state.totalSteps.toLocaleString();
     $("progressEpoch").textContent = `${epoch} / ${totalEpochs}`;
     renderDiagnosisMarkers();
   }
@@ -1170,12 +1377,12 @@
     el.dataset.sev = sev;
     el.innerHTML = `<i></i><div class="twin-event-body"><time>${clock()}</time><span>${text}</span></div>`;
     feed.insertBefore(el, feed.firstChild);
-    while (feed.children.length > 24) feed.removeChild(feed.lastChild);
+    while (feed.children.length > 4) feed.removeChild(feed.lastChild);
   }
 
   function seedEvents() {
     $("feed").innerHTML = "";
-    for (let index = 0; index < 5; index += 1) {
+    for (let index = 0; index < 4; index += 1) {
       const event = eventPool[Math.floor(rand(0, eventPool.length))];
       pushEvent(event[0], event[1].replace("{s}", state.step - index * 40).replace("{r}", Math.floor(rand(0, 64))).replace("{g}", Math.floor(rand(0, 8))));
     }
@@ -1237,14 +1444,17 @@
     // 精度图表窗口跟着 state.step 一起往前滑,和右上角进度条同一个时钟
     refreshAccuracyData();
     syncAccCards(true);
+    syncInfraCards(true);
     syncLocateMetricCharts(true);
     renderAccReadouts();
+    renderInfraReadouts();
   }
 
   function renderAll() {
     renderVitals();
     renderProgress();
     renderHeat();
+    if (activeLocateCase) syncLocateInfraHeat(activeLocateCase); // infra 示意图跟随集群热力图同步刷新
     renderWhatIf();
   }
 
@@ -1273,7 +1483,7 @@
     document.querySelectorAll("[data-hardware-option]").forEach((button) => {
       button.classList.toggle("is-selected", button.dataset.hardwareOption === profileKey);
     });
-    $("hardwareSummary").textContent = `${hardwareProfiles[profileKey].label}，每格为${hardwareProfiles[profileKey].unit}，底色表示算力占用率，角标表示温度/异常风险。`;
+    $("hardwareSummary").textContent = `${hardwareProfiles[profileKey].label}，每格为${hardwareProfiles[profileKey].unit}。`;
     resetDevices();
     baseline.tokps = currentTokps();
     baseline.eta = (models[state.model].target - state.seen) / baseline.tokps;
@@ -1282,66 +1492,93 @@
 
   const diagnosisCases = {
     "moe-a2a": {
-      layer: "Layer 38(概念对应)",
-      nodeIds: ["router", "topk_expert_select", "routed_experts"],
-      edges: [["topk_expert_select", "routed_experts"]],
-      note: "MoE Router → Expert 分支(all-to-all 通信边)对应此案例;架构图为通用层模板,无法标出具体第 38 层。",
+      layer: "Layer 30 · MoE Router",
+      nodeIds: ["router_gate", "router_weight", "routed_expert_bank", "shared_expert_mlp", "moe_all_to_all_dispatch", "moe_all_to_all_combine"],
+      edges: [
+        ["router_gate", "moe_all_to_all_dispatch"],
+        ["moe_all_to_all_dispatch", "routed_expert_bank"],
+        ["routed_expert_bank", "moe_all_to_all_combine"],
+        ["shared_expert_mlp", "moe_all_to_all_combine"]
+      ],
+      clusterIds: ["moe-block"],
+      note: "Router → all-to-all dispatch → Routed Experts → all-to-all combine。EP rank 23 死锁,其余 rank 空等超时。",
     },
-    "q-lora-fp8": {
-      layer: "Layer 42(概念对应)",
-      nodeIds: ["query_weight", "query_projection"],
-      edges: [["query_weight", "query_projection"], ["attention_norm", "query_projection"]],
-      note: "Query 投影分支(q_lora 低秩投影的简化节点)对应此案例;架构图为通用层模板,无法标出具体第 42 层。",
+    "qproj-overflow": {
+      layer: "Layer 33 · GQA Attention",
+      nodeIds: ["query_tensor", "attention_core", "o_proj"],
+      edges: [
+        ["query_tensor", "attention_core"],
+        ["attention_core", "o_proj"]
+      ],
+      clusterIds: ["attention-block"],
+      note: "q_proj Linear[4608→12288] 输入 3.2% 元素超 FP8 E4M3 max(448),扩张投影放大 → attention softmax 进一步放大。",
     },
     nvlink: {
       layer: null,
-      nodeIds: [],
-      edges: [],
-      note: "NVLINK 链路故障属于硬件/通信拓扑层,架构图不包含该维度节点,请查看下方「算力占用 · 基础设施层」热力图。",
+      nodeIds: ["moe_all_to_all_dispatch", "moe_all_to_all_combine", "attention_all_gather", "attention_reduce_scatter"],
+      edges: [
+        ["moe_all_to_all_dispatch", "moe_all_to_all_combine"],
+        ["attention_all_gather", "attention_reduce_scatter"]
+      ],
+      clusterIds: ["decoder-stack"],
+      note: "HCCS lane 5 inactive → HCCL 从高速互联回退至 RoCE 慢路径,all-to-all 耗时 8×,PP pipeline 被拖慢。",
     },
     "perf-compute-bottleneck": {
-      layer: "Output/Head 区(概念对应)",
-      nodeIds: ["lm_head", "logits", "lm_head_weight"],
-      edges: [["lm_head_weight", "lm_head"], ["final_norm", "lm_head"], ["lm_head", "logits"]],
-      note: "LM Head → Logits 路径对应此案例;架构图为通用层模板,算子带宽瓶颈(AICPU 回退/PP 过载)在此区域最集中。",
+      layer: "Output / Head 区",
+      nodeIds: ["lm_head", "final_norm", "token_embedding"],
+      edges: [
+        ["final_norm", "lm_head"],
+        ["token_embedding", "lm_head"]
+      ],
+      note: "LM Head → Logits 路径。vocab 非对齐致 cube_util 仅 49%,AICPU 回退 526ms。",
     },
     "perf-comm-straggler": {
-      layer: "MoE FFN 区(概念对应)",
-      nodeIds: ["router", "topk_expert_select", "routed_experts", "moe_combine"],
-      edges: [["topk_expert_select", "routed_experts"], ["routed_experts", "moe_combine"]],
-      note: "Router → Expert → Combine 路径对应此案例;架构图为通用层模板,快慢卡通信尾延迟在此 MoE 分支最明显。",
+      layer: "MoE FFN 区",
+      nodeIds: ["router_gate", "router_weight", "routed_expert_bank", "shared_expert_mlp", "moe_all_to_all_dispatch", "moe_all_to_all_combine"],
+      edges: [
+        ["router_gate", "routed_expert_bank"],
+        ["routed_expert_bank", "moe_all_to_all_combine"],
+        ["moe_all_to_all_dispatch", "routed_expert_bank"]
+      ],
+      clusterIds: ["moe-block"],
+      note: "Router gate bias 漂移 → 热点 rank 承接 5× token → all-to-all 尾延迟恶化。",
+    },
+    "low-precision-training": {
+      layer: "Layer 47 深层",
+      nodeIds: ["query_tensor", "attention_core", "shared_expert_mlp", "routed_expert_bank"],
+      edges: [
+        ["query_tensor", "attention_core"],
+        ["shared_expert_mlp", "moe_all_to_all_combine"]
+      ],
+      clusterIds: ["attention-block", "moe-block"],
+      note: "FP8 E4M3 深层激活值长尾超限 → 峰度 +15.3 → 梯度信号淹没。",
     },
   };
 
   // 进度条诊断标记:step 在 0~totalSteps 范围内,百分比自动换算
   const diagnosisMarkers = [
-    { key: "moe-a2a", step: INCIDENT_STEP, severity: "p0", category: "精度", num: "一", label: "MoE all-to-all 超时 → loss NaN" },
-    { key: "q-lora-fp8", stepFrom: 8200, stepTo: 8600, severity: "p1", category: "精度", num: "二", label: "q_lora FP8 溢出 → grad_norm 发散" },
-    { key: "nvlink", step: 20000, severity: "p1", category: "Infra", num: "三", label: "NVLINK 链路掉线 → MFU 骤降" },
-    { key: "perf-compute-bottleneck", stepFrom: 20000, stepTo: 120000, severity: "p1", category: "性能", num: "四", label: "算子带宽瓶颈 + AICPU 回退 → 步耗时超标" },
-    { key: "perf-comm-straggler", step: 18427, severity: "p1", category: "性能", num: "五", label: "MoE all-to-all 快慢卡 → 步耗时尖峰(每8~12步复发)" },
+    { key: "moe-a2a", step: INCIDENT_STEP, severity: "p0", category: "精度", num: "一", label: "MoE all-to-all 超时 → loss NaN", sub: "layer 30 router 98% token → expert 47, EP23 死锁" },
+    { key: "qproj-overflow", step: 8500, severity: "p1", category: "精度", num: "二", label: "q_proj FP8 精度溢出 → grad_norm 发散", sub: "layer 33 q_proj 3.2% 超 FP8 max(448)" },
+    { key: "low-precision-training", stepFrom: 28000, stepTo: 35000, severity: "p1", category: "精度", num: "三", label: "低精训练 loss 不收敛 → 梯度消失", sub: "FP8 E4M3 深层激活值长尾, 峰度 +15.3, SNR 降至 6.8dB" },
+    { key: "nvlink", step: 20000, severity: "p1", category: "Infra", num: "四", label: "HCCS 链路掉线 → MFU 骤降", sub: "node2 NPU3 lane5 inactive, HCCL 回退 RoCE 慢路径" },
+    { key: "perf-compute-bottleneck", stepFrom: 20000, stepTo: 120000, severity: "p1", category: "性能", num: "五", label: "算子带宽瓶颈 + AICPU 回退", sub: "lm_head vocab 非对齐, cube_util 49%, AICPU 526ms" },
+    { key: "perf-comm-straggler", step: 18427, severity: "p1", category: "性能", num: "六", label: "MoE all-to-all 快慢卡 → 步耗时尖峰", sub: "gate bias 漂移 rank 17/23/41 承接 5× token" },
   ];
 
   function renderDiagnosisMarkers() {
-    const track = document.querySelector('.twin-progress-status-track');
+    const track = document.getElementById('progressTrack');
     if (!track) return;
-    const parent = track.parentNode; // .twin-progress-status-info
-    // 清除旧标记(挂在 parent 上)
-    parent.querySelectorAll('.progress-diagnosis-marker').forEach((el) => el.remove());
+    // 问题点标注改为进度条内的「带白边纵向线」,直接用百分比定位,无需测量几何
+    track.querySelectorAll('.twin-progress-marker').forEach((el) => el.remove());
     const total = state.totalSteps || 120000;
-    const trackRect = track.getBoundingClientRect();
-    const parentRect = parent.getBoundingClientRect();
     diagnosisMarkers.forEach((m) => {
       const firstStep = m.stepFrom != null ? m.stepFrom : m.step;
-      const pct = firstStep / total;
-      const arrow = document.createElement('div');
-      arrow.className = `progress-diagnosis-marker is-${m.severity}`;
-      // 相对于 parent 定位,对应 track 内的百分比位置
-      arrow.style.left = (trackRect.left - parentRect.left + trackRect.width * pct) + 'px';
-      arrow.style.top = (trackRect.bottom - parentRect.top + 2) + 'px';
-      arrow.dataset.markerKey = m.key;
-      arrow.title = '';
-      parent.appendChild(arrow);
+      const pct = clamp(firstStep / total, 0, 1);
+      const mk = document.createElement('div');
+      mk.className = `twin-progress-marker is-${m.severity}`;
+      mk.style.left = (pct * 100).toFixed(2) + '%';
+      mk.dataset.markerKey = m.key;
+      track.appendChild(mk);
     });
   }
 
@@ -1363,125 +1600,271 @@
     stage?.querySelector(`[data-source="${source}"][data-target="${target}"]`)?.classList.add(className);
   }
 
-  // 常态标红:无需点击,页面加载即在图上标出三个诊断案例命中的节点/连线(问题三无图上对应,不标)
-  function applyDefaultDiagnosisMarkers() {
-    const stage = $("modelGraphStage");
-    if (!stage) return;
-    Object.values(diagnosisCases).forEach((info) => {
-      info.nodeIds.forEach((id) => markNodeActive(stage, id, "pto-diagnosis-active"));
-      info.edges.forEach(([source, target]) => markEdgeActive(stage, source, target, "pto-diagnosis-active"));
-    });
+  function markClusterActive(stage, clusterId, className) {
+    var cluster = stage?.querySelector('[data-cluster-id="' + clusterId + '"]');
+    if (!cluster) return;
+    cluster.classList.add(className);
   }
 
-  // 复用 bufChart rank 23 红色标注风格：半透明红底 + 红描边矩形 + 红色虚线引线
+  // 常态标红 + 问题序号徽标:页面加载后在 #graphStage（新整网图）上标出诊断案例命中的节点/连线/Cluster,
+  // 并在第一个命中节点旁画红色胶囊序号徽标
+  function applyDefaultDiagnosisMarkers() {
+    var stage = document.getElementById('graphStage');
+    if (!stage) return;
+    var NS = "http://www.w3.org/2000/svg";
+    var tip = document.getElementById("diagnosisTooltip");
+
+    // 已放置徽标的 bounding box 列表,用于避让
+    var placedBadges = [];
+
+    function drawBadge(nodeGroup, marker, color) {
+      var rect = nodeGroup.querySelector("rect");
+      if (!rect) return;
+      var dims = { w: parseFloat(rect.getAttribute("width") || "0"), h: parseFloat(rect.getAttribute("height") || "0") };
+      if (!dims.w) return;
+
+      var FS = 18, PILLH = 32, PADX = 12, GAP = 4;
+      var labelText = "问题" + marker.num;
+
+      var tmpLabel = document.createElementNS(NS, "text");
+      tmpLabel.setAttribute("font-size", FS);
+      tmpLabel.setAttribute("font-weight", "700");
+      tmpLabel.setAttribute("font-family", "system-ui, sans-serif");
+      tmpLabel.textContent = labelText;
+      nodeGroup.appendChild(tmpLabel);
+      var tw = 0;
+      try { tw = tmpLabel.getBBox().width; } catch (e) { tw = labelText.length * FS * 0.62; }
+      nodeGroup.removeChild(tmpLabel);
+
+      var pillW = PADX + tw + PADX;
+      // 贴在节点上方，不遮挡节点本体
+      var pillLeft = -dims.w / 2;
+      var pillTop = -dims.h / 2 - PILLH - GAP;
+
+      // 避让：重叠时往上堆叠
+      var badgeBox = { left: pillLeft, top: pillTop, width: pillW, height: PILLH };
+      for (var i = 0; i < placedBadges.length; i++) {
+        var placed = placedBadges[i];
+        var overlapX = badgeBox.left < placed.left + placed.width && badgeBox.left + badgeBox.width > placed.left;
+        var overlapY = badgeBox.top < placed.top + placed.height && badgeBox.top + badgeBox.height > placed.top;
+        if (overlapX && overlapY) {
+          badgeBox.top = placed.top - PILLH - GAP;
+          pillTop = badgeBox.top;
+        }
+      }
+      placedBadges.push(badgeBox);
+
+      var badge = document.createElementNS(NS, "g");
+      badge.setAttribute("class", "pto-problem-marker pto-problem-badge");
+      badge.setAttribute("data-diagnosis-key", marker.key || "");
+      badge.style.cursor = "pointer";
+
+      var bg = document.createElementNS(NS, "rect");
+      bg.setAttribute("x", pillLeft); bg.setAttribute("y", pillTop);
+      bg.setAttribute("width", pillW); bg.setAttribute("height", PILLH);
+      bg.setAttribute("rx", PILLH / 2); bg.setAttribute("ry", PILLH / 2);
+      bg.setAttribute("fill", "var(--danger, #FF4B7B)");
+      badge.appendChild(bg);
+
+      // 白色文字
+      var label = document.createElementNS(NS, "text");
+      label.setAttribute("x", pillLeft + PADX);
+      label.setAttribute("y", pillTop + PILLH / 2);
+      label.setAttribute("dominant-baseline", "central");
+      label.setAttribute("fill", "#ffffff");
+      label.setAttribute("font-size", FS);
+      label.setAttribute("font-weight", "700");
+      label.setAttribute("font-family", "system-ui, sans-serif");
+      label.textContent = labelText;
+      badge.appendChild(label);
+
+      nodeGroup.appendChild(badge);
+
+      if (tip) {
+        var move = function(e) {
+          tip.style.left = Math.min(window.innerWidth - 270, e.clientX + 12) + "px";
+          tip.style.top = (e.clientY + 14) + "px";
+        };
+        badge.addEventListener("mouseenter", function(e) {
+          tip.textContent = marker.label + "\n" + (marker.sub || "");
+          tip.hidden = false;
+          move(e);
+        });
+        badge.addEventListener("mousemove", move);
+        badge.addEventListener("mouseleave", function() { tip.hidden = true; });
+      }
+      badge.addEventListener("click", function(e) {
+        e.stopPropagation();
+        var card = document.querySelector('.diagnosis-card[data-diagnosis="' + marker.key + '"]');
+        if (card) { card.click(); }
+      });
+    }
+
+    function tryApply() {
+      var svg = stage.querySelector('svg');
+      if (!svg) { setTimeout(tryApply, 200); return; }
+
+      stage.querySelectorAll(".pto-problem-marker").forEach(function(el) { el.remove(); });
+      placedBadges = [];
+
+      Object.values(diagnosisCases).forEach(function(info) {
+        info.nodeIds.forEach(function(id) { markNodeActive(stage, id, "pto-diagnosis-active"); });
+        info.edges.forEach(function(e) { markEdgeActive(stage, e[0], e[1], "pto-diagnosis-active"); });
+        (info.clusterIds || []).forEach(function(cid) { markClusterActive(stage, cid, "pto-diagnosis-active"); });
+      });
+
+      // 问题一的红框(MoE FFN 分组框 moe-block):点击红框本体 = 选中问题一并进入模型层展开图。
+      // 只响应落在分组框背景 rect 上的点击(点内部节点仍走节点自己的徽标联动),不重复绑定。
+      var moeCluster = stage.querySelector('[data-cluster-id="moe-block"]');
+      if (moeCluster && !moeCluster.dataset.lvBound) {
+        moeCluster.dataset.lvBound = "1";
+        var moeFrame = moeCluster.querySelector("rect");
+        if (moeFrame) {
+          moeFrame.style.cursor = "pointer";
+          moeFrame.addEventListener("click", function(e) {
+            e.stopPropagation();
+            enterProblemOneLayerView();
+          });
+        }
+      }
+
+      Object.keys(diagnosisCases).forEach(function(key) {
+        var info = diagnosisCases[key];
+        var marker = diagnosisMarkers.find(function(m) { return m.key === key; });
+        if (!marker || !info.nodeIds.length) return;
+        var color = problemSeverityColor(key);
+        var nodeGroup = stage.querySelector('[data-node-id="' + info.nodeIds[0] + '"]');
+        if (!nodeGroup) return;
+        drawBadge(nodeGroup, { key: key, label: marker.label, num: marker.num, sub: info.note || "" }, color);
+      });
+    }
+    tryApply();
+  }
+
+  // 图上问题标注:改为节点左上角的紧凑序号徽标(颜色按严重度 P0 红 / P1 橙),取代原来
+  // 5 个 180×44 的大红卡片,大幅减少对整网图的遮挡;完整标签在悬浮气泡里展示,点击联动右侧诊断卡片。
+  var PROBLEM_SEVERITY = { p0: "#dc2626", p1: "#ea580c", p2: "#ca8a04" };
+  function problemSeverityColor(diagnosisKey) {
+    var m = diagnosisMarkers.find(function (d) { return d.key === diagnosisKey; });
+    return (m && PROBLEM_SEVERITY[m.severity]) || "#dc2626";
+  }
+
   function applyProblemMarkers(stage, graph) {
     if (!stage || !graph || !graph.problemMarkers) return;
-    stage.querySelectorAll(".pto-problem-marker").forEach((el) => el.remove());
+    stage.querySelectorAll(".pto-problem-marker").forEach(function (el) { el.remove(); });
 
     var NS = "http://www.w3.org/2000/svg";
     var nodeLookup = {};
     (graph.nodes || []).forEach(function (n) {
       nodeLookup[n.id] = { w: n.width || 0, h: n.height || 0 };
     });
-
-    var RED = "#dc2626";
-    var BOX_W = 180, BOX_H = 44;
-    var GAP = 42;
+    var tip = document.getElementById("diagnosisTooltip");
+    var R = 11;
 
     graph.problemMarkers.forEach(function (m) {
       var group = stage.querySelector('[data-node-id="' + m.nodeId + '"]');
       if (!group) return;
       var dims = nodeLookup[m.nodeId];
       if (!dims || !dims.w) return;
+      var color = problemSeverityColor(m.diagnosisKey);
 
-      // 标注框放在节点左上方（连线连到节点左上角）
-      var bx = -dims.w / 2 - GAP - BOX_W;
-      var by = -dims.h / 2 - 6;
-      var anchorY = -dims.h / 2 + 8; // 连线锚点（节点左边缘偏上）
+      var badge = document.createElementNS(NS, "g");
+      badge.setAttribute("class", "pto-problem-marker pto-problem-badge");
+      badge.setAttribute("data-diagnosis-key", m.diagnosisKey || "");
+      badge.style.cursor = "pointer";
 
-      // 半透明红色填充矩形
+      // 胶囊:序号圆点 + 小字标签(在节点内文字外留白)。先渲染标签量出宽度再定胶囊尺寸。
+      var FS = 9, R = 7, PADX = 7, GAPCT = 5, PILLH = 20;
+      var label = document.createElementNS(NS, "text");
+      label.setAttribute("font-size", FS);
+      label.setAttribute("font-weight", "600");
+      label.setAttribute("font-family", "system-ui, sans-serif");
+      label.setAttribute("dominant-baseline", "central");
+      label.setAttribute("fill", "var(--foreground, #1c1e22)");
+      label.textContent = m.label;
+      badge.appendChild(label);
+      group.appendChild(badge);        // 先入 DOM 才能量到文字宽度
+      var tw = 0;
+      try { tw = label.getBBox().width; } catch (e) { tw = m.label.length * FS * 0.62; }
+
+      var pillW = PADX + R * 2 + GAPCT + tw + PADX;
+      var cy = -dims.h / 2;                 // 竖向对齐到节点左上角
+      var pillRight = -dims.w / 2 - 8;      // 胶囊右缘留在节点左侧外
+      var pillLeft = pillRight - pillW;
+      var pillTop = cy - PILLH / 2;
+      var dotCx = pillLeft + PADX + R;
+
       var bg = document.createElementNS(NS, "rect");
-      bg.setAttribute("x", bx);
-      bg.setAttribute("y", by);
-      bg.setAttribute("width", BOX_W);
-      bg.setAttribute("height", BOX_H);
-      bg.setAttribute("rx", "3");
-      bg.setAttribute("ry", "3");
-      bg.setAttribute("fill", RED);
-      bg.setAttribute("fill-opacity", "0.10");
-      bg.setAttribute("class", "pto-problem-marker");
-      bg.style.cursor = "pointer";
-      group.appendChild(bg);
+      bg.setAttribute("x", pillLeft); bg.setAttribute("y", pillTop);
+      bg.setAttribute("width", pillW); bg.setAttribute("height", PILLH);
+      bg.setAttribute("rx", PILLH / 2); bg.setAttribute("ry", PILLH / 2);
+      bg.setAttribute("fill", "var(--surface-1, #ffffff)");
+      bg.setAttribute("stroke", color);
+      bg.setAttribute("stroke-opacity", "0.55");
+      badge.insertBefore(bg, label);        // 背景在标签之下
 
-      // 红色描边矩形
-      var border = document.createElementNS(NS, "rect");
-      border.setAttribute("x", bx);
-      border.setAttribute("y", by);
-      border.setAttribute("width", BOX_W);
-      border.setAttribute("height", BOX_H);
-      border.setAttribute("rx", "3");
-      border.setAttribute("ry", "3");
-      border.setAttribute("fill", "none");
-      border.setAttribute("stroke", RED);
-      border.setAttribute("stroke-width", "1");
-      border.setAttribute("class", "pto-problem-marker");
-      border.style.cursor = "pointer";
-      group.appendChild(border);
+      var dot = document.createElementNS(NS, "circle");
+      dot.setAttribute("cx", dotCx); dot.setAttribute("cy", cy); dot.setAttribute("r", R);
+      dot.setAttribute("fill", color);
+      badge.appendChild(dot);
 
-      // 红色虚线引线：框右下角 → 节点左边缘偏上
-      var line = document.createElementNS(NS, "line");
-      line.setAttribute("x1", bx + BOX_W);
-      line.setAttribute("y1", by + BOX_H - 6);
-      line.setAttribute("x2", -dims.w / 2);
-      line.setAttribute("y2", anchorY);
-      line.setAttribute("stroke", RED);
-      line.setAttribute("stroke-width", "0.8");
-      line.setAttribute("stroke-dasharray", "3 2");
-      line.setAttribute("class", "pto-problem-marker");
-      group.appendChild(line);
+      var num = document.createElementNS(NS, "text");
+      num.setAttribute("x", dotCx); num.setAttribute("y", cy);
+      num.setAttribute("text-anchor", "middle");
+      num.setAttribute("dominant-baseline", "central");
+      num.setAttribute("fill", "#ffffff");
+      num.setAttribute("font-size", "10");
+      num.setAttribute("font-weight", "700");
+      num.setAttribute("font-family", "system-ui, sans-serif");
+      num.textContent = m.id;
+      badge.appendChild(num);
 
-      // 主文字
-      var titleText = document.createElementNS(NS, "text");
-      titleText.setAttribute("x", bx + 8);
-      titleText.setAttribute("y", by + 15);
-      titleText.setAttribute("fill", RED);
-      titleText.setAttribute("font-size", "11");
-      titleText.setAttribute("font-weight", "700");
-      titleText.setAttribute("font-family", "system-ui, sans-serif");
-      titleText.setAttribute("class", "pto-problem-marker");
-      titleText.style.cursor = "pointer";
-      titleText.textContent = m.label;
-      group.appendChild(titleText);
+      label.setAttribute("x", dotCx + R + GAPCT);
+      label.setAttribute("y", cy);
 
-      // 副文字
-      var subText = document.createElementNS(NS, "text");
-      subText.setAttribute("x", bx + 8);
-      subText.setAttribute("y", by + 31);
-      subText.setAttribute("fill", "var(--foreground-secondary, #5c626b)");
-      subText.setAttribute("font-size", "9");
-      subText.setAttribute("font-family", "system-ui, sans-serif");
-      subText.setAttribute("class", "pto-problem-marker");
-      subText.style.cursor = "pointer";
-      subText.textContent = m.sub;
-      group.appendChild(subText);
-
-      // 点击整个卡片框 → 联动选中右侧对应诊断问题
+      // 悬浮:复用诊断气泡展示完整「标签 + 说明」
+      if (tip) {
+        var move = function (e) {
+          tip.style.left = Math.min(window.innerWidth - 270, e.clientX + 12) + "px";
+          tip.style.top = (e.clientY + 14) + "px";
+        };
+        badge.addEventListener("mouseenter", function (e) {
+          tip.textContent = m.label + "\n" + m.sub;
+          tip.hidden = false;
+          move(e);
+        });
+        badge.addEventListener("mousemove", move);
+        badge.addEventListener("mouseleave", function () { tip.hidden = true; });
+      }
+      // 点击 → 联动选中右侧对应诊断问题
       if (m.diagnosisKey) {
-        [bg, border, titleText, subText].forEach(function (el) {
-          el.addEventListener("click", function (e) {
-            e.stopPropagation();
-            var card = document.querySelector('.diagnosis-card[data-diagnosis="' + m.diagnosisKey + '"]');
-            if (card) toggleDiagnosisCard(card);
-          });
+        badge.addEventListener("click", function (e) {
+          e.stopPropagation();
+          if (tip) tip.hidden = true;
+          var card = document.querySelector('.diagnosis-card[data-diagnosis="' + m.diagnosisKey + '"]');
+          if (card) toggleDiagnosisCard(card);
         });
       }
     });
   }
 
   function clearDiagnosisFocus() {
-    const stage = $("modelGraphStage");
-    stage?.classList.remove("is-diagnosis-focus");
-    stage?.querySelectorAll(".pto-diagnosis-focus-active").forEach((el) => el.classList.remove("pto-diagnosis-focus-active"));
+    var stage = document.getElementById("graphStage");
+    if (stage) {
+      stage.classList.remove("is-diagnosis-focus");
+      stage.querySelectorAll(".pto-diagnosis-focus-active").forEach(function(el) { el.classList.remove("pto-diagnosis-focus-active"); });
+    }
+    highlightProblemBadge(null);
+  }
+
+  function highlightProblemBadge(caseKey) {
+    var stage = document.getElementById("graphStage");
+    if (!stage) return;
+    stage.querySelectorAll(".pto-problem-badge").forEach(function(b) {
+      var match = b.getAttribute("data-diagnosis-key") === caseKey;
+      b.classList.toggle("is-dimmed", !!caseKey && !match);
+      b.classList.toggle("is-active", !!caseKey && match);
+    });
   }
 
   function hideDiagnosisLocator() {
@@ -1500,7 +1883,7 @@
     clearInfraHeatHighlight();
     var map = INFRA_HEAT_MAP[caseKey];
     if (!map) return;
-    var cells = $("heat").children;
+    var cells = $("heat").querySelectorAll(".twin-heat-cell");
     (map.hotCells || []).forEach(function (idx) {
       if (cells[idx]) cells[idx].classList.add("is-infra-hot");
     });
@@ -1510,28 +1893,96 @@
   }
 
   function clearInfraHeatHighlight() {
-    var cells = $("heat").children;
+    var cells = $("heat").querySelectorAll(".twin-heat-cell");
     for (var i = 0; i < cells.length; i++) {
       cells[i].classList.remove("is-infra-hot", "is-infra-warm");
     }
   }
 
+  // 定位链「infra层」示意图:完全复用外层监控的集群热力图(#heat)。首帧按同款外壳建格,
+  // 之后把 #heat 每个 cell 的 util 着色镜像过来,再叠加本问题的 hot/warm 标记。随训练 tick 刷新。
+  var activeLocateCase = null;
+  function syncLocateInfraHeat(caseKey) {
+    var dst = document.getElementById("locateInfraHeat");
+    if (!dst) return;
+    var src = $("heat");
+    if (!src) return;
+    var srcCells = src.querySelectorAll(".twin-heat-cell");
+    var dstCells = dst.querySelectorAll(".twin-heat-cell");
+    if (dstCells.length !== srcCells.length) {
+      renderHeatShell(dst); // 首次或结构变化:重建与 #heat 同款的 DP/PP/EP 外壳
+      dstCells = dst.querySelectorAll(".twin-heat-cell");
+    }
+    for (var i = 0; i < srcCells.length; i++) {
+      var s = srcCells[i], d = dstCells[i];
+      if (!d) continue;
+      d.className = s.className;            // util-low/mid/high、thermal、straggler 等
+      d.style.cssText = s.style.cssText;    // EP 底色 + util 描边 + PP 分界
+      d.classList.remove("is-infra-hot", "is-infra-warm"); // 标记由下方按本问题重新叠加
+    }
+    var map = INFRA_HEAT_MAP[caseKey];
+    if (!map) return;
+    (map.hotCells || []).forEach(function (idx) { if (dstCells[idx]) dstCells[idx].classList.add("is-infra-hot"); });
+    (map.warmCells || []).forEach(function (idx) { if (dstCells[idx]) dstCells[idx].classList.add("is-infra-warm"); });
+  }
+
   // 点击后进入「聚焦」模式:命中节点/连线保持不透明,整网图其余部分淡出到 50%
   function applyDiagnosisFocus(caseKey) {
-    const info = diagnosisCases[caseKey];
+    var info = diagnosisCases[caseKey];
     clearDiagnosisFocus();
     applyInfraHeatHighlight(caseKey);
-    if (!info) {
-      hideDiagnosisLocator();
-      return;
-    }
-    const stage = $("modelGraphStage");
+    highlightProblemBadge(caseKey);
+    if (!info) { hideDiagnosisLocator(); return; }
+    var stage = document.getElementById("graphStage");
     if (stage) {
       stage.classList.add("is-diagnosis-focus");
-      info.nodeIds.forEach((id) => markNodeActive(stage, id, "pto-diagnosis-focus-active"));
-      info.edges.forEach(([source, target]) => markEdgeActive(stage, source, target, "pto-diagnosis-focus-active"));
+      info.nodeIds.forEach(function(id) { markNodeActive(stage, id, "pto-diagnosis-focus-active"); });
+      info.edges.forEach(function(e) { markEdgeActive(stage, e[0], e[1], "pto-diagnosis-focus-active"); });
+      (info.clusterIds || []).forEach(function(cid) { markClusterActive(stage, cid, "pto-diagnosis-focus-active"); });
+      // 自动平移画布，让问题相关节点居中显示
+      panToProblemNodes(stage, info.nodeIds);
     }
     hideDiagnosisLocator();
+  }
+
+  // 将画布平移到问题命中节点的中心区域
+  function panToProblemNodes(stage, nodeIds) {
+    if (!nodeIds || !nodeIds.length) return;
+    var svg = stage.querySelector("svg");
+    if (!svg) return;
+    // 从 opv-modelviz 的 state 获取 controller（挂载在 svg 上）
+    var ctrl = svg.ptoModelGraphvizController;
+    if (!ctrl) return;
+    var bounds = null;
+    nodeIds.forEach(function(id) {
+      var group = stage.querySelector('[data-node-id="' + id + '"]');
+      if (!group) return;
+      var rect = group.querySelector("rect");
+      if (!rect) return;
+      var x = parseFloat(rect.getAttribute("x") || "0");
+      var y = parseFloat(rect.getAttribute("y") || "0");
+      var w = parseFloat(rect.getAttribute("width") || "0");
+      var h = parseFloat(rect.getAttribute("height") || "0");
+      // 节点坐标在 group 的 transform 中
+      var tx = parseFloat(group.getAttribute("transform")?.match(/translate\(([^,]+)/)?.[1] || "0");
+      var ty = parseFloat(group.getAttribute("transform")?.match(/,\s*([^)]+)/)?.[1] || "0");
+      if (!bounds) { bounds = { x1: tx + x, y1: ty + y, x2: tx + x + w, y2: ty + y + h }; }
+      else {
+        bounds.x1 = Math.min(bounds.x1, tx + x);
+        bounds.y1 = Math.min(bounds.y1, ty + y);
+        bounds.x2 = Math.max(bounds.x2, tx + x + w);
+        bounds.y2 = Math.max(bounds.y2, ty + y + h);
+      }
+    });
+    if (!bounds) return;
+    var cx = (bounds.x1 + bounds.x2) / 2;
+    var cy = (bounds.y1 + bounds.y2) / 2;
+    var viewBox = svg.viewBox.baseVal;
+    var vbW = viewBox.width, vbH = viewBox.height;
+    var stageW = stage.clientWidth, stageH = stage.clientHeight;
+    var zoom = Math.min(stageW / (bounds.x2 - bounds.x1 + 120), stageH / (bounds.y2 - bounds.y1 + 120), 1.8);
+    zoom = Math.max(0.25, Math.min(2.6, zoom));
+    ctrl.setTransform({ zoom: zoom, tx: stageW / 2 - cx * zoom, ty: stageH / 2 - cy * zoom });
   }
 
   // 定位链数据:对应 定位链.md 中三个案例各自实际走过的链路节点
@@ -1555,36 +2006,56 @@
                 </div>
               </div>
               <p class="twin-locate-metric-note">step ${INCIDENT_STEP} loss 跳变至 NaN,grad_norm 跳至 inf。</p>
-              <p class="twin-locate-metric-note">重跑step，锁定 step ${INCIDENT_STEP} 的输入数据（dataloader seed 固定），分别在 1 GPU 和 64 GPU 上重跑该 step，单卡：loss=3.21，grad_norm=11.8，完全正常，而多卡时：loss=NaN，grad_norm=inf</p>
+              <p class="twin-locate-metric-note">重跑step，锁定 step ${INCIDENT_STEP} 的输入数据（dataloader seed 固定），分别在 1 GPU 和 32 GPU 上重跑该 step，单卡：loss=3.21，grad_norm=11.8，完全正常，而多卡时：loss=NaN，grad_norm=inf</p>
               <p class="twin-locate-metric-note">↳ 多卡即出现，需在【通信调度层】的NCCL trace中检查异常位置</p>
             </div>
           ` },
         { label: "分叉判定", sub: "仅多卡异常 · 切入通信分支", branch: true },
         { label: "通信调度层", short: "EP rank 23", sub: "WHY(通信) · EP rank 23 all-to-all 死锁",
-          content: `<div class="opv-swim-embed" data-problem-one-timeline title="NCCL trace: node2 ranks 16-23, rank 23 all-to-all timeout"></div><p style="margin:10px 0 0;font-size:12px;color:var(--foreground-secondary);line-height:1.5">识别 EP rank 23（node2 GPU 7）在 <code>all-to-all</code> 调用处超时（30s timeout）。该调用时间上定位到 layer 38 MoE 的 expert dispatch 阶段。</p><p style="margin:8px 0 0;font-size:12px;color:var(--foreground-secondary);line-height:1.5">↳ 需在【模型层】提取 step ${INCIDENT_STEP} 各层 router 的 token-to-expert 分配统计。</p>` },
-        { label: "模型层", short: "layer 38", sub: "WHERE · layer 38 router 98% token 倾斜到 expert 193",
+          content: `<div class="opv-swim-embed" data-problem-one-timeline title="NCCL trace: node2 ranks 16-23, rank 23 all-to-all timeout"></div><p style="margin:10px 0 0;font-size:12px;color:var(--foreground-secondary);line-height:1.5">识别 EP rank 23（node2 GPU 7）在 <code>all-to-all</code> 调用处超时（30s timeout）。该调用时间上定位到 layer 30 MoE 的 expert dispatch 阶段。</p><p style="margin:8px 0 0;font-size:12px;color:var(--foreground-secondary);line-height:1.5">↳ 需在【模型层】提取 step ${INCIDENT_STEP} 各层 router 的 token-to-expert 分配统计。</p>` },
+        { label: "模型层", short: "layer 30", sub: "WHERE · layer 30 router 98% token 倾斜到 expert 47",
           content: `
-            <div class="twin-layerview" data-layer-view data-lv-expanded="38" data-lv-hot-expert="193"></div>
-            <p class="twin-locate-metric-note">layer 38 的 router 将当前 micro-batch 中 98% 的 token 路由到了 expert 193(恰好位于 EP rank 23),其余 255 个 expert 几乎无 token。</p>
-            <p style="margin:8px 0 0;font-size:12px;color:var(--foreground-secondary);line-height:1.5">对比分析收发数据， layer 38 每个 rank 的 all-to-all send/recv buffer size 对比如下图：</p>
+            <div class="twin-layerview-cta" data-open-layer-view data-lv-expanded="30" data-lv-hot-expert="47" role="button" tabindex="0">
+              <div class="twin-layerview-cta-text">
+                <strong>layer 30 · MoE 层展开图</strong>
+                <span>router→expert 分发与 rank 23 all-to-all 死锁动画 · 点击在整网图区域查看</span>
+              </div>
+              <span class="btn btn-solid btn-sm twin-layerview-cta-btn">查看</span>
+            </div>
+            <p class="twin-locate-metric-note">layer 30 的 router 将当前 micro-batch 中 98% 的 token 路由到了 expert 47(恰好位于 EP rank 23),其余 63 个 expert 几乎无 token。</p>
+            <p style="margin:8px 0 0;font-size:12px;color:var(--foreground-secondary);line-height:1.5">对比分析收发数据， layer 30 每个 rank 的 all-to-all send/recv buffer size 对比如下图：</p>
             <canvas id="bufChart" style="width:100%;height:168px;margin:6px 0 0;display:block;background:var(--surface-2);border-radius:6px"></canvas>
-            <p style="margin:8px 0 0;font-size:12px;color:var(--foreground-secondary);line-height:1.5">进一步证实 rank 23 的 send buffer 为 0（没有 token 被 router 分发到其他 rank 的 expert），而 recv buffer 期望接收 2048 token × 7168 dim × 8 experts 的数据，size 不匹配导致死锁。</p>
+            <p style="margin:8px 0 0;font-size:12px;color:var(--foreground-secondary);line-height:1.5">进一步证实 rank 23 的 send buffer 为 0（没有 token 被 router 分发到其他 rank 的 expert），而 recv buffer 期望接收 2048 token × 4608 dim × 8 experts 的数据，size 不匹配导致死锁。</p>
             <p class="twin-locate-metric-note">↳ 需在【infra层】识别对训练集群的影响。</p>
           ` },
-        { label: "infra层", short: "PP stage 4", sub: "CONTEXT · node2 GPU7 / EP rank 23 / PP stage 4",
-          content: '<div class="twin-infra-heat-block"><canvas id="infraHeatCanvas" style="width:100%;height:560px;display:block;background:var(--surface-2);border-radius:6px;margin-bottom:8px"></canvas><p style="margin:4px 0;font-size:11px;color:var(--foreground-secondary);line-height:1.5">↑ 全局 2048 GPU（32 列 GPU × 64 行 node），左侧 PP stage 行分组色带（S0~S7，每 8 node 对应一层 group）↓</p><p style="margin:4px 0;font-size:11px;color:var(--foreground-secondary);line-height:1.5">n2（PP stage 4, layers 31~38）GPU 7 (EP rank 23) <span style="color:#dc2626;font-weight:700">all-to-all 死锁</span>，GPU 0~6 <span style="color:#ea580c;font-weight:600">空等</span></p><p style="margin:4px 0;font-size:11px;color:var(--foreground-secondary);line-height:1.5">PP stage 4 (layers 31~38)，EP=64 跨 64 node，异常聚集在单个 EP rank → 局部路由倾斜</p></div>' },
-        { label: "超参/代码层", short: "3 处代码改动", sub: "FIX · n_group 8→16 + z-loss + 超时延长",
+        { label: "infra层", short: "EP rank 23", sub: "CONTEXT · EP rank 23 / PP stage 3 / DP0",
+          // infra 示意图完全复用外层「训练监控 · infra」的集群热力图(#heat 的 DP4×PP8×EP64 网格),
+          // 由 syncLocateInfraHeat() 把当前 util 着色镜像到 #locateInfraHeat,再叠加本问题的 hot/warm 标记。
+          content: `
+            <div class="twin-infra-heat-block">
+              <div id="locateInfraHeat" class="twin-heat locate-infra-heat"></div>
+              <div class="twin-legend" style="margin-top:8px;font-size:11px">
+                <span><i class="twin-swatch twin-swatch-util-low"></i>&lt;70% util</span>
+                <span><i class="twin-swatch twin-swatch-util-mid"></i>70-92% util</span>
+                <span><i class="twin-swatch twin-swatch-util-high"></i>&gt;92% util</span>
+                <span style="display:inline-flex;align-items:center;gap:5px"><i style="width:10px;height:10px;border-radius:2px;outline:2px solid #dc2626;outline-offset:1px"></i>EP rank 23 死锁</span>
+                <span style="display:inline-flex;align-items:center;gap:5px"><i style="width:10px;height:10px;border-radius:2px;outline:2px solid #ea580c;outline-offset:1px"></i>EP 16–22 空等</span>
+              </div>
+              <p style="margin:8px 0 0;font-size:11px;color:var(--foreground-secondary);line-height:1.5"><span style="color:#dc2626;font-weight:700">EP rank 23</span> 在 all-to-all 死锁,<span style="color:#ea580c;font-weight:600">EP rank 16–22</span> 空等超时;异常聚集在单个 EP rank → 局部路由倾斜。</p>
+            </div>
+          ` },
+        { label: "超参/代码层", short: "3 处代码改动", sub: "FIX · MoGE group 8→16 + z-loss + 超时延长",
           content: `
             <p class="twin-locate-metric-note" style="margin:0 0 12px">综合以上各层定位诊断，代码修改建议如下：</p>
             <div style="display:flex;flex-direction:column;gap:12px;">
               <div style="border:1px solid var(--border-subtle);border-radius:8px;overflow:hidden">
                 <div style="padding:8px 12px;background:var(--surface-2);font-size:12px;font-weight:600;color:var(--foreground)">① model_config.json</div>
                 <div style="font-family:monospace;font-size:11px;line-height:1.7;padding:10px 12px;background:var(--surface-1);overflow-x:auto">
-                  <div style="color:var(--foreground-muted)">&nbsp;&nbsp;"num_experts": 256,</div>
-                  <div style="color:var(--foreground-muted)">&nbsp;&nbsp;"top_k": 8,</div>
+                  <div style="color:var(--foreground-muted)">&nbsp;&nbsp;"num_experts": 64,</div>
+                  <div style="color:var(--foreground-muted)">&nbsp;&nbsp;"moge_group_topk": 1,</div>
                   <div style="background:rgba(220,38,38,.1);color:#dc2626">− &nbsp;"n_group": <strong>8</strong>,</div>
-                  <div style="background:rgba(22,163,74,.1);color:#16a34a">+ &nbsp;"n_group": <strong>16</strong>,&nbsp;&nbsp;<span style="color:var(--foreground-muted);font-family:system-ui"># 分散 expert 选择范围，8→16</span></div>
-                  <div style="color:var(--foreground-muted)">&nbsp;&nbsp;"topk_group": 4,</div>
+                  <div style="background:rgba(22,163,74,.1);color:#16a34a">+ &nbsp;"n_group": <strong>16</strong>,&nbsp;&nbsp;<span style="color:var(--foreground-muted);font-family:system-ui"># MoGE 分组 8→16，每组 expert 8→4，分散热点</span></div>
+                  <div style="color:var(--foreground-muted)">&nbsp;&nbsp;"experts_per_group": 4,</div>
                 </div>
               </div>
               <div style="border:1px solid var(--border-subtle);border-radius:8px;overflow:hidden">
@@ -1606,19 +2077,6 @@
       ],
       // 单/多卡均异常时会绕过「通信调度层」直接从迭代层进入模型层,用弧形虚线标出这条未被走到的旁路
       bypass: [{ from: 0, to: 2 }],
-    },
-    "q-lora-fp8": {
-      title: "定位链 · q_lora FP8 溢出导致 grad_norm 缓慢发散",
-      meta: "路径:迭代层 → 单/多卡均异常 → 模型层 → 算子层 → 张量层 → infra层 → 超参/代码层",
-      steps: [
-        { label: "迭代层", short: "Step 8200~8600", sub: "WHEN · step 8200~8600 grad_norm 缓慢发散" },
-        { label: "分叉判定", sub: "单/多卡均异常 · 沿计算主干", branch: true },
-        { label: "模型层", short: "layer 42", sub: "WHERE · layer 42 MoE grad_norm 显著偏高" },
-        { label: "算子层", short: "q_lora", sub: "WHAT · q_lora 误差量级跳变" },
-        { label: "张量层", short: "dim 6400~7168", sub: "WHICH · hidden dim 尾部 768 维超出 FP8 范围" },
-        { label: "infra层", short: "全 64 rank", sub: "CONTEXT · 跨所有 rank 复现,全局精度问题" },
-        { label: "超参/代码层", short: "per-tensor scaling", sub: "FIX · per-tensor dynamic scaling" },
-      ],
     },
     nvlink: {
       title: "定位链 · NVLINK 链路掉线导致 MFU 骤降",
@@ -1658,9 +2116,179 @@
       ],
       bypass: [{ from: 0, to: 2 }],
     },
+    "low-precision-training": {
+      title: "定位链 · 低精训练 loss 尾部不收敛，量化误差累积导致梯度信号淹没",
+      meta: "路径:迭代层 → 单/多卡均异常 → 张量数值分析 → 误差传递路径 → infra层 → 超参/代码层",
+      steps: [
+        { label: "迭代层", short: "Step 25000 分叉", sub: "WHEN · step 25000 HiF8 与 BF16 基线开始分叉，loss 下降骤停",
+          showSmoothing: true,
+          content: `
+            <div class="twin-locate-metric-block">
+              <div class="twin-locate-metric-charts">
+                <div class="twin-locate-metric-card">
+                  <div class="twin-locate-metric-card__head">loss — HiF8 vs BF16 基线</div>
+                  <div class="twin-locate-metric-card__chart" data-locate-chart="case6-loss"></div>
+                </div>
+                <div class="twin-locate-metric-card">
+                  <div class="twin-locate-metric-card__head">grad_norm</div>
+                  <div class="twin-locate-metric-card__chart" data-locate-chart="case6-gradnorm"></div>
+                </div>
+              </div>
+              <p class="twin-locate-metric-note">step 0~25000：HiF8 与 BF16 基线紧密跟随，loss 8.5→2.5 平稳下降，grad_norm 8~15 正常波动。<strong>step 25000 起两条 loss 曲线分叉</strong>——BF16 继续下降至 ~1.8，HiF8 停滞在 2.1 附近，step 31000 后微幅反弹（2.08→2.15），grad_norm 从 ~10 持续衰减至 0.3（step 35000）。</p>
+              <p class="twin-locate-metric-note">↳ HiF8 与 BF16 的分叉 + 梯度消失 → FP8 混合精度引入的渐进式数值退化。嫌疑范围：<strong>25000~35000</strong></p>
+            </div>
+          ` },
+        { label: "分叉判定", sub: "单/多卡均异常 · 沿计算主干", branch: true },
+        { label: "张量数值分析", short: "分布曲线 + 宏观指标", sub: "WHICH · 直方图 + 峰度/离群率/p99/量化SNR/KL散度 + 风险矩阵",
+          content: `
+            <p class="twin-locate-metric-note">锁定 layer 47 为异常层后，dump step 32000 时该层各关键张量，绘制数值分布直方图与 BF16 baseline 叠图对比：</p>
+            <div class="locate-dist-grid">
+              <div class="locate-dist-cell"><h4>q_nope 输入（激活值）</h4><canvas id="case6DistQnope"></canvas><div class="note">BF16：N(0.12, 1.45)。FP8：严重右偏 skewness=+1.8，<span style="color:#dc2626">6.8% clip@448</span></div></div>
+              <div class="locate-dist-cell"><h4>core_attention 输出</h4><canvas id="case6DistAttn"></canvas><div class="note">BF16：多模态 方差 0.85。FP8：<span style="color:#dc2626">主峰塌缩至[-0.3,0.3]</span>，方差→0.21</div></div>
+              <div class="locate-dist-cell"><h4>gate_proj 输出（FFN 中间激活）</h4><canvas id="case6DistGate"></canvas><div class="note">BF16：[-12,15] 自然长尾。FP8：<span style="color:#dc2626">双侧 ±448 截断，12.4% clip</span></div></div>
+            </div>
+            <p class="twin-locate-metric-note" style="margin:6px 0"><strong>三张分布图一致揭示</strong>：FP8 E4M3 动态范围（max=448）无法容纳深层激活值自然长尾。三阶段退化：激活值右偏 → attention 信息坍缩 → FFN 截断饱和。</p>
+
+            <p class="twin-locate-metric-note" style="margin:14px 0 6px;font-weight:600;color:var(--foreground)">宏观统计指标（step 32000 vs BF16 baseline）</p>
+            <div style="overflow-x:auto;margin:6px 0">
+              <table style="width:100%;border-collapse:collapse;font-size:11px;line-height:1.5">
+                <tr style="background:var(--surface-2)"><th style="padding:4px 8px;border:1px solid var(--border-subtle);text-align:left">张量</th><th style="padding:4px 8px;border:1px solid var(--border-subtle)">指标</th><th style="padding:4px 8px;border:1px solid var(--border-subtle);color:#dc2626">FP8</th><th style="padding:4px 8px;border:1px solid var(--border-subtle)">BF16</th><th style="padding:4px 8px;border:1px solid var(--border-subtle)">诊断含义</th></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle)" rowspan="7">q_nope 输入</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">Mean</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#dc2626;font-weight:600">+2.41</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">+0.12</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">均值右偏 → 向 FP8 正上限漂移</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle)">Std</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#dc2626;font-weight:600">3.82</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">1.45</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">标准差扩大 2.6×</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle)">Skewness</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#dc2626;font-weight:600">+1.83</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">+0.08</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">严重右偏</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle)"><strong>Kurtosis</strong></td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#dc2626;font-weight:700">+7.42</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">-0.12</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">高峰度 = 重尾+尖峰</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle)">Outlier Ratio (>3σ)</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#dc2626;font-weight:600">8.7%</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">0.9%</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">离群率 ~10× baseline</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle)">p99</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#ea580c;font-weight:600">378.4</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">4.12</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">p99 逼近 FP8 max=448</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle)">p99.9</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#dc2626;font-weight:700">447.8 (clip)</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">4.89</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">最强 0.1% 激活完全丢失</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle)" rowspan="2">core_attn 输出</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">Std</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#dc2626;font-weight:600">0.21</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">0.85</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">方差 1/4 — 区分度丧失</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle)">KL Divergence</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#dc2626;font-weight:700">2.31 bits</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">0</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">分布根本性变化</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle)" rowspan="2">gate_proj 输出</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">Quantization SNR</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#dc2626;font-weight:700">6.8 dB</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">42.1 dB</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">信号被噪声严重污染</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle)">Kurtosis</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#dc2626;font-weight:700">+15.3</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">+0.45</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">极端 — "尖峰+截断双尾"</td></tr>
+              </table>
+            </div>
+            <p class="twin-locate-metric-note"><strong style="color:var(--foreground)">🔑 峰度（Kurtosis）最关键</strong>：-0.12→+15.3，"尖峰+截断双尾"是低精训练退化的<strong>典型数值指纹</strong>。</p>
+
+            <p class="twin-locate-metric-note" style="margin:14px 0 6px;font-weight:600;color:var(--foreground)">量化风险评估矩阵</p>
+            <div style="display:grid;grid-template-columns:130px repeat(3,1fr) 100px;margin:6px 0;font-size:11px;border:1px solid var(--border-subtle);border-radius:8px;overflow:hidden">
+              <div style="padding:5px 8px;background:var(--surface-2);font-weight:600;border-bottom:1px solid var(--border-subtle)">风险维度</div><div style="padding:5px 8px;background:var(--surface-2);font-weight:600;border-bottom:1px solid var(--border-subtle)">q_nope</div><div style="padding:5px 8px;background:var(--surface-2);font-weight:600;border-bottom:1px solid var(--border-subtle)">core_attn</div><div style="padding:5px 8px;background:var(--surface-2);font-weight:600;border-bottom:1px solid var(--border-subtle)">gate_proj</div><div style="padding:5px 8px;background:var(--surface-2);font-weight:600;border-bottom:1px solid var(--border-subtle)">综合</div>
+              <div style="padding:5px 8px;border-bottom:1px solid var(--border-subtle)">动态范围适配</div><div style="padding:5px 8px;border-bottom:1px solid var(--border-subtle)"><span style="display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;background:#fff7ed;color:#ea580c">⚠️ 临界</span></div><div style="padding:5px 8px;border-bottom:1px solid var(--border-subtle)"><span style="display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;background:#fef2f2;color:#dc2626">🔴 危险</span></div><div style="padding:5px 8px;border-bottom:1px solid var(--border-subtle)"><span style="display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;background:#fef2f2;color:#dc2626">🔴 危险</span></div><div style="padding:5px 8px;border-bottom:1px solid var(--border-subtle)"><span style="display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;background:#fef2f2;color:#dc2626">🔴 高风险</span></div>
+              <div style="padding:5px 8px;border-bottom:1px solid var(--border-subtle)">QSNR</div><div style="padding:5px 8px;border-bottom:1px solid var(--border-subtle)">18.3 dB</div><div style="padding:5px 8px;border-bottom:1px solid var(--border-subtle);color:#dc2626;font-weight:600">11.5 dB</div><div style="padding:5px 8px;border-bottom:1px solid var(--border-subtle);color:#dc2626;font-weight:700">6.8 dB</div><div style="padding:5px 8px;border-bottom:1px solid var(--border-subtle)"><span style="display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;background:#fef2f2;color:#dc2626">🔴 <10dB 不可用</span></div>
+              <div style="padding:5px 8px;border-bottom:1px solid var(--border-subtle)">KL 散度</div><div style="padding:5px 8px;border-bottom:1px solid var(--border-subtle)">0.87 bits</div><div style="padding:5px 8px;border-bottom:1px solid var(--border-subtle);color:#dc2626;font-weight:600">2.31 bits</div><div style="padding:5px 8px;border-bottom:1px solid var(--border-subtle);color:#dc2626;font-weight:700">3.45 bits</div><div style="padding:5px 8px;border-bottom:1px solid var(--border-subtle)"><span style="display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;background:#fef2f2;color:#dc2626">🔴 >1 bit 显著偏移</span></div>
+              <div style="padding:5px 8px">梯度可恢复性</div><div style="padding:5px 8px"><span style="display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;background:#fefce8;color:#ca8a04">🟡 部分可恢复</span></div><div style="padding:5px 8px"><span style="display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;background:#fef2f2;color:#dc2626">🔴 不可恢复</span></div><div style="padding:5px 8px"><span style="display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;background:#fef2f2;color:#dc2626">🔴 不可恢复</span></div><div style="padding:5px 8px"><span style="display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;background:#fef2f2;color:#dc2626">🔴 需结构性修改</span></div>
+            </div>
+
+            <p class="twin-locate-metric-note" style="margin:14px 0 6px;font-weight:600;color:var(--foreground)">算子误差定位</p>
+            <div class="locate-canvas-card">
+              <div class="locate-canvas-card__head"><span>Layer 47 算子误差瀑布（log₁₀ MSE vs BF16 baseline）</span></div>
+              <div class="locate-canvas-card__body"><canvas id="case6OpWaterfallCanvas"></canvas></div>
+            </div>
+            <div style="overflow-x:auto;margin:6px 0">
+              <table style="width:100%;border-collapse:collapse;font-size:11px;line-height:1.5">
+                <tr style="background:var(--surface-2)"><th style="padding:4px 8px;border:1px solid var(--border-subtle);text-align:left">算子</th><th style="padding:4px 8px;border:1px solid var(--border-subtle)">MSE vs BF16</th><th style="padding:4px 8px;border:1px solid var(--border-subtle)">变化</th><th style="padding:4px 8px;border:1px solid var(--border-subtle)">角色</th></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle)">input_layernorm</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">3e-8</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">—</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">🟢 正常</td></tr>
+                <tr style="background:#fef2f2"><td style="padding:4px 8px;border:1px solid var(--border-subtle);font-weight:700">q_nope</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#dc2626;font-weight:700">2e-7 → 4.1e-3</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#dc2626">⬆ 20000×</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#dc2626">🔴 首害</td></tr>
+                <tr style="background:#fef2f2"><td style="padding:4px 8px;border:1px solid var(--border-subtle);font-weight:700">core_attention</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#dc2626;font-weight:700">4.1e-3 → 1.6e-1</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#dc2626">⬆ 40×</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#dc2626">🔴 放大器(softmax)</td></tr>
+                <tr style="background:#fef2f2"><td style="padding:4px 8px;border:1px solid var(--border-subtle);font-weight:700">gate_proj</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#dc2626;font-weight:700">1.8e-1 → 7.3e-1</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#dc2626">⬆ 4×</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#dc2626">放大器(FP8 cast)</td></tr>
+              </table>
+            </div>
+            <p style="margin:8px 0 0;font-size:12px;color:var(--foreground-secondary);line-height:1.5">↳ 首害算子 <code>q_nope</code>，误差放大链：q_nope → softmax（信息抹平）→ gate_proj（截断饱和）。需在【误差传递路径】逐层追查偏差起点。</p>
+          ` },
+        { label: "误差传递路径", short: "L47 拐点 460×", sub: "逐层对比 BF16 基线，发现偏差起点 layer 47",
+          content: `
+            <p class="twin-locate-metric-note">以 BF16 全精度训练为 baseline，沿 forward 计算图逐层对比 FP8 训练的激活输出，绘制<strong>误差累积曲线</strong>（横轴 layer 1→61，纵轴 log₁₀ MSE）：</p>
+            <div class="locate-canvas-card">
+              <div class="locate-canvas-card__head"><span>61 层误差累积曲线（log₁₀ MSE vs BF16 baseline，step 32000）</span></div>
+              <div class="locate-canvas-card__body"><canvas id="case6MseCurveCanvas"></canvas></div>
+            </div>
+            <p class="twin-locate-metric-note" style="margin:4px 0">layer 1~35：MSE 1e-7~1e-6 平稳 → layer 36~46：缓慢爬升至 5e-4 → <strong style="color:#dc2626">layer 47：跳跃至 2.3e-1（460×）</strong> → layer 48~55：0.2~0.8 高位震荡 → layer 56~61：飙升至 3.5</p>
+
+            <p class="twin-locate-metric-note" style="margin:12px 0 6px;font-weight:600;color:var(--foreground)">逐层对比详表（偏差起点附近）</p>
+            <div style="overflow-x:auto;margin:6px 0">
+              <table style="width:100%;border-collapse:collapse;font-size:11px;line-height:1.5">
+                <tr style="background:var(--surface-2)"><th style="padding:4px 8px;border:1px solid var(--border-subtle)">Layer</th><th style="padding:4px 8px;border:1px solid var(--border-subtle)">Attn MSE</th><th style="padding:4px 8px;border:1px solid var(--border-subtle)">FFN MSE</th><th style="padding:4px 8px;border:1px solid var(--border-subtle)">Grad MSE</th><th style="padding:4px 8px;border:1px solid var(--border-subtle)">状态</th></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle)">45</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">8.2e-7</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">1.1e-6</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">2.3e-6</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">🟢</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle)">46</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">3.5e-6</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">6.8e-6</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">1.2e-5</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">🟢 略有抬升</td></tr>
+                <tr style="background:#fef2f2"><td style="padding:4px 8px;border:1px solid var(--border-subtle);font-weight:700">47</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#dc2626;font-weight:700">2.3e-1</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#dc2626;font-weight:700">7.3e-1</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#dc2626;font-weight:700">1.8e+1</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#dc2626">🔴 偏差起点</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle)">48</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">0.41</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">0.55</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">8.7e+0</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">🔴 向下游传播</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle)">50</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">0.45</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">0.78</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">9.1e+0</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">🔴 误差放大</td></tr>
+              </table>
+            </div>
+            <p class="twin-locate-metric-note" style="margin-top:8px"><strong style="color:var(--foreground)">误差传递因果链</strong>：layer 1~46 FP8 截断累积 → L47 RMSNorm 方差放大 → q_nope 6.8% clip@448 → core_attn softmax 信息抹平 → o_proj 噪声>50% → gate_proj 双侧 12% clip → L48~61 残差传播 → 全局梯度消失 → loss 反弹</p>
+            <p style="margin:8px 0 0;font-size:12px;color:var(--foreground-secondary);line-height:1.5">↳ L47 的 Attn 和 FFN 在同一 step 同时爆炸 → 非特定算子 bug，而是该层激活值整体数值分布已超出 FP8 可表示范围。需在【infra层】检查并行策略和 scale 状态。</p>
+          ` },
+        { label: "infra层", short: "全 64 rank", sub: "CONTEXT · 跨所有 rank 复现，FP8 scale 0.62→0.18，有效 bit 4.5→2.8",
+          content: `
+            <p class="twin-locate-metric-note">layer 47 属于 PP stage 6（layers 47~53），在所有 64 个 EP rank 上均观测到相同分布偏移。进一步检查 FP8 量化参数：layer 47 的 per-tensor scale 从 step 28000 的 <strong>0.62</strong> 持续下降至 step 32000 的 <strong style="color:#dc2626">0.18</strong>。</p>
+            <div class="locate-canvas-card">
+              <div class="locate-canvas-card__head"><span>Layer 47 · FP8 per-tensor scale 衰减曲线（step 27000→32000）</span></div>
+              <div class="locate-canvas-card__body"><canvas id="case6ScaleDecayCanvas"></canvas></div>
+            </div>
+            <p class="twin-locate-metric-note" style="margin:8px 0">scale 衰减使有效量化精度从 <strong>~4.5 bit 退化至 ~2.8 bit</strong>——scale 越小，量化 bin 越粗，舍入误差越大，形成"截断→scale 衰减→更粗量化→更多截断"正反馈。</p>
+            <p style="margin:8px 0 0;font-size:12px;color:var(--foreground-secondary);line-height:1.5">↳ 全局问题，非特定硬件故障。FP8 per-tensor scaling 的 scale 衰减是量化误差累积的放大器。需在【超参/代码层】做结构性修改。</p>
+          ` },
+        { label: "超参/代码层", short: "4 处代码改动", sub: "FIX · 混合量化 + scale 保护 + 深层 BF16 softmax + grad scale 预热",
+          content: `
+            <p class="twin-locate-metric-note" style="margin:0 0 10px"><strong style="color:var(--foreground)">诊断总结</strong>：根因是 FP8 E4M3 per-tensor 量化在深层激活值上的动态范围不足。深层激活值自然长尾 + 静态 per-tensor FP8 的系统性缺陷，量化误差经 softmax（信息抹平）→ FFN（非线性饱和）形成正反馈。</p>
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <div style="border:1px solid var(--border-subtle);border-radius:8px;overflow:hidden">
+                <div style="padding:7px 12px;background:var(--surface-2);font-size:12px;font-weight:600">① model_config.json — per-token + per-channel 混合量化</div>
+                <div style="font-family:monospace;font-size:11px;line-height:1.7;padding:8px 12px;background:var(--surface-1);overflow-x:auto">
+                  <div style="color:var(--foreground-muted)">&nbsp;&nbsp;"fp8_quant_mode": "per_tensor",</div>
+                  <div style="background:rgba(220,38,38,.1);color:#dc2626">− &nbsp;"fp8_quant_mode": <strong>"per_tensor"</strong>,</div>
+                  <div style="background:rgba(22,163,74,.1);color:#16a34a">+ &nbsp;"fp8_quant_mode": <strong>"hybrid"</strong>,</div>
+                  <div style="background:rgba(22,163,74,.1);color:#16a34a">+ &nbsp;"fp8_attn_quant": "per_token",&nbsp;&nbsp;<span style="color:var(--foreground-muted)"># q/k/v 每个 token 独立 scale</span></div>
+                  <div style="background:rgba(22,163,74,.1);color:#16a34a">+ &nbsp;"fp8_ffn_quant": "per_channel",&nbsp;<span style="color:var(--foreground-muted)"># FFN 每个 channel 独立 scale</span></div>
+                  <div style="background:rgba(22,163,74,.1);color:#16a34a">+ &nbsp;"fp8_hybrid_threshold_layer": <strong>45</strong>,&nbsp;<span style="color:var(--foreground-muted)"># L45+ 深层启用</span></div>
+                </div>
+              </div>
+              <div style="border:1px solid var(--border-subtle);border-radius:8px;overflow:hidden">
+                <div style="padding:7px 12px;background:var(--surface-2);font-size:12px;font-weight:600">② fp8_cast.py — 动态 scale 上界保护</div>
+                <div style="font-family:monospace;font-size:11px;line-height:1.7;padding:8px 12px;background:var(--surface-1);overflow-x:auto">
+                  <div style="background:rgba(220,38,38,.1);color:#dc2626">− &nbsp;scale = <strong>compute_scale(tensor)</strong></div>
+                  <div style="background:rgba(22,163,74,.1);color:#16a34a">+ &nbsp;scale = <strong>max(compute_scale(tensor), 512.0 / 448.0)</strong>&nbsp;<span style="color:var(--foreground-muted)"># scale ≥ ~1.14，有效 ≥ 4.2 bit</span></div>
+                </div>
+              </div>
+              <div style="border:1px solid var(--border-subtle);border-radius:8px;overflow:hidden">
+                <div style="padding:7px 12px;background:var(--surface-2);font-size:12px;font-weight:600">③ attention.py — 深层启用 BF16 softmax</div>
+                <div style="font-family:monospace;font-size:11px;line-height:1.7;padding:8px 12px;background:var(--surface-1);overflow-x:auto">
+                  <div style="background:rgba(220,38,38,.1);color:#dc2626">− &nbsp;attn_output = softmax(scores, dtype=<strong>torch.float8_e4m3fn</strong>)</div>
+                  <div style="background:rgba(22,163,74,.1);color:#16a34a">+ &nbsp;dtype = torch.float8_e4m3fn <strong>if layer_idx < 45 else torch.bfloat16</strong></div>
+                  <div style="background:rgba(22,163,74,.1);color:#16a34a">+ &nbsp;attn_output = <strong>softmax(scores, dtype=dtype)</strong></div>
+                </div>
+              </div>
+              <div style="border:1px solid var(--border-subtle);border-radius:8px;overflow:hidden">
+                <div style="padding:7px 12px;background:var(--surface-2);font-size:12px;font-weight:600">④ training_args.yaml — 梯度 scale 预热</div>
+                <div style="font-family:monospace;font-size:11px;line-height:1.7;padding:8px 12px;background:var(--surface-1);overflow-x:auto">
+                  <div style="background:rgba(22,163,74,.1);color:#16a34a">+ &nbsp;fp8_grad_scale_warmup_steps: <strong>5000</strong></div>
+                  <div style="background:rgba(22,163,74,.1);color:#16a34a">+ &nbsp;fp8_grad_scale_max: <strong>4.0</strong>&nbsp;&nbsp;<span style="color:var(--foreground-muted)"># warmup 后 grad scale 上限 4×</span></div>
+                  <div style="background:rgba(22,163,74,.1);color:#16a34a">+ &nbsp;fp8_grad_scale_interval: <strong>1000</strong>&nbsp;<span style="color:var(--foreground-muted)"># 每 1000 step 递增</span></div>
+                </div>
+              </div>
+            </div>
+            <p class="twin-locate-metric-note" style="margin:12px 0 6px;font-weight:600;color:var(--foreground)">验证结果（方案①+③ 从 step 28000 续跑）</p>
+            <div style="overflow-x:auto;margin:6px 0">
+              <table style="width:100%;border-collapse:collapse;font-size:11px;line-height:1.5">
+                <tr style="background:var(--surface-2)"><th style="padding:4px 8px;border:1px solid var(--border-subtle)">指标</th><th style="padding:4px 8px;border:1px solid var(--border-subtle);color:#dc2626">修改前</th><th style="padding:4px 8px;border:1px solid var(--border-subtle);color:#16a34a">修改后</th><th style="padding:4px 8px;border:1px solid var(--border-subtle)">BF16</th></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle)">outlier ratio</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#dc2626;font-weight:600">8.7%</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#16a34a;font-weight:600">0.6%</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">0.9%</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle)">KL 散度</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#dc2626;font-weight:600">2.31 bits</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#16a34a;font-weight:600">0.18 bits</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">0</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle)">量化 SNR</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#dc2626;font-weight:600">6.8 dB</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#16a34a;font-weight:600">28.3 dB</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">42.1 dB</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle)">最小 scale</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#dc2626;font-weight:600">0.18</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#16a34a;font-weight:600">0.55</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">—</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle)">有效 bit</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#dc2626;font-weight:600">~2.8</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#16a34a;font-weight:600">≥ 4.2</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">—</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle)">loss (step 40000)</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#dc2626;font-weight:600">2.15</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#16a34a;font-weight:600">1.82</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">1.80</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle)">grad_norm</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#dc2626;font-weight:600">0.3</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#16a34a;font-weight:600">8~14</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">8~12</td></tr>
+              </table>
+            </div>
+          ` },
+      ],
+      bypass: [{ from: 0, to: 2 }],
+    },
   };
 
+  // 问题七 · HiF8 精度诊断工作台:定位链结构由自包含模块 hif8-case7.js 提供(五节对应工作台五页签)
+  if (window.PtoHif8Case7) { locateChains["hif8-precision"] = window.PtoHif8Case7.chain(); locateChains["qproj-overflow"] = locateChains["hif8-precision"]; }
+
   let locateChainObserver = null;
+  let _locateTrackArgs = null; // 保存 drawLocateTrackLines 参数，resize 时重绘
 
   // 选中态底色是独立图层(z-index 压在连线下方),节点切换时把它挪到对应节点的位置/尺寸上
   function positionLocateHighlight() {
@@ -1717,6 +2345,7 @@
   // 量出每个圆点的真实坐标后用 SVG 画出连线:保证逐点相连、不断线不错位;
   // 同时按 chain.bypass 画出跳过某个节点的旁路虚线弧(例如绕过「通信调度层」直达「模型层」)
   function drawLocateTrackLines(top, nodeCount, branchBeforeIndex, bypassList) {
+    _locateTrackArgs = { top, nodeCount, branchBeforeIndex, bypassList };
     top.querySelector(".twin-locate-track-svg")?.remove();
     if (nodeCount < 2) return;
     const svgNS = "http://www.w3.org/2000/svg";
@@ -1884,7 +2513,7 @@
             if (entry.isIntersecting) setActiveLocateNode(entry.target.id);
           });
         },
-        { root, rootMargin: "-96px 0px -70% 0px", threshold: 0 }
+        { root, rootMargin: "-76px 0px -70% 0px", threshold: 0 }
       );
       sections.forEach((section) => locateChainObserver.observe(section));
     }
@@ -1940,9 +2569,9 @@
     if (locateMetricCards.length) requestAnimationFrame(() => syncLocateMetricCharts(true));
   }
 
-  // 体现 定位链.md L128:对比各 EP rank 的 all-to-all send/recv buffer size。
-  // 63 个正常 rank send≈recv≈14.7MB(收发对称);rank 23 send=0(本地 token 全留在本卡 expert 193,
-  // 没有 token 发往其它 rank)、recv=112MB(2048 token × 7168 dim × 8 expert,FP8 1B/元素)——
+  // 体现 Pangu 72B 定位链案例一:对比各 EP rank 的 all-to-all send/recv buffer size。
+  // 31 个正常 rank send≈recv≈19MB(收发对称);rank 23 send=0(本地 token 全留在本卡 expert 47,
+  // 没有 token 发往其它 rank)、recv=151MB(2048 token × 4608 dim × 8 expert,BF16 2B/元素)——
   // 收发严重不对称 → all-to-all 期望的对称尺寸对不上 → 死锁。
   function drawBufferChart() {
     const canvas = document.getElementById("bufChart");
@@ -1963,21 +2592,21 @@
     const ctx = canvas.getContext("2d");
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const W = cssW;
-    const n = 64, hot = 23;
+    const n = 32, hot = 23;
     const padL = 30, padR = 12, padTop = 40, padBot = 16;
     const plotW = W - padL - padR;
     const barW = plotW / n;
     const baseY = H - padBot;
     const plotH = baseY - padTop;
-    const maxVal = 120;                         // MB 满刻度
-    const normal = 14.7, hotSend = 0, hotRecv = 112; // 2048×7168×8 ≈ 112MB (FP8)
+    const maxVal = 160;                         // MB 满刻度
+    const normal = 19, hotSend = 0, hotRecv = 151; // 2048×4608×8 ≈ 151MB (BF16)
     const yOf = (v) => baseY - (v / maxVal) * plotH;
 
     ctx.clearRect(0, 0, W, H);
 
     // 标题
     ctx.fillStyle = cSec; ctx.font = "600 11px system-ui"; ctx.textAlign = "left";
-    ctx.fillText("layer 38 · 各 EP rank 的 all-to-all send/recv buffer (MB)", padL, 14);
+    ctx.fillText("layer 30 · 各 EP rank 的 all-to-all send/recv buffer (MB)", padL, 14);
 
     // 图例
     const lgX = padL, lgY = 28;
@@ -1988,14 +2617,14 @@
 
     // y 轴刻度 + 网格
     ctx.textAlign = "right"; ctx.font = "8px monospace";
-    [0, 30, 60, 90, 120].forEach((v) => {
+    [0, 40, 80, 120, 160].forEach((v) => {
       const y = yOf(v);
       ctx.strokeStyle = cGrid; ctx.lineWidth = 0.5;
       ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
       ctx.fillStyle = cMuted; ctx.fillText(String(v), padL - 4, y + 3);
     });
 
-    // 均衡参考线(~14.7MB):正常 rank 的 send/recv 都贴着它
+    // 均衡参考线(~19MB):正常 rank 的 send/recv 都贴着它
     const refY = yOf(normal);
     ctx.strokeStyle = cRecv; ctx.setLineDash([4, 3]); ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(padL, refY); ctx.lineTo(W - padR, refY); ctx.stroke();
@@ -2040,7 +2669,7 @@
     ctx.fillText("rank 23 send/recv 失配 → 死锁", boxX + 8, boxY + 15);
     ctx.fillStyle = cSec; ctx.font = "9px system-ui";
     ctx.fillText("send = 0(无 token 发往其它 rank)", boxX + 8, boxY + 30);
-    ctx.fillText("recv = 112MB = 2048×7168×8 (FP8)", boxX + 8, boxY + 44);
+    ctx.fillText("recv = 151MB = 2048×4608×8 (BF16)", boxX + 8, boxY + 44);
     // 引线:注释框 → recv 塔顶
     ctx.strokeStyle = cHot; ctx.lineWidth = 0.8; ctx.setLineDash([3, 2]);
     ctx.beginPath(); ctx.moveTo(boxX, boxY + boxH / 2); ctx.lineTo(rx + barW / 2, yOf(hotRecv) + 6); ctx.stroke();
@@ -2054,7 +2683,7 @@
       node: 2, hotGPUs: [7], warmGPUs: [0, 1, 2, 3, 4, 5, 6],
       label: "node2 放大 · 32 GPU 内部",
       hotLabel: "GPU 7 (EP rank 23) 死锁", warmLabel: "GPU 0~6 空等",
-      ppStage: 4, ppLabel: "PP stage 4 · layers 31~38",
+      ppStage: 3, ppLabel: "PP stage 3 · layers 24~35",
     },
     "nvlink": {
       node: 2, hotGPUs: [3, 4], warmGPUs: [0, 1, 2, 5, 6, 7],
@@ -2285,7 +2914,7 @@
   // 复用 pangu-moe-trainviz/ep-expert-parallel-2d.html 上方「层视图」的配色与几何(侧视层轨 + 内联展开面板),
   // 但不嵌 iframe——直接按 DeepSeek-V3.2 架构(arxiv:2412.19437 / HuggingFace config.json)重画,
   // 校准单层 MoE TransformerLayer 的模块流程与数量常量(256 routed / top-8 / 1 shared / MLA / n_group=8)。
-  const LV = {
+  const LV_BASE = {
     layers: 61,          // 0~60:L0~2 Dense,L3~60 MoE
     denseLayers: 3,
     routedExperts: 256,
@@ -2296,22 +2925,25 @@
     // 侧视图配色沿用参考页:青=attention,紫=router/dispatch/combine,黄=expert/norm,蓝=前向路由
     cAttn: "#7fcbd3", cRoute: "#b99ae7", cExpert: "#ead66f", cFlow: "#4f6df6", cHot: "#dc2626",
   };
+  // 展开图「算子染色」模式(由整网图顶栏的算子染色开关联动):'cat' 按类别配色 / 'off' 中性灰(仅保留 cHot 红色诊断信号)。
+  const LV_NEUTRAL = "#9ca3af";
+  let lvColorMode = "cat";
 
   // 单层 MoE TransformerLayer 的模块流程(自底向上 = 输入→输出),y 为面板内竖直坐标。
   // 顺序严格对应架构参考 §3.2:input_layernorm → MLA → post_attention_layernorm →
   //   router → dispatch(all-to-all) → {shared + routed experts} → combine(all-to-all) → MoE merge(+残差)
   function lvModules() {
     return [
-      { id: "in_norm",   y: 648, h: 30, color: LV.cExpert, label: "input_layernorm", note: "RmsNorm" },
-      { id: "mla",       y: 536, h: 92, color: LV.cAttn,   label: "MLA 注意力",
+      { id: "in_norm",   y: 648, h: 30, color: LV_BASE.cExpert, label: "input_layernorm", note: "RmsNorm" },
+      { id: "mla",       y: 536, h: 92, color: LV_BASE.cAttn,   label: "MLA 注意力",
         note: ["q_lora[7168→1536] · kv_lora[7168→512]", "128 heads · d=192 · attn_output→7168"] },
-      { id: "post_norm", y: 484, h: 30, color: LV.cExpert, label: "post_attention_layernorm", note: "RmsNorm · +残差" },
-      { id: "router",    y: 430, h: 34, color: LV.cRoute,  label: "router",
-        note: `top-${LV.topK}/${LV.routedExperts} · n_group=${LV.nGroup} · topk_group=${LV.topkGroup}` },
-      { id: "dispatch",  y: 392, h: 26, color: LV.cRoute,  label: "token dispatch", note: "all-to-all (EP dispatch)" },
-      { id: "experts",   y: 210, h: 158, color: LV.cExpert, label: "expert pool", note: "" }, // 64 卡 × 4 expert 网格,特殊绘制
-      { id: "combine",   y: 158, h: 26, color: LV.cRoute,  label: "token combine", note: "all-to-all (EP combine)" },
-      { id: "merge",     y: 110, h: 30, color: LV.cFlow,   label: "MoE merge",
+      { id: "post_norm", y: 484, h: 30, color: LV_BASE.cExpert, label: "post_attention_layernorm", note: "RmsNorm · +残差" },
+      { id: "router",    y: 430, h: 34, color: LV_BASE.cRoute,  label: "router",
+        note: `top-${LV_BASE.topK}/${LV_BASE.routedExperts} · n_group=${LV_BASE.nGroup} · topk_group=${LV_BASE.topkGroup}` },
+      { id: "dispatch",  y: 392, h: 26, color: LV_BASE.cRoute,  label: "token dispatch", note: "all-to-all (EP dispatch)" },
+      { id: "experts",   y: 210, h: 158, color: LV_BASE.cExpert, label: "expert pool", note: "" }, // 64 卡 × 4 expert 网格,特殊绘制
+      { id: "combine",   y: 158, h: 26, color: LV_BASE.cRoute,  label: "token combine", note: "all-to-all (EP combine)" },
+      { id: "merge",     y: 110, h: 30, color: LV_BASE.cFlow,   label: "MoE merge",
         note: "shared + Σ(routed_i × g_i) · +残差" },
     ];
   }
@@ -2339,6 +2971,11 @@
   }
 
   function lvBuildSvg(expandedLayer, hotExpert) {
+    // 算子染色:'off' 模式把类别色统一压成中性灰(仅保留 cHot 红色诊断信号),'cat' 用原类别配色。
+    // 局部 LV 遮蔽模块级 LV_BASE,函数内所有 LV.cXxx 引用随染色模式切换。
+    const LV = lvColorMode === "off"
+      ? Object.assign({}, LV_BASE, { cAttn: LV_NEUTRAL, cRoute: LV_NEUTRAL, cExpert: LV_NEUTRAL, cFlow: LV_NEUTRAL })
+      : LV_BASE;
     const VW = 1180, VH = 720;
     const x0 = 150, railW = 1018;
     const panelW = 752, gap = 20;
@@ -2348,7 +2985,7 @@
       if (layer === expandedLayer) return x0 + layer * normalStep + gap + panelW / 2;
       return x0 + expandedLayer * normalStep + gap * 2 + panelW + (layer - expandedLayer - 1) * normalStep;
     };
-    const modules = lvModules();
+    const modules = lvModules().map((m) => (lvColorMode === "off" ? Object.assign({}, m, { color: LV_NEUTRAL }) : m));
     const laneY = Object.fromEntries(modules.map((m) => [m.id, m.y]));
     const railTop = 78, railBot = 678;
     const isMoe = expandedLayer >= LV.denseLayers;
@@ -2437,8 +3074,8 @@
         const hot = selected.find((s) => s.card === card && s.cell === cell && s.hot);
         let fill, op, extra = "";
         if (hotExpert != null) {
-          // 事故层:格子亮度 ∝ 该 expert 的 token 量。98% 全压在 E193(亮红),其余 255 个 ≈0(极淡)——
-          // 直接体现模型层 §4「98% token → expert 193,其余 255 expert 几乎无 token」的路由倾斜。
+          // 事故层:格子亮度 ∝ 该 expert 的 token 量。98% 全压在 E47(亮红),其余 63 个 ≈0(极淡)——
+          // 直接体现模型层 §4「98% token → expert 47,其余 63 expert 几乎无 token」的路由倾斜。
           fill = hot ? LV.cHot : LV.cExpert;
           op = hot ? 1 : 0.12;
         } else {
@@ -2502,7 +3139,7 @@
       });
       const ly = gY + gH + 12;
       a2aLabels = `
-        <text class="lv-tiny lv-a2a-label" data-phase="disp" x="${cardPos(0).x}" y="${ly}" fill="${LV.cHot}" style="font-weight:800">① all-to-all dispatch:top-8 专家互相收发 token,8 个 rank 收到数据 → 变红(rank 23 recv=2048×7168×8≈112MB)</text>
+        <text class="lv-tiny lv-a2a-label" data-phase="disp" x="${cardPos(0).x}" y="${ly}" fill="${LV.cHot}" style="font-weight:800">① all-to-all dispatch:top-8 专家互相收发 token,8 个 rank 收到数据 → 变红(rank 23 recv=2048×4608×8≈151MB)</text>
         <text class="lv-tiny lv-a2a-label" data-phase="comb" x="${cardPos(0).x}" y="${ly}" fill="${LV.cFlow}" style="font-weight:800;opacity:0">② all-to-all combine:7 个专家输出完成→恢复原色,rank 23 send=0 无法输出 → 保持红色(死锁)</text>`;
     }
 
@@ -2518,8 +3155,8 @@
     ` : "";
 
     // ── 体现 定位链.md L128:rank 23 的 all-to-all send/recv buffer 失配 ──
-    // 本地 token 全落在本卡 expert 193 → 没有 token 需要发往别的 rank(send=0);
-    // 但全局 98% token 都选中 E193,要从其它 63 个 rank 收进来(recv=2048×7168×8≈112MB) → 收发尺寸对不上 → 死锁。
+    // 本地 token 全落在本卡 expert 47 → 没有 token 需要发往别的 rank(send=0);
+    // 但全局 98% token 都选中 E47,要从其它 rank 收进来(recv=2048×4608×8≈151MB) → 收发尺寸对不上 → 死锁。
     let mismatchGauge = "";
     if (isMoe && hotExpert != null) {
       const gx = px + 396, barX = gx + 40, barMaxW = 148;
@@ -2531,14 +3168,14 @@
         <text class="lv-tiny mono" x="${barX + 10}" y="${em + 27}" fill="${LV.cHot}" style="font-weight:800">0(无 token 外发)</text>
         <text class="lv-tiny" x="${gx}" y="${em + 39}">recv</text>
         <rect x="${barX}" y="${em + 32}" width="${recvW}" height="8" rx="1" fill="${LV.cHot}"></rect>
-        <text class="lv-tiny mono" x="${barX + recvW + 6}" y="${em + 39}" fill="${LV.cHot}" style="font-weight:800">2048×7168×8 ≈ 112MB</text>`;
+        <text class="lv-tiny mono" x="${barX + recvW + 6}" y="${em + 39}" fill="${LV.cHot}" style="font-weight:800">2048×4608×8 ≈ 151MB</text>`;
     }
     const expertsTitle = isMoe && hotExpert != null
       ? `routed experts · ${LV.routedExperts} → EP64(64 卡 × 4)`
       : `routed experts · ${LV.routedExperts} → EP64:64 卡 × 4/卡 · 激活 top-${LV.topK}`;
-    // 模型层 §4 路由倾斜说明(事故层):点明 98%→E193、其余 255≈0,与网格热力配色对应
+    // 模型层 §4 路由倾斜说明(事故层):点明 98%→E47、其余 expert≈0,与网格热力配色对应
     const skewCaption = isMoe && hotExpert != null
-      ? `<text class="lv-tiny" x="${px + 52}" y="${em + 31}" fill="${LV.cHot}" style="font-weight:700">router 输出:98% token → E${hotExpert} · 其余 255 expert ≈ 0(格子亮度 ∝ token 量)</text>`
+      ? `<text class="lv-tiny" x="${px + 52}" y="${em + 31}" fill="${LV.cHot}" style="font-weight:700">router 输出:98% token → E${hotExpert} · 其余 63 expert ≈ 0(格子亮度 ∝ token 量)</text>`
       : "";
     const expertsGroup = isMoe ? `
       <rect x="${px + 40}" y="${em}" width="${panelW - 80}" height="${modules.find((m) => m.id === "experts").h}" rx="8"
@@ -2759,40 +3396,535 @@
     });
   }
 
+  // ── 模型层展开图搬到整网图区域展示 ───────────────────────────────────────
+  // 定位链「模型层」不再内嵌大图,改为一个「查看」按钮;点击后在整网图区域(#modelLayerStage)
+  // 覆盖展示 MoE 层展开图,并配一段转场:整网图对准 MoE(router)节点放大淡出,展开图从该处
+  // 放大淡入,左右层列由中心向两侧逐渐出现,让「整网图 → 模型层展开图」两图有连续观感。
+  const LV_INCIDENT_LAYER = 30, LV_INCIDENT_EXPERT = 47;
+  let modelLayerOpen = false;
+  let lvZoom = 1;                 // 展开图缩放倍率(整网图顶栏 +/-/Fit 控制)
+  let lvCurrent = null;          // 当前展开图的 { expanded, hot },用于染色切换后按原层重绘
+
+  // 把当前缩放倍率作用到展开图 SVG(每次重绘会新建 svg,故重绘后需重新施加)
+  function lvApplyZoom() {
+    const svg = document.querySelector("#modelLayerStage .twin-layerview svg");
+    if (!svg) return;
+    svg.style.transformOrigin = "center center";
+    svg.style.transform = `scale(${lvZoom})`;
+  }
+  function lvZoomBy(factor) {
+    lvZoom = Math.min(4, Math.max(0.4, lvZoom * factor));
+    lvApplyZoom();
+  }
+  function lvZoomReset() { lvZoom = 1; lvApplyZoom(); }
+
+  function drawCenterLayerView(host, expanded, hot, stagger) {
+    lvCurrent = { expanded, hot };
+    host.innerHTML = lvBuildSvg(expanded, hot);
+    // lvBuildSvg 的固定 viewBox(0 0 1180 720)装不下全部内容——展开面板里 all-to-all 说明等
+    // 长文字会画到 viewBox 右侧之外,导致右侧溢出、层图显示不全。这里改成量出「所有内容的真实
+    // 包围盒」(含溢出文字),把 viewBox 设成该包围盒。配合 CSS 的 width/height:100% + meet,
+    // 浏览器会自动按当前显示区/分辨率整体缩放并居中,窗口缩放时也始终显示全,无需手动监听。
+    const svg = host.querySelector("svg");
+    if (svg) {
+      const fit = () => {
+        try {
+          const bb = svg.getBBox(); // 所有子元素的真实几何范围(不受 CSS 变换影响)
+          if (bb.width > 0 && bb.height > 0) {
+            const pad = 14;
+            svg.setAttribute("viewBox", `${(bb.x - pad).toFixed(1)} ${(bb.y - pad).toFixed(1)} ${(bb.width + pad * 2).toFixed(1)} ${(bb.height + pad * 2).toFixed(1)}`);
+            svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+          }
+        } catch (e) { /* 未布局时忽略,下一帧再试 */ }
+      };
+      fit();
+      requestAnimationFrame(fit); // 首帧若尚未布局,下一帧再量一次,确保 viewBox 覆盖全部内容
+    }
+    host.querySelectorAll("[data-lv-layer]").forEach((g) => {
+      const layer = Number(g.dataset.lvLayer);
+      if (layer === expanded) return;
+      // 点击层列:切换展开层(命中事故层则带上倾斜 expert 高亮)
+      g.addEventListener("click", () => {
+        drawCenterLayerView(host, layer, layer === LV_INCIDENT_LAYER ? LV_INCIDENT_EXPERT : null, false);
+      });
+      if (stagger) {
+        const dist = Math.abs(layer - expanded);
+        g.style.animation = `twinLayerTickIn .5s ease ${100 + dist * 20}ms both`;
+      }
+    });
+    startLayerA2A(host);
+    lvApplyZoom(); // 重绘会新建 svg,重新施加当前缩放倍率
+  }
+
+  function openModelLayerView(expanded, hot) {
+    const stageWrap = document.querySelector(".twin-architecture-stage");
+    const overlay = $("modelLayerStage");
+    const graph = $("modelGraphStage");
+    if (!stageWrap || !overlay) return;
+    modelLayerOpen = true;
+    lvZoom = 1; // 每次进入按 Fit 起始
+    // 进入展开图时,整网图顶栏的「算子染色」开关改为控制展开图;染色模式初始沿用整网图当前模式
+    lvColorMode = window._opColorMode === "off" ? "off" : "cat";
+    syncColorSegButtons(lvColorMode);
+
+    // 缩放焦点对准整网图里的 MoE(router)节点,让「放大」像钻进 MoE
+    const routerNode = graph?.querySelector('[data-node-id="router"]');
+    if (routerNode && graph) {
+      const gb = graph.getBoundingClientRect();
+      const nb = routerNode.getBoundingClientRect();
+      if (gb.width > 0 && gb.height > 0) {
+        graph.style.setProperty("--twin-zoom-ox", (((nb.left + nb.width / 2 - gb.left) / gb.width) * 100).toFixed(1) + "%");
+        graph.style.setProperty("--twin-zoom-oy", (((nb.top + nb.height / 2 - gb.top) / gb.height) * 100).toFixed(1) + "%");
+      }
+    }
+
+    overlay.innerHTML = "";
+    const host = document.createElement("div");
+    host.className = "twin-layerview";
+    overlay.appendChild(host);
+    const back = document.createElement("button");
+    back.type = "button";
+    back.className = "twin-layer-stage-back";
+    back.textContent = "← 返回整网图";
+    back.addEventListener("click", closeModelLayerView);
+    overlay.appendChild(back);
+
+    overlay.hidden = false;
+    overlay.classList.remove("is-leaving");
+    // 下一帧再加过渡类,保证从初始态开始动画
+    requestAnimationFrame(() => {
+      stageWrap.classList.add("is-layer-active");
+      overlay.classList.add("is-entering");
+    });
+    drawCenterLayerView(host, expanded, hot, true);
+    syncLayerViewCTALabel();
+  }
+
+  function closeModelLayerView() {
+    if (!modelLayerOpen) return;
+    modelLayerOpen = false;
+    if (lvAnimRaf) { cancelAnimationFrame(lvAnimRaf); lvAnimRaf = null; }
+    const stageWrap = document.querySelector(".twin-architecture-stage");
+    const overlay = $("modelLayerStage");
+    stageWrap?.classList.remove("is-layer-active"); // 整网图缩放/淡出还原
+    if (overlay) {
+      overlay.classList.remove("is-entering");
+      overlay.classList.add("is-leaving");
+      setTimeout(() => {
+        overlay.hidden = true;
+        overlay.innerHTML = "";
+        overlay.classList.remove("is-leaving");
+      }, 400);
+    }
+    // 退出展开图:顶栏「算子染色」开关交还整网图,按钮高亮复位到整网图的染色模式
+    syncColorSegButtons(window._opColorMode === "off" ? "off" : "cat");
+    syncLayerViewCTALabel();
+  }
+
+  // 顶栏「算子染色」分段按钮的高亮状态同步到指定模式(展开图与整网图共用这套按钮)
+  function syncColorSegButtons(mode) {
+    document.querySelectorAll("#opColorSeg .segbtn").forEach((b) => {
+      b.classList.toggle("on", b.dataset.c === mode);
+    });
+  }
+
+  // 展开图打开时,拦截整网图顶栏的缩放 / 算子染色点击,改为控制展开图(捕获阶段在祖先上拦截,
+  // 阻止事件到达按钮自身的 opv 引擎处理器 / 内联 onclick)。层级下拉在展开图下由 CSS 隐藏,不再处理。
+  function bindLayerViewTopbar() {
+    const host = document.getElementById("opvHost");
+    if (!host) return;
+    host.addEventListener("click", (e) => {
+      if (!modelLayerOpen) return;
+      const zin = e.target.closest("#zoomIn");
+      const zout = e.target.closest("#zoomOut");
+      const zfit = e.target.closest("#zoomReset");
+      const cbtn = e.target.closest("#opColorSeg .segbtn");
+      if (!zin && !zout && !zfit && !cbtn) return;
+      e.stopPropagation();
+      e.preventDefault();
+      if (zin) lvZoomBy(1.14);
+      else if (zout) lvZoomBy(0.88);
+      else if (zfit) lvZoomReset();
+      else if (cbtn) {
+        lvColorMode = cbtn.dataset.c === "off" ? "off" : "cat";
+        syncColorSegButtons(lvColorMode);
+        const view = document.querySelector("#modelLayerStage .twin-layerview");
+        if (view && lvCurrent) drawCenterLayerView(view, lvCurrent.expanded, lvCurrent.hot, false);
+      }
+    }, true); // 捕获阶段
+  }
+
+  // 定位链「模型层」的 CTA 按钮文案随展开图开合切换:展开图打开时显示「关闭」,收起时显示「查看」
+  function syncLayerViewCTALabel() {
+    document.querySelectorAll(".twin-layerview-cta-btn").forEach((btn) => {
+      btn.textContent = modelLayerOpen ? "关闭" : "查看";
+    });
+    document.querySelectorAll("[data-open-layer-view]").forEach((el) => {
+      el.classList.toggle("is-open", modelLayerOpen);
+    });
+  }
+
+  // 点击整网图上问题一的红框(MoE FFN 分组框)时调用:选中问题一并进入模型层展开图
+  function enterProblemOneLayerView() {
+    const card = document.querySelector('.diagnosis-card[data-diagnosis="moe-a2a"]');
+    if (!card) return;
+    if (!card.classList.contains("is-selected")) {
+      toggleDiagnosisCard(card); // 选中问题一 → 渲染定位链 → bindLayerViewCTA
+    }
+    if (!modelLayerOpen) openModelLayerView(LV_INCIDENT_LAYER, LV_INCIDENT_EXPERT);
+  }
+
+  function bindLayerViewCTA() {
+    document.querySelectorAll("[data-open-layer-view]").forEach((el) => {
+      const toggle = () => {
+        if (modelLayerOpen) {
+          closeModelLayerView();
+        } else {
+          openModelLayerView(
+            Number(el.dataset.lvExpanded ?? LV_INCIDENT_LAYER),
+            el.dataset.lvHotExpert != null ? Number(el.dataset.lvHotExpert) : null
+          );
+        }
+      };
+      el.addEventListener("click", toggle);
+      el.addEventListener("keydown", (e) => {
+        if (e.key !== "Enter" && e.key !== " ") return;
+        e.preventDefault();
+        toggle();
+      });
+    });
+    syncLayerViewCTALabel();
+  }
+
+  // ── 问题六 Canvas 图表渲染 ──
+  function dprCase6(canvas, cssW, cssH) {
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = cssW * dpr; canvas.height = cssH * dpr;
+    canvas.style.width = cssW + 'px'; canvas.style.height = cssH + 'px';
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { ctx, W: cssW, H: cssH };
+  }
+
+  function renderCase6ModelBar() {
+    const canvas = document.getElementById('case6ModelBarCanvas');
+    if (!canvas) return;
+    const cssW = canvas.parentElement.clientWidth;
+    const r = dprCase6(canvas, cssW, 200);
+    const { ctx, W, H } = r;
+    const P = { t: 20, r: 14, b: 28, l: 36 }, pw = W - P.l - P.r, ph = H - P.t - P.b;
+    const n = 61, barW = Math.max(2, (pw / n) * 0.68), gap = pw / n;
+    const maxV = 7;
+    const yOf = (v) => P.t + ph - (v / maxV) * ph;
+
+    const d28 = Array.from({ length: n }, (_, i) => { const b = 0.25 + (i / n) * 1.6; return b + (Math.random() - 0.5) * 0.4; });
+    const d32 = d28.map((v, i) => { if (i === 46) return 6.2; if (i === 54) return 3.8; if (i >= 44 && i <= 48) return v * (1 + (i - 44) * 2); return v * (1 + Math.random() * 0.25); });
+
+    ctx.clearRect(0, 0, W, H);
+    ctx.strokeStyle = '#e5e7eb'; ctx.lineWidth = 0.5;
+    for (let i = 0; i <= 4; i++) { const y = P.t + (ph / 4) * i; ctx.beginPath(); ctx.moveTo(P.l, y); ctx.lineTo(W - P.r, y); ctx.stroke(); ctx.fillStyle = '#888'; ctx.font = '9px system-ui'; ctx.textAlign = 'right'; ctx.fillText((maxV * (1 - i / 4)).toFixed(1) + '%', P.l - 5, y + 4); }
+    ctx.fillStyle = '#888'; ctx.font = '9px system-ui'; ctx.textAlign = 'center';
+    [0, 15, 30, 46, 60].forEach(i => ctx.fillText('L' + (i + 1), P.l + (i / n) * pw, H - 6));
+
+    for (let i = 0; i < n; i++) {
+      const x = P.l + i * gap + (gap - barW) / 2;
+      ctx.fillStyle = 'rgba(59,130,246,0.55)'; ctx.fillRect(x, yOf(d28[i]), barW, P.t + ph - yOf(d28[i]));
+      ctx.fillStyle = i === 46 ? '#dc2626' : 'rgba(220,38,38,0.5)'; ctx.fillRect(x + barW * 0.3, yOf(d32[i]), barW * 0.7, P.t + ph - yOf(d32[i]));
+    }
+    const l47x = P.l + 46 * gap + gap / 2;
+    ctx.fillStyle = '#dc2626'; ctx.font = 'bold 9px system-ui'; ctx.textAlign = 'center'; ctx.fillText('L47 · 震中', l47x, yOf(d32[46]) - 7);
+    ctx.setLineDash([2, 2]); ctx.strokeStyle = '#dc2626'; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.moveTo(l47x, yOf(d32[46]) - 2); ctx.lineTo(l47x, P.t - 2); ctx.stroke(); ctx.setLineDash([]);
+  }
+
+  function renderCase6OpWaterfall() {
+    const canvas = document.getElementById('case6OpWaterfallCanvas');
+    if (!canvas) return;
+    const r = dprCase6(canvas, canvas.parentElement.clientWidth, 140);
+    const { ctx, W, H } = r;
+    const P = { t: 16, r: 14, b: 42, l: 44 }, pw = W - P.l - P.r, ph = H - P.t - P.b;
+    const labels = ['LN', 'q_lora', 'kv_lora', 'q_nope', 'q_rope', 'attn', 'o_proj', 'gate', 'up', 'SiLU', 'down'];
+    const vals = [-7.5, -6.2, -6.1, -2.4, -2.3, -0.8, -0.75, -0.14, -0.2, -0.25, -0.3];
+    const colors = vals.map(v => v > -3 ? '#dc2626' : v > -6 ? '#ea580c' : '#3b82f6');
+    const minV = -8, maxV = 0;
+    const yOf = (v) => P.t + ph - ((v - minV) / (maxV - minV)) * ph;
+
+    ctx.clearRect(0, 0, W, H);
+    ctx.strokeStyle = '#e5e7eb'; ctx.lineWidth = 0.5;
+    for (let i = 0; i <= 4; i++) { const y = P.t + (ph / 4) * i; ctx.beginPath(); ctx.moveTo(P.l, y); ctx.lineTo(W - P.r, y); ctx.stroke(); ctx.fillStyle = '#888'; ctx.font = '9px system-ui'; ctx.textAlign = 'right'; ctx.fillText(String(minV + (maxV - minV) * (1 - i / 4)), P.l - 5, y + 4); }
+    const n = vals.length, barGap = pw / n, barW = barGap * 0.62;
+    vals.forEach((v, i) => {
+      const x = P.l + i * barGap + (barGap - barW) / 2, h = P.t + ph - yOf(v);
+      ctx.fillStyle = colors[i]; ctx.fillRect(x, yOf(v), barW, h);
+      if (i === 3 || i === 5 || i === 7) { ctx.fillStyle = '#dc2626'; ctx.font = 'bold 8px system-ui'; ctx.textAlign = 'center'; ctx.fillText('⬆' + (i === 3 ? '20000×' : i === 5 ? '40×' : '4×'), x + barW / 2, yOf(v) - 3); }
+      ctx.save(); ctx.fillStyle = '#666'; ctx.font = '8px system-ui'; ctx.textAlign = 'right'; ctx.translate(x + barW / 2, H - 8); ctx.rotate(-0.45); ctx.fillText(labels[i], 0, 0); ctx.restore();
+    });
+  }
+
+  function renderCase6Dist(canvasId, clipRight) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    const r = dprCase6(canvas, canvas.parentElement.clientWidth, 100);
+    const { ctx, W, H } = r;
+    const P = { t: 6, r: 6, b: 18, l: 28 }, pw = W - P.l - P.r, ph = H - P.t - P.b;
+    const nBins = 36;
+    const bf16 = Array.from({ length: nBins }, (_, i) => { const x = (i - nBins / 2) / (nBins / 6); return Math.exp(-x * x / 2) * (0.6 + Math.random() * 0.3); });
+    const fp8 = bf16.map((v, i) => { if (i >= nBins * 0.84) return v * 0.35 + 0.07; if (i <= nBins * 0.16) return v * 0.35 + 0.04; return v * 1.1; });
+    const maxY = Math.max(...bf16, ...fp8) * 1.2;
+    const yOf = (v) => P.t + ph - (v / maxY) * ph;
+    const barW = (pw / nBins) * 0.82, gap = pw / nBins;
+
+    ctx.clearRect(0, 0, W, H);
+    ctx.strokeStyle = '#e5e7eb'; ctx.lineWidth = 0.5;
+    [0, 0.5, 1].forEach(f => { const y = P.t + ph * (1 - f); ctx.beginPath(); ctx.moveTo(P.l, y); ctx.lineTo(W - P.r, y); ctx.stroke(); });
+    bf16.forEach((v, i) => { const x = P.l + i * gap + (gap - barW) / 2; ctx.fillStyle = 'rgba(59,130,246,0.45)'; ctx.fillRect(x, yOf(v), barW, P.t + ph - yOf(v)); });
+    fp8.forEach((v, i) => { const x = P.l + i * gap + (gap - barW) / 2 + barW * 0.3; ctx.fillStyle = 'rgba(220,38,38,0.4)'; ctx.fillRect(x, yOf(v), barW * 0.7, P.t + ph - yOf(v)); });
+    if (clipRight) { const cx = P.l + pw * 0.84; ctx.fillStyle = '#dc2626'; ctx.font = 'bold 7px system-ui'; ctx.textAlign = 'center'; ctx.fillText('clip@448', cx, P.t - 1); ctx.setLineDash([2, 2]); ctx.strokeStyle = '#dc2626'; ctx.lineWidth = 0.7; ctx.beginPath(); ctx.moveTo(cx, P.t + 1); ctx.lineTo(cx, P.t + ph); ctx.stroke(); ctx.setLineDash([]); }
+    ctx.fillStyle = '#3b82f6'; ctx.fillRect(W - 58, 3, 7, 7); ctx.fillStyle = '#888'; ctx.font = '7px system-ui'; ctx.textAlign = 'left'; ctx.fillText('BF16', W - 48, 9);
+    ctx.fillStyle = '#dc2626'; ctx.fillRect(W - 28, 3, 7, 7); ctx.fillText('FP8', W - 18, 9);
+  }
+
+  function renderCase6MseCurve() {
+    const canvas = document.getElementById('case6MseCurveCanvas');
+    if (!canvas) return;
+    const r = dprCase6(canvas, canvas.parentElement.clientWidth, 170);
+    const { ctx, W, H } = r;
+    const P = { t: 15, r: 14, b: 24, l: 42 }, pw = W - P.l - P.r, ph = H - P.t - P.b;
+    const n = 61;
+    const mse = Array.from({ length: n }, (_, i) => { if (i < 35) return -6.5 + (i / 35) * 1.2 + (Math.random() - 0.5) * 0.3; if (i < 46) return -5.3 + (i - 35) / 11 * 2.8 + (Math.random() - 0.5) * 0.3; if (i === 46) return -0.64; if (i < 55) return -0.64 + (i - 46) * 0.03 + (Math.random() - 0.5) * 0.08; return -0.4 + (i - 55) / 6 * 0.9 + (Math.random() - 0.5) * 0.1; });
+    const minV = -7, maxV = 1;
+    const xOf = (i) => P.l + (i / (n - 1)) * pw, yOf = (v) => P.t + ph - ((v - minV) / (maxV - minV)) * ph;
+
+    ctx.clearRect(0, 0, W, H);
+    ctx.strokeStyle = '#e5e7eb'; ctx.lineWidth = 0.5;
+    for (let i = 0; i <= 4; i++) { const y = P.t + (ph / 4) * i; ctx.beginPath(); ctx.moveTo(P.l, y); ctx.lineTo(W - P.r, y); ctx.stroke(); ctx.fillStyle = '#888'; ctx.font = '9px system-ui'; ctx.textAlign = 'right'; ctx.fillText('1e' + Math.round(minV + (maxV - minV) * (1 - i / 4)), P.l - 5, y + 4); }
+    ctx.fillStyle = '#888'; ctx.font = '9px system-ui'; ctx.textAlign = 'center'; [0, 15, 30, 46, 60].forEach(i => ctx.fillText('L' + (i + 1), xOf(i), H - 6));
+
+    ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 2; ctx.beginPath();
+    mse.forEach((v, i) => { const x = xOf(i), y = yOf(v); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); });
+    ctx.stroke(); ctx.lineTo(xOf(n - 1), P.t + ph); ctx.lineTo(P.l, P.t + ph); ctx.closePath(); ctx.fillStyle = 'rgba(59,130,246,0.07)'; ctx.fill();
+
+    const l47x = xOf(46), l47y = yOf(mse[46]);
+    ctx.fillStyle = '#dc2626'; ctx.beginPath(); ctx.arc(l47x, l47y, 4.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#dc2626'; ctx.font = 'bold 9px system-ui'; ctx.textAlign = 'center'; ctx.fillText('L47 · 拐点', l47x, l47y - 9); ctx.fillText('460×', l47x, l47y + 14);
+    ctx.setLineDash([2, 2]); ctx.strokeStyle = '#dc2626'; ctx.lineWidth = 0.7; ctx.beginPath(); ctx.moveTo(l47x, l47y + 5); ctx.lineTo(l47x, P.t + ph); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(234,88,12,0.07)'; ctx.fillRect(xOf(35), P.t, xOf(46) - xOf(35), ph);
+  }
+
+  function renderCase6ScaleDecay() {
+    const canvas = document.getElementById('case6ScaleDecayCanvas');
+    if (!canvas) return;
+    const r = dprCase6(canvas, canvas.parentElement.clientWidth, 130);
+    const { ctx, W, H } = r;
+    const P = { t: 14, r: 14, b: 24, l: 42 }, pw = W - P.l - P.r, ph = H - P.t - P.b;
+    const n = 51;
+    const xOf = (i) => P.l + (i / (n - 1)) * pw, yOf = (v) => P.t + ph - (v / 0.7) * ph;
+    const scale = Array.from({ length: n }, (_, i) => { const t = i / (n - 1); return 0.62 - t * 0.44 + (Math.random() - 0.5) * 0.015; });
+
+    ctx.clearRect(0, 0, W, H);
+    ctx.strokeStyle = '#e5e7eb'; ctx.lineWidth = 0.5;
+    for (let i = 0; i <= 4; i++) { const y = P.t + (ph / 4) * i; ctx.beginPath(); ctx.moveTo(P.l, y); ctx.lineTo(W - P.r, y); ctx.stroke(); ctx.fillStyle = '#888'; ctx.font = '9px system-ui'; ctx.textAlign = 'right'; ctx.fillText((0.7 * (1 - i / 4)).toFixed(2), P.l - 5, y + 4); }
+    ctx.setLineDash([3, 3]); ctx.strokeStyle = '#ea580c'; ctx.lineWidth = 1; const thY = yOf(0.3); ctx.beginPath(); ctx.moveTo(P.l, thY); ctx.lineTo(W - P.r, thY); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = '#ea580c'; ctx.font = '9px system-ui'; ctx.textAlign = 'right'; ctx.fillText('危险线 0.3', P.l - 5, thY - 3);
+    ctx.fillStyle = '#888'; ctx.font = '9px system-ui'; ctx.textAlign = 'center'; [0, 0.5, 1].forEach(f => ctx.fillText('step ' + Math.round(27000 + f * 5000), xOf(Math.round(f * (n - 1))), H - 6));
+
+    ctx.strokeStyle = '#dc2626'; ctx.lineWidth = 2; ctx.beginPath();
+    scale.forEach((v, i) => { const x = xOf(i), y = yOf(v); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); });
+    ctx.stroke(); ctx.lineTo(xOf(n - 1), P.t + ph); ctx.lineTo(P.l, P.t + ph); ctx.closePath(); ctx.fillStyle = 'rgba(220,38,38,0.06)'; ctx.fill();
+    ctx.fillStyle = '#dc2626'; ctx.font = 'bold 9px system-ui'; ctx.textAlign = 'left'; ctx.fillText('0.62', xOf(0) + 3, yOf(scale[0]) - 4); ctx.fillText('0.18', xOf(n - 1) - 42, yOf(scale[n - 1]) - 4);
+  }
+
+  function renderCase6MetricCharts() {
+    if (!window.PtoTrainingMetricsChart) return;
+    const TOTAL = 40000;
+    const steps = Array.from({ length: TOTAL / 100 }, (_, i) => i * 100);
+
+    // BF16 基线 loss：全程平稳下降
+    const lossBf16 = steps.map((_, i) => {
+      const s = i * 100;
+      return 8.5 - (s / 40000) * 6.7 + (Math.random() - 0.5) * 0.08;
+    });
+    // HiF8 loss：step 0~25000 紧跟 BF16，之后分叉停滞
+    const lossHif8 = steps.map((_, i) => {
+      const s = i * 100;
+      const base = lossBf16[i];
+      if (s <= 25000) return base + (Math.random() - 0.5) * 0.08;          // 紧密跟随
+      if (s <= 28000) return base + (s - 25000) / 3000 * 0.18 + (Math.random() - 0.5) * 0.04; // 开始分叉
+      if (s <= 31000) return 2.1 + (s - 28000) / 3000 * 0.02 + (Math.random() - 0.5) * 0.03;  // 停滞
+      return 2.12 + (s - 31000) / 9000 * 0.08 + (Math.random() - 0.5) * 0.04;                 // 微反弹
+    });
+    const gradnorm = steps.map((_, i) => {
+      const s = i * 100;
+      if (s <= 25000) return 11 + (Math.random() - 0.5) * 3;
+      const decay = Math.max(0.3, 11 - (s - 25000) / 10000 * 10.7);
+      return decay + (Math.random() - 0.5) * Math.max(0.1, decay * 0.15);
+    });
+
+    // 图例统一挂到卡片 head(与问题一迭代层一致),关掉引擎内置的底部图例;重画时先去重
+    const mountCase6Legend = (el, series) => {
+      const head = el.closest(".twin-locate-metric-card")?.querySelector(".twin-locate-metric-card__head");
+      if (!head) return;
+      head.querySelector(".twin-accuracy-legend")?.remove();
+      head.appendChild(buildAccLegend(series));
+    };
+
+    // loss 双线图（HiF8 + BF16）
+    const lossEl = document.querySelector('[data-locate-chart="case6-loss"]');
+    if (lossEl) {
+      const cw = Math.round(lossEl.getBoundingClientRect().width) || 600;
+      const lossSeries = [
+        { id: 'case6-loss-hif8', label: 'HiF8', key: 'case6-loss-hif8', colorVar: '--twin-chart-loss', emphasis: true, axis: 'left' },
+        { id: 'case6-loss-bf16', label: 'BF16', key: 'case6-loss-bf16', colorVar: '--twin-chart-mfu', axis: 'left' },
+      ];
+      window.PtoTrainingMetricsChart.render(lossEl, {
+        steps,
+        smoothing: accSmoothing,
+        legend: false,
+        options: { compact: false, width: cw, height: 170, pad: { t: 10, r: 18, b: 22, l: 42 } },
+        series: lossSeries,
+        data: { 'case6-loss-hif8': lossHif8, 'case6-loss-bf16': lossBf16 },
+        anomalies: [{ step: 25000, seriesId: 'case6-loss-hif8' }, { step: 31000, seriesId: 'case6-loss-hif8' }],
+        interestWindow: { start: 24000, end: 35000 },
+        cursor: 30000,
+      });
+      mountCase6Legend(lossEl, lossSeries);
+    }
+
+    // grad_norm 单线图（单序列,head 名已足够,不额外挂图例）
+    const gnEl = document.querySelector('[data-locate-chart="case6-gradnorm"]');
+    if (gnEl) {
+      const cw = Math.round(gnEl.getBoundingClientRect().width) || 600;
+      const d = { 'case6-gradnorm': gradnorm };
+      window.PtoTrainingMetricsChart.render(gnEl, {
+        steps,
+        smoothing: accSmoothing,
+        legend: false,
+        options: { compact: false, width: cw, height: 170, pad: { t: 10, r: 14, b: 22, l: 42 } },
+        series: [{ id: 'case6-gradnorm', label: 'grad_norm', key: 'case6-gradnorm', colorVar: '--twin-chart-gradnorm', axis: 'left' }],
+        data: d,
+        anomalies: [{ step: 25000, seriesId: 'case6-gradnorm' }],
+        interestWindow: { start: 24000, end: 35000 },
+        cursor: 30000,
+      });
+    }
+  }
+
+  function renderCase6AllCharts() {
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      renderCase6MetricCharts();
+      renderCase6ModelBar();
+      renderCase6OpWaterfall();
+      renderCase6Dist('case6DistQnope', true);
+      renderCase6Dist('case6DistAttn', true);
+      renderCase6Dist('case6DistGate', true);
+      renderCase6MseCurve();
+      renderCase6ScaleDecay();
+    }));
+  }
+
   function showLocateChainPanel(caseKey) {
     const chain = locateChains[caseKey];
     if (!chain) return;
+    closeModelLayerView(); // 切换问题时先收起可能残留的展开图
+    // 先合并面板(切到头部栏布局),再渲染定位链——保证连线 SVG 按合并后的几何测量绘制
+    $("twinWorkArea")?.classList.add("is-merged"); // 整网图列与定位链列合并为一块大面板
     renderLocateChain(caseKey);
     const marker = diagnosisMarkers.find((m) => m.key === caseKey);
-    $("runTwinTitle").textContent = marker ? `问题${marker.num}：${marker.label}` : chain.title;
-    $("runTwinMeta").textContent = marker ? `${marker.category}定位链` : chain.meta;
+    // 问题标题移到左侧「整网图」头部:模型名降为 kicker,问题名作为大标题;
+    // 中间列头隐藏,让定位链栏直接吸顶到监控列顶部(对齐「组合 8」布局)
+    const kicker = $("architectureKicker");
+    if (kicker) {
+      kicker.textContent = `${models[state.model].title} /`;
+      kicker.hidden = false;
+    }
+    $("architectureTitle").textContent = marker ? `问题${marker.num}：${marker.label}` : chain.title;
     $("locateChainBack").hidden = false;
+    const runTwinHeader = $("runTwinHeader");
+    if (runTwinHeader) runTwinHeader.hidden = true;
     $("runTwinDefaultView").hidden = true;
     $("runTwinLocateView").hidden = false;
     $("runTwinLocateView").scrollTop = 0;
     mountLocateMetricCharts($("locateChainContent"));
     drawBufferChart();
-    renderInfraHeatSnapshot(caseKey);
+    activeLocateCase = caseKey;
+    syncLocateInfraHeat(caseKey); // infra 示意图复用外层集群热力图并叠加标记(随 tick 刷新)
     renderTwinLayerViews();
+    bindLayerViewCTA();
     renderProblemOneTimeline();
+    if (caseKey === "low-precision-training") renderCase6AllCharts();
+    if (caseKey === "hif8-precision" || caseKey === "qproj-overflow") {
+      window.PtoHif8Case7?.renderAll();
+      // 问题二默认收起底部泳道图(ide-frame 底部 dock 开关,见 wzh_index.html 内联脚本)
+      window.PtoTrainingTwinTimelineDock?.setVisible(false);
+    }
+    // 问题二(qproj-overflow / hif8-precision):把表搬到整网图位置并隐藏整网图;其余问题则复位
+    applyHif8SidePanel(caseKey);
+  }
+
+  // 问题二(qproj-overflow / hif8-precision)专属:进入时隐藏整网图,把定位链「量化误差」
+  // 节里的「层/算子级量化误差指标」表整卡搬到左侧整网图位置(表 DOM 原样搬运,排序/选层联动照旧)。
+  // 传入非 qproj-overflow / hif8-precision 的 caseKey(或 null)则复位:清空搬运槽、恢复整网图。
+  function applyHif8SidePanel(caseKey) {
+    const centerPane = document.querySelector(".twin-center-pane");
+    const centerScroll = document.querySelector(".twin-center-scroll");
+    if (!centerPane || !centerScroll) return;
+    let host = document.getElementById("hif8SideStage");
+    if (host) { host.innerHTML = ""; host.hidden = true; } // 复位:清掉上次搬运的表
+    centerPane.classList.remove("is-hif8-side-table");
+    if (caseKey !== "hif8-precision" && caseKey !== "qproj-overflow") return;
+    if (!host) {
+      host = document.createElement("div");
+      host.id = "hif8SideStage";
+      host.className = "twin-hif8-side-stage";
+      centerScroll.appendChild(host);
+    }
+    const card = document.getElementById("c7etable")?.closest(".h8-card");
+    if (!card) return; // 表尚未渲染则跳过
+    const grid = card.parentElement;
+    if (grid) grid.style.gridTemplateColumns = "1fr"; // 源栅格收成单列(右侧只剩演化图+热力图)
+    host.innerHTML = '<div class="hif8c7"></div>'; // 保留 .hif8c7 作用域,搬过去仍带 --h8-* 变量
+    const wrap = host.firstElementChild;
+    // 训练步回放 scrubber 一并从概览节搬到表上方(仍按 ID 绑定,拖动照旧驱动全部图表)
+    const scrub = document.getElementById("c7play")?.closest(".h8-scrub");
+    if (scrub) wrap.appendChild(scrub);
+    wrap.appendChild(card);
+    host.hidden = false;
+    centerPane.classList.add("is-hif8-side-table");
   }
 
   // 「问题一」通信调度层的 Timeline (node2 GPU 7) 泳道图：自包含渲染,不再走 iframe。
   // 占位 div 由 renderLocateChain 从 locateChains 的 content 里插入(data-problem-one-timeline)。
   function renderProblemOneTimeline() {
     const host = document.querySelector("[data-problem-one-timeline]");
+    // 底部 Timeline 面板已有全量泳道图,这里只保留异常相关的 r22/r23 两条泳道。
+    if (host && window.PtoProblemOneTimeline) window.PtoProblemOneTimeline.render(host, { rankFilter: { from: 22, to: 23 } });
+  }
+
+  // 底部「Timeline」面板:就地渲染同一张自包含 1F1B 泳道图(复制自 op-rank-time.html
+  // 的 Timeline/Swimlane 页签,不走 iframe)。始终常驻,进入问题一等诊断流程时保持不变。
+  function renderTimelineDock() {
+    const host = document.getElementById("twinTimelineBody");
     if (host && window.PtoProblemOneTimeline) window.PtoProblemOneTimeline.render(host);
   }
 
   function hideLocateChainPanel() {
+    window.PtoHif8Case7?.stop(); // 关闭定位链时停掉 HiF8 案例的训练步回放,避免遗留 interval 空转
+    applyHif8SidePanel(null);    // 复位:恢复整网图,清掉搬到左侧的量化误差表
     if (lvAnimRaf) { cancelAnimationFrame(lvAnimRaf); lvAnimRaf = null; } // 关闭定位链时停掉 all-to-all 动画
+    closeModelLayerView(); // 收起在整网图区域展示的模型层展开图,还原整网图
     closeLayerMax(); // 若展开图正处于最大化,先还原,避免 fixed 层残留在关闭后的界面上
     locateChainObserver?.disconnect();
     locateChainObserver = null;
+    _locateTrackArgs = null;
+    activeLocateCase = null; // 停止把集群热力图镜像到已关闭的 infra 示意图
     clearInfraHeatHighlight();
-    $("runTwinTitle").textContent = "训练监控";
-    $("runTwinMeta").textContent = "";
+    // 还原左侧「整网图」头部:隐藏 kicker,标题恢复为模型名;中间列头重新显示「训练监控」
+    const kicker = $("architectureKicker");
+    if (kicker) kicker.hidden = true;
+    $("architectureTitle").textContent = models[state.model].title;
     $("locateChainBack").hidden = true;
+    const runTwinHeader = $("runTwinHeader");
+    if (runTwinHeader) runTwinHeader.hidden = false;
+    $("twinWorkArea")?.classList.remove("is-merged"); // 还原为两块独立面板
     $("runTwinLocateView").hidden = true;
     $("runTwinDefaultView").hidden = false;
   }
@@ -2847,9 +3979,8 @@
 
   function bindDiagnosisMarkers() {
     const bubble = document.getElementById('diagnosisTooltip');
-    const track = document.querySelector('.twin-progress-status-track');
+    const track = document.getElementById('progressTrack');
     if (!track || !bubble) return;
-    const parent = track.parentNode; // .twin-progress-status-info, 三角挂载在此
 
     const findMarker = (key) => diagnosisMarkers.find((m) => m.key === key);
 
@@ -2885,21 +4016,21 @@
       if (card) toggleDiagnosisCard(card);
     };
 
-    // 事件委托在 parent 上(三角挂载在此)
-    parent.addEventListener('mouseenter', (e) => {
-      const el = e.target.closest('.progress-diagnosis-marker');
+    // 事件委托在进度条上(问题点纵向线挂在 track 内)
+    track.addEventListener('mouseenter', (e) => {
+      const el = e.target.closest('.twin-progress-marker');
       if (el) showBubble({ currentTarget: el });
     }, true);
-    parent.addEventListener('mouseleave', (e) => {
-      const el = e.target.closest('.progress-diagnosis-marker');
+    track.addEventListener('mouseleave', (e) => {
+      const el = e.target.closest('.twin-progress-marker');
       if (el) hideBubble();
     }, true);
-    parent.addEventListener('mousemove', (e) => {
-      const el = e.target.closest('.progress-diagnosis-marker');
+    track.addEventListener('mousemove', (e) => {
+      const el = e.target.closest('.twin-progress-marker');
       if (el) moveBubble({ currentTarget: el });
     }, true);
-    parent.addEventListener('click', (e) => {
-      const el = e.target.closest('.progress-diagnosis-marker');
+    track.addEventListener('click', (e) => {
+      const el = e.target.closest('.twin-progress-marker');
       if (el) handleClick({ currentTarget: el });
     });
   }
@@ -2908,11 +4039,15 @@
     bindControls();
     bindDiagnosisCards();
     bindDiagnosisMarkers();
+    bindLayerViewTopbar();
     applyTheme(currentTheme, { skipRender: true });
     seedHistory();
     state.seen = models[state.model].target * 0.42;
     renderArchitecture();
-    $("hardwareSummary").textContent = `${hardwareProfiles[state.hardware].label}，每格为${hardwareProfiles[state.hardware].unit}，底色表示算力占用率，角标表示温度/异常风险。`;
+    // 新整网图由 opv-modelviz 异步渲染,renderArchitecture 内已跳过旧图;
+    // applyDefaultDiagnosisMarkers 内部自带重试等待 #graphStage SVG 就绪再画标记
+    applyDefaultDiagnosisMarkers();
+    $("hardwareSummary").textContent = `${hardwareProfiles[state.hardware].label}，每格为${hardwareProfiles[state.hardware].unit}。`;
     resetDevices();
     seedEvents();
     renderArtifacts();
@@ -2920,10 +4055,32 @@
     baseline.eta = (models[state.model].target - state.seen) / baseline.tokps;
     renderAll();
     initAccuracyCharts();
+    initInfraCharts();
+    renderTimelineDock();
     window.addEventListener("resize", () => {
       syncAccCards(false);
+      syncInfraCards(false);
       syncLocateMetricCharts(false);
+      if (!document.getElementById("runTwinLocateView").hidden) renderCase6AllCharts();
+      if (_locateTrackArgs) drawLocateTrackLines(_locateTrackArgs.top, _locateTrackArgs.nodeCount, _locateTrackArgs.branchBeforeIndex, _locateTrackArgs.bypassList);
     });
+    // 监控侧栏宽度改由 grid 的 minmax(420px, 0.4fr) 弹性伸缩(分辨率足够时占整网图列 40%),
+    // 侧栏变宽不会触发 window resize,需单独观察侧栏尺寸变化重画图表,否则 SVG(height:auto)
+    // 会按旧宽度的宽高比溢出固定高度的网格单元,底部被裁掉,看起来像"挤在容器上面"
+    const monitorSidebar = document.querySelector(".twin-monitor-sidebar");
+    if (monitorSidebar && "ResizeObserver" in window) {
+      let sidebarSyncRaf = 0;
+      const ro = new ResizeObserver(() => {
+        if (sidebarSyncRaf) return;
+        sidebarSyncRaf = requestAnimationFrame(() => {
+          sidebarSyncRaf = 0;
+          syncAccCards(false);
+          syncInfraCards(false);
+          syncLocateMetricCharts(false);
+        });
+      });
+      ro.observe(monitorSidebar);
+    }
     setInterval(tick, 120000); // 每 2 分钟推进一次 step,图表与进度条同步刷新,不再频繁闪动
   }
 

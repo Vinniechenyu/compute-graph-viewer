@@ -2,276 +2,367 @@
 // Business data/state machine remains page-owned; visual shell lives in ascendport_migration_V3_MLA_pto.html.
 /* ============================ 源代码 & 产物 ============================ */
 const CUDA = String.raw`import torch
-import torch.nn.functional as F
-import tilelang
-from tilelang.autotuner import *
-import tilelang.language as T
-from einops import rearrange, einsum
-import argparse
+import triton
+import triton.language as tl
+import math
+import time
 
-
-@tilelang.jit(
-    out_idx=[4],
-    pass_configs={tilelang.PassConfigKey.TL_ENABLE_FAST_MATH: True},
-)
-def flashattn(batch, heads, kv_head_num, seqlen_kv, dim, pe_dim, block_N, block_H, num_split, softmax_scale):
-    scale = float(softmax_scale * 1.44269504)  # log2(e)
-    dtype = T.float16
-    accum_dtype = T.float32
-    kv_group_num = heads // kv_head_num
-    VALID_BLOCK_H = min(block_H, kv_group_num)
-    assert kv_head_num == 1, "kv_head_num must be 1"
-
-    @T.prim_func
-    def main_split(
-        Q: T.Tensor([batch, heads, dim], dtype),
-        Q_pe: T.Tensor([batch, heads, pe_dim], dtype),
-        KV: T.Tensor([batch, seqlen_kv, kv_head_num, dim], dtype),
-        K_pe: T.Tensor([batch, seqlen_kv, kv_head_num, pe_dim], dtype),
-        Output: T.Tensor([batch, heads, dim], dtype),
-    ):
-        glse = T.alloc_global([batch, heads, num_split], dtype)
-        Output_partial = T.alloc_global([batch, heads, num_split, dim], dtype)
-        # flash_attn_split
-        with T.Kernel(batch, heads // min(block_H, kv_group_num), num_split, threads=256) as (bid, hid, bz):
-            Q_shared = T.alloc_shared([block_H, dim], dtype)
-            S_shared = T.alloc_shared([block_H, block_N], dtype)
-            Q_pe_shared = T.alloc_shared([block_H, pe_dim], dtype)
-            KV_shared = T.alloc_shared([block_N, dim], dtype)
-            K_pe_shared = T.alloc_shared([block_N, pe_dim], dtype)
-            O_shared = T.alloc_shared([block_H, dim], dtype)
-            acc_s = T.alloc_fragment([block_H, block_N], accum_dtype)
-            acc_s_cast = T.alloc_fragment([block_H, block_N], dtype)
-            acc_o = T.alloc_fragment([block_H, dim], accum_dtype)
-            scores_max = T.alloc_fragment([block_H], accum_dtype)
-            scores_max_prev = T.alloc_fragment([block_H], accum_dtype)
-            scores_scale = T.alloc_fragment([block_H], accum_dtype)
-            scores_sum = T.alloc_fragment([block_H], accum_dtype)
-            logsum = T.alloc_fragment([block_H], accum_dtype)
-
-            cur_kv_head = hid // (kv_group_num // block_H)
-            T.use_swizzle(10)
-
-            T.copy(Q[bid, hid * VALID_BLOCK_H : (hid + 1) * VALID_BLOCK_H, :], Q_shared)
-            T.copy(Q_pe[bid, hid * VALID_BLOCK_H : (hid + 1) * VALID_BLOCK_H, :], Q_pe_shared)
-            T.fill(acc_o, 0)
-            T.fill(logsum, 0)
-            T.fill(scores_max, -T.infinity(accum_dtype))
-
-            loop_range = T.ceildiv((seqlen_kv // num_split), block_N)
-            for k in T.Pipelined(loop_range, num_stages=2):
-                kv_start = (seqlen_kv // num_split) * bz + k * block_N
-                kv_end = (seqlen_kv // num_split) * bz + (k + 1) * block_N
-                T.copy(KV[bid, kv_start:kv_end, cur_kv_head, :], KV_shared)
-                T.copy(K_pe[bid, kv_start:kv_end, cur_kv_head, :], K_pe_shared)
-                T.clear(acc_s)
-                T.gemm(Q_shared, KV_shared, acc_s, transpose_B=True, policy=T.GemmWarpPolicy.FullCol)
-                T.gemm(Q_pe_shared, K_pe_shared, acc_s, transpose_B=True, policy=T.GemmWarpPolicy.FullCol)
-                T.copy(scores_max, scores_max_prev)
-                T.fill(scores_max, -T.infinity(accum_dtype))
-                T.reduce_max(acc_s, scores_max, dim=1, clear=False)
-                for i in T.Parallel(block_H):
-                    scores_max[i] = T.max(scores_max[i], scores_max_prev[i])
-                for i in T.Parallel(block_H):
-                    scores_scale[i] = T.exp2(scores_max_prev[i] * scale - scores_max[i] * scale)
-                for i, j in T.Parallel(block_H, block_N):
-                    acc_s[i, j] = T.exp2(acc_s[i, j] * scale - scores_max[i] * scale)
-                T.reduce_sum(acc_s, scores_sum, dim=1)
-                T.copy(acc_s, S_shared)
-                T.copy(S_shared, acc_s_cast)
-                for i in T.Parallel(block_H):
-                    logsum[i] = logsum[i] * scores_scale[i] + scores_sum[i]
-                for i, j in T.Parallel(block_H, dim):
-                    acc_o[i, j] *= scores_scale[i]
-                T.gemm(acc_s_cast, KV_shared, acc_o, policy=T.GemmWarpPolicy.FullCol)
-            for i, j in T.Parallel(block_H, dim):
-                acc_o[i, j] /= logsum[i]
-            for i in T.Parallel(block_H):
-                logsum[i] = T.log2(logsum[i]) + scores_max[i] * scale
-            T.copy(logsum, glse[bid, hid * VALID_BLOCK_H : (hid + 1) * VALID_BLOCK_H, bz])
-            T.copy(acc_o, O_shared)
-            T.copy(O_shared, Output_partial[bid, hid * VALID_BLOCK_H : (hid + 1) * VALID_BLOCK_H, bz, :])
-
-        # combine
-        with T.Kernel(heads, batch, threads=128) as (hid, bz):
-            po_local = T.alloc_fragment([dim], dtype)
-            o_accum_local = T.alloc_fragment([dim], accum_dtype)
-            lse_local_split = T.alloc_var(accum_dtype)
-            lse_logsum_local = T.alloc_var(accum_dtype)
-            lse_max_local = T.alloc_var(accum_dtype)
-            scale_local = T.alloc_var(accum_dtype)
-
-            T.clear(lse_logsum_local)
-            T.clear(o_accum_local)
-            lse_max_local = -T.infinity(accum_dtype)
-            for k in T.serial(num_split):
-                lse_max_local = T.max(lse_max_local, glse[bz, hid, k])
-            for k in T.Pipelined(num_split, num_stages=1):
-                lse_local_split = glse[bz, hid, k]
-                lse_logsum_local += T.exp2(lse_local_split - lse_max_local)
-            lse_logsum_local = T.log2(lse_logsum_local) + lse_max_local
-            for k in T.serial(num_split):
-                for i in T.Parallel(dim):
-                    po_local[i] = Output_partial[bz, hid, k, i]
-                lse_local_split = glse[bz, hid, k]
-                scale_local = T.exp2(lse_local_split - lse_logsum_local)
-                for i in T.Parallel(dim):
-                    o_accum_local[i] += po_local[i] * scale_local
-            for i in T.Parallel(dim):
-                Output[bz, hid, i] = o_accum_local[i]
-
-    @T.prim_func
-    def main_no_split(
-        Q: T.Tensor([batch, heads, dim], dtype),
-        Q_pe: T.Tensor([batch, heads, pe_dim], dtype),
-        KV: T.Tensor([batch, seqlen_kv, kv_head_num, dim], dtype),
-        K_pe: T.Tensor([batch, seqlen_kv, kv_head_num, pe_dim], dtype),
-        Output: T.Tensor([batch, heads, dim], dtype),
-    ):
-        with T.Kernel(heads // min(block_H, kv_group_num), batch, threads=256) as (hid, bid):
-            Q_shared = T.alloc_shared([block_H, dim], dtype)
-            S_shared = T.alloc_shared([block_H, block_N], dtype)
-            Q_pe_shared = T.alloc_shared([block_H, pe_dim], dtype)
-            KV_shared = T.alloc_shared([block_N, dim], dtype)
-            K_pe_shared = T.alloc_shared([block_N, pe_dim], dtype)
-            O_shared = T.alloc_shared([block_H, dim], dtype)
-            acc_s = T.alloc_fragment([block_H, block_N], accum_dtype)
-            acc_o = T.alloc_fragment([block_H, dim], accum_dtype)
-            scores_max = T.alloc_fragment([block_H], accum_dtype)
-            scores_max_prev = T.alloc_fragment([block_H], accum_dtype)
-            scores_scale = T.alloc_fragment([block_H], accum_dtype)
-            scores_sum = T.alloc_fragment([block_H], accum_dtype)
-            logsum = T.alloc_fragment([block_H], accum_dtype)
-
-            cur_kv_head = hid // (kv_group_num // block_H)
-
-            T.copy(Q[bid, hid * VALID_BLOCK_H : (hid + 1) * VALID_BLOCK_H, :], Q_shared)
-            T.copy(Q_pe[bid, hid * VALID_BLOCK_H : (hid + 1) * VALID_BLOCK_H, :], Q_pe_shared)
-            T.fill(acc_o, 0)
-            T.fill(logsum, 0)
-            T.fill(scores_max, -T.infinity(accum_dtype))
-
-            loop_range = T.ceildiv(seqlen_kv, block_N)
-            for k in T.Pipelined(loop_range, num_stages=2):
-                T.copy(KV[bid, k * block_N : (k + 1) * block_N, cur_kv_head, :], KV_shared)
-                T.copy(K_pe[bid, k * block_N : (k + 1) * block_N, cur_kv_head, :], K_pe_shared)
-                T.gemm(Q_shared, KV_shared, acc_s, transpose_B=True, policy=T.GemmWarpPolicy.FullCol, clear_accum=True)
-                T.gemm(Q_pe_shared, K_pe_shared, acc_s, transpose_B=True, policy=T.GemmWarpPolicy.FullCol)
-                T.copy(scores_max, scores_max_prev)
-                T.fill(scores_max, -T.infinity(accum_dtype))
-                T.reduce_max(acc_s, scores_max, dim=1, clear=False)
-                for i in T.Parallel(block_H):
-                    scores_max[i] = T.max(scores_max[i], scores_max_prev[i])
-                for i in T.Parallel(block_H):
-                    scores_scale[i] = T.exp2(scores_max_prev[i] * scale - scores_max[i] * scale)
-                for i, j in T.Parallel(block_H, block_N):
-                    acc_s[i, j] = T.exp2(acc_s[i, j] * scale - scores_max[i] * scale)
-                T.reduce_sum(acc_s, scores_sum, dim=1)
-                T.copy(acc_s, S_shared)
-                for i in T.Parallel(block_H):
-                    logsum[i] = logsum[i] * scores_scale[i] + scores_sum[i]
-                for i, j in T.Parallel(block_H, dim):
-                    acc_o[i, j] *= scores_scale[i]
-                T.gemm(S_shared, KV_shared, acc_o, policy=T.GemmWarpPolicy.FullCol)
-            for i, j in T.Parallel(block_H, dim):
-                acc_o[i, j] /= logsum[i]
-            T.copy(acc_o, O_shared)
-            T.copy(O_shared, Output[bid, hid * VALID_BLOCK_H : (hid + 1) * VALID_BLOCK_H, :])
-
-    if num_split > 1:
-        return main_split
-    else:
-        return main_no_split
-
-
-def ref_program(q, q_pe, kv, k_pe):
-    #     """
-    #     Inputs:
-    #     - q (Tensor): [batch, heads, dim]
-    #     - q_pe (Tensor): [batch, heads, pe_dim]
-    #     - kv (Tensor): [batch, seqlen_kv, kv_head_num, dim]
-    #     - k_pe (Tensor): [batch, seqlen_kv, kv_head_num, pe_dim]
-    #     Outputs:
-    #     - output (Tensor): [batch, heads, dim]
-    #     """
-    dim = q.shape[-1]
-    pe_dim = q_pe.shape[-1]
-    num_head_groups = q.shape[1] // kv.shape[2]
-    scale = (dim + pe_dim) ** 0.5
-    q = rearrange(q, "b (h g) d -> b g h d", g=num_head_groups)  # [batch_size, num_head_groups, groups, dim]
-
-    q_pe = rearrange(q_pe, "b (h g) d -> b g h d", g=num_head_groups)  # [batch_size, num_head_groups, groups, pe_dim]
-
-    kv = rearrange(kv, "b n h d -> b h n d")  # [batch_size, groups, seqlen_kv, dim]
-
-    k_pe = rearrange(k_pe, "b n h d -> b h n d")  # [batch_size, num_head_groups, groups, pe_dim]
-
-    query = torch.concat([q, q_pe], dim=-1)
-    key = torch.concat([kv, k_pe], dim=-1)
-
-    scores = einsum(query, key, "b g h d, b h s d -> b g h s")  # [batch_size, num_head_groups, groups, seqlen_kv]
-
-    attention = F.softmax(scores / scale, dim=-1)  # [batch_size, num_head_groups, groups, seqlen_kv]
-
-    out = einsum(attention, kv, "b g h s, b h s d -> b g h d")  # [batch_size, num_head_groups, groups, dim]
-    out = rearrange(out, "b g h d -> b (h g) d")  # [batch_size, heads, dim]
-    return out
-
-
-def main(
-    batch=1,
-    heads=128,
-    kv_heads=1,
-    kv_ctx=8192,
-    dim=512,
-    pe_dim=64,
+@triton.jit
+def _flash_attention_v2_forward_kernel(
+    # 查询、键、值张量指针
+    q_ptr, k_ptr, v_ptr, output_ptr,
+    # softmax统计量指针 (用于backward)
+    l_ptr, m_ptr,
+    # 张量的形状参数
+    batch_size, seq_len, head_dim,
+    # 块大小设置
+    BLOCK_SIZE_M: tl.constexpr, BLOCK_SIZE_N: tl.constexpr, BLOCK_SIZE_DMODEL: tl.constexpr,
+    # 缩放因子
+    scale,
 ):
-    qk_flops = 2 * batch * heads * kv_ctx * (dim + pe_dim)
-    pv_flops = 2 * batch * heads * kv_ctx * dim
-    total_flops = qk_flops + pv_flops
-    BLOCK_N = 64
-    BLOCK_H = min(64, heads // kv_heads)
-    num_split = 1
-    softmax_scale = (dim + pe_dim) ** -0.5
+    """Flash Attention v2 前向内核实现"""
+    # 获取程序ID
+    pid = tl.program_id(0)
+    batch_id = tl.program_id(1)
+    
+    # 计算当前处理的行范围
+    row_start = pid * BLOCK_SIZE_M
+    row_offsets = row_start + tl.arange(0, BLOCK_SIZE_M)
+    row_mask = row_offsets < seq_len
+    
+    # 计算批次偏移
+    batch_offset = batch_id * seq_len * BLOCK_SIZE_DMODEL
+    
+    # 加载Q块
+    q_offsets = tl.arange(0, BLOCK_SIZE_DMODEL)
+    q_block_ptr = q_ptr + batch_offset + row_offsets[:, None] * BLOCK_SIZE_DMODEL + q_offsets[None, :]
+    q_block = tl.load(q_block_ptr, mask=row_mask[:, None], other=0.0)
+    
+    # 初始化输出和softmax统计量
+    acc_o = tl.zeros([BLOCK_SIZE_M, BLOCK_SIZE_DMODEL], dtype=tl.float32)
+    m_i = tl.zeros([BLOCK_SIZE_M], dtype=tl.float32) - float('inf')
+    l_i = tl.zeros([BLOCK_SIZE_M], dtype=tl.float32)
+    
+    # Flash Attention v2的核心改进：按列分块处理，减少HBM访问
+    for start_n in range(0, seq_len, BLOCK_SIZE_N):
+        # 计算当前列块的范围
+        end_n = min(start_n + BLOCK_SIZE_N, seq_len)
+        col_offsets = start_n + tl.arange(0, BLOCK_SIZE_N)
+        col_mask = col_offsets < end_n
+        
+        # 加载K块
+        k_block_ptr = k_ptr + batch_offset + col_offsets[:, None] * BLOCK_SIZE_DMODEL + q_offsets[None, :]
+        k_block = tl.load(k_block_ptr, mask=col_mask[:, None], other=0.0)
+        
+        # 加载V块
+        v_block_ptr = v_ptr + batch_offset + col_offsets[:, None] * BLOCK_SIZE_DMODEL + q_offsets[None, :]
+        v_block = tl.load(v_block_ptr, mask=col_mask[:, None], other=0.0)
+        
+        # 计算Q @ K^T
+        qk = tl.dot(q_block, tl.trans(k_block)) * scale
+        
+        # 应用因果mask (如果需要)
+        if start_n > row_start:
+            causal_mask = col_offsets[None, :] <= row_offsets[:, None]
+            qk = tl.where(causal_mask, qk, float('-inf'))
+        
+        # 计算当前块的最大值
+        m_ij = tl.max(qk, axis=1)
+        m_i_new = tl.maximum(m_i, m_ij)
+        
+        # 计算缩放因子
+        p_scale = tl.exp(m_i - m_i_new)
+        
+        # 更新softmax分母
+        p_ij = tl.exp(qk - m_i_new[:, None])
+        l_i_new = l_i * p_scale + tl.sum(p_ij, axis=1)
+        
+        # 更新输出
+        acc_o = acc_o * p_scale[:, None] + tl.dot(p_ij, v_block)
+        
+        # 更新统计量
+        m_i = m_i_new
+        l_i = l_i_new
+    
+    # 最终归一化
+    acc_o = acc_o / l_i[:, None]
+    
+    # 存储输出
+    output_block_ptr = output_ptr + batch_offset + row_offsets[:, None] * BLOCK_SIZE_DMODEL + q_offsets[None, :]
+    tl.store(output_block_ptr, acc_o, mask=row_mask[:, None])
+    
+    # 存储softmax统计量 (用于backward)
+    l_block_ptr = l_ptr + batch_offset + row_offsets
+    m_block_ptr = m_ptr + batch_offset + row_offsets
+    tl.store(l_block_ptr, l_i, mask=row_mask)
+    tl.store(m_block_ptr, m_i, mask=row_mask)
 
-    kernel = flashattn(batch, heads, kv_heads, kv_ctx, dim, pe_dim, BLOCK_N, BLOCK_H, num_split, softmax_scale)
-    profiler = kernel.get_profiler(tensor_supply_type=tilelang.TensorSupplyType.Randn)
-    profiler.assert_allclose(ref_program, rtol=1e-4, atol=1e-4)
-    latency = profiler.do_bench(warmup=500)
-    print(f"Latency: {latency} ms")
-    print(f"TFlops: {total_flops / latency * 1e-9} TFlops")
-
-
-def run_regression_perf(
-    batch=1,
-    heads=128,
-    kv_heads=1,
-    kv_ctx=8192,
-    dim=512,
-    pe_dim=64,
+@triton.jit
+def _flash_attention_v2_backward_kernel(
+    # 输出梯度指针
+    doutput_ptr,
+    # 输入梯度指针
+    dq_ptr, dk_ptr, dv_ptr,
+    # softmax统计量指针
+    l_ptr, m_ptr,
+    # 原始输入指针
+    q_ptr, k_ptr, v_ptr,
+    # 张量的形状参数
+    batch_size, seq_len, head_dim,
+    # 块大小设置
+    BLOCK_SIZE_M: tl.constexpr, BLOCK_SIZE_N: tl.constexpr, BLOCK_SIZE_DMODEL: tl.constexpr,
+    # 缩放因子
+    scale,
 ):
-    BLOCK_N = 64
-    BLOCK_H = min(64, heads // kv_heads)
-    num_split = 1
-    softmax_scale = (dim + pe_dim) ** -0.5
+    """Flash Attention v2 反向内核实现"""
+    # 获取程序ID
+    pid = tl.program_id(0)
+    batch_id = tl.program_id(1)
+    
+    # 计算当前处理的行范围
+    row_start = pid * BLOCK_SIZE_M
+    row_offsets = row_start + tl.arange(0, BLOCK_SIZE_M)
+    row_mask = row_offsets < seq_len
+    
+    # 计算批次偏移
+    batch_offset = batch_id * seq_len * BLOCK_SIZE_DMODEL
+    
+    # 加载softmax统计量
+    l_i = tl.load(l_ptr + batch_offset + row_offsets, mask=row_mask)
+    m_i = tl.load(m_ptr + batch_offset + row_offsets, mask=row_mask)
+    
+    # 加载输出梯度
+    doutput_offsets = tl.arange(0, BLOCK_SIZE_DMODEL)
+    doutput_block_ptr = doutput_ptr + batch_offset + row_offsets[:, None] * BLOCK_SIZE_DMODEL + doutput_offsets[None, :]
+    doutput = tl.load(doutput_block_ptr, mask=row_mask[:, None], other=0.0)
+    
+    # 初始化梯度
+    dq = tl.zeros([BLOCK_SIZE_M, BLOCK_SIZE_DMODEL], dtype=tl.float32)
+    dk = tl.zeros([BLOCK_SIZE_M, BLOCK_SIZE_DMODEL], dtype=tl.float32)
+    dv = tl.zeros([BLOCK_SIZE_M, BLOCK_SIZE_DMODEL], dtype=tl.float32)
+    
+    # 反向传播
+    for start_n in range(0, seq_len, BLOCK_SIZE_N):
+        # 计算当前列块的范围
+        end_n = min(start_n + BLOCK_SIZE_N, seq_len)
+        col_offsets = start_n + tl.arange(0, BLOCK_SIZE_N)
+        col_mask = col_offsets < end_n
+        
+        # 加载K, V块
+        k_block_ptr = k_ptr + batch_offset + col_offsets[:, None] * BLOCK_SIZE_DMODEL + doutput_offsets[None, :]
+        k_block = tl.load(k_block_ptr, mask=col_mask[:, None], other=0.0)
+        
+        v_block_ptr = v_ptr + batch_offset + col_offsets[:, None] * BLOCK_SIZE_DMODEL + doutput_offsets[None, :]
+        v_block = tl.load(v_block_ptr, mask=col_mask[:, None], other=0.0)
+        
+        # 计算Q @ K^T
+        qk = tl.dot(q_block, tl.trans(k_block)) * scale
+        
+        # 计算softmax
+        p_ij = tl.exp(qk - m_i[:, None])
+        p_ij = p_ij / l_i[:, None]
+        
+        # 计算dv
+        dv += tl.dot(tl.trans(p_ij), doutput)
+        
+        # 计算dp
+        dp = tl.dot(doutput, tl.trans(v_block))
+        
+        # 计算dq
+        ds = (p_ij * (dp - tl.sum(p_ij * dp, axis=1, keepdims=True))) * scale
+        dq += tl.dot(ds, k_block)
+        
+        # 计算dk
+        dk += tl.dot(tl.trans(ds), q_block)
+    
+    # 存储梯度
+    dq_block_ptr = dq_ptr + batch_offset + row_offsets[:, None] * BLOCK_SIZE_DMODEL + doutput_offsets[None, :]
+    dk_block_ptr = dk_ptr + batch_offset + row_offsets[:, None] * BLOCK_SIZE_DMODEL + doutput_offsets[None, :]
+    dv_block_ptr = dv_ptr + batch_offset + row_offsets[:, None] * BLOCK_SIZE_DMODEL + doutput_offsets[None, :]
+    
+    tl.store(dq_block_ptr, dq, mask=row_mask[:, None])
+    tl.store(dk_block_ptr, dk, mask=row_mask[:, None])
+    tl.store(dv_block_ptr, dv, mask=row_mask[:, None])
 
-    kernel = flashattn(batch, heads, kv_heads, kv_ctx, dim, pe_dim, BLOCK_N, BLOCK_H, num_split, softmax_scale)
-    profiler = kernel.get_profiler(tensor_supply_type=tilelang.TensorSupplyType.Randn)
-    profiler.assert_allclose(ref_program, rtol=1e-4, atol=1e-4)
-    return profiler.do_bench(backend="cupti")
+class FlashAttentionV2Function(torch.autograd.Function):
+    """Flash Attention v2 的autograd函数"""
+    
+    @staticmethod
+    def forward(ctx, q, k, v, scale=None):
+        """
+        Flash Attention v2 前向传播
+        
+        参数:
+            q: 查询张量 [batch_size, seq_len, head_dim]
+            k: 键张量 [batch_size, seq_len, head_dim]
+            v: 值张量 [batch_size, seq_len, head_dim]
+            scale: 缩放因子，默认为1/sqrt(head_dim)
+        """
+        batch_size, seq_len, head_dim = q.shape
+        
+        # 默认缩放因子
+        if scale is None:
+            scale = 1.0 / math.sqrt(head_dim)
+        
+        # 确保输入是连续的
+        q = q.contiguous()
+        k = k.contiguous()
+        v = v.contiguous()
+        
+        # 分配输出张量
+        output = torch.empty_like(q)
+        
+        # 分配softmax统计量
+        l_i = torch.empty(batch_size, seq_len, dtype=torch.float32, device=q.device)
+        m_i = torch.empty(batch_size, seq_len, dtype=torch.float32, device=q.device)
+        
+        # 确定块大小 - Flash Attention v2优化
+        BLOCK_SIZE_M = 128
+        BLOCK_SIZE_N = 128
+        BLOCK_SIZE_DMODEL = head_dim
+        
+        # 计算网格维度
+        grid = (
+            triton.cdiv(seq_len, BLOCK_SIZE_M),  # 行块数
+            batch_size,  # 批次数
+        )
+        
+        # 启动前向内核
+        _flash_attention_v2_forward_kernel[grid](
+            q, k, v, output,
+            l_i, m_i,
+            batch_size, seq_len, head_dim,
+            BLOCK_SIZE_M, BLOCK_SIZE_N, BLOCK_SIZE_DMODEL,
+            scale,
+        )
+        
+        # 保存用于backward的张量
+        ctx.save_for_backward(q, k, v, l_i, m_i)
+        ctx.scale = scale
+        ctx.BLOCK_SIZE_M = BLOCK_SIZE_M
+        ctx.BLOCK_SIZE_N = BLOCK_SIZE_N
+        ctx.BLOCK_SIZE_DMODEL = BLOCK_SIZE_DMODEL
+        
+        return output
+    
+    @staticmethod
+    def backward(ctx, doutput):
+        """
+        Flash Attention v2 反向传播
+        
+        参数:
+            doutput: 输出梯度 [batch_size, seq_len, head_dim]
+        """
+        # 获取保存的张量
+        q, k, v, l_i, m_i = ctx.saved_tensors
+        scale = ctx.scale
+        BLOCK_SIZE_M = ctx.BLOCK_SIZE_M
+        BLOCK_SIZE_N = ctx.BLOCK_SIZE_N
+        BLOCK_SIZE_DMODEL = ctx.BLOCK_SIZE_DMODEL
+        
+        batch_size, seq_len, head_dim = q.shape
+        
+        # 分配梯度张量
+        dq = torch.empty_like(q)
+        dk = torch.empty_like(k)
+        dv = torch.empty_like(v)
+        
+        # 计算网格维度
+        grid = (
+            triton.cdiv(seq_len, BLOCK_SIZE_M),  # 行块数
+            batch_size,  # 批次数
+        )
+        
+        # 启动反向内核
+        _flash_attention_v2_backward_kernel[grid](
+            doutput,
+            dq, dk, dv,
+            l_i, m_i,
+            q, k, v,
+            batch_size, seq_len, head_dim,
+            BLOCK_SIZE_M, BLOCK_SIZE_N, BLOCK_SIZE_DMODEL,
+            scale,
+        )
+        
+        return dq, dk, dv, None
 
+def flash_attention_v2(q, k, v, scale=None):
+    """
+    使用Flash Attention v2算法进行高效注意力计算
+    
+    Flash Attention v2的改进：
+    1. 更好的IO-awareness，减少HBM访问
+    2. 支持反向传播，可用于训练
+    3. 优化的块大小和计算顺序
+    4. 更好的数值稳定性
+    
+    参数:
+        q: 查询张量 [batch_size, seq_len, head_dim]
+        k: 键张量 [batch_size, seq_len, head_dim]
+        v: 值张量 [batch_size, seq_len, head_dim]
+        scale: 缩放因子，默认为1/sqrt(head_dim)
+    
+    返回:
+        output: 注意力输出 [batch_size, seq_len, head_dim]
+    """
+    return FlashAttentionV2Function.apply(q, k, v, scale)
+
+def benchmark_flash_attention_v2(batch_size, seq_len, head_dim):
+    """测试Flash Attention v2性能"""
+    # 创建随机输入
+    q = torch.randn(batch_size, seq_len, head_dim, device='cuda', requires_grad=True)
+    k = torch.randn(batch_size, seq_len, head_dim, device='cuda', requires_grad=True)
+    v = torch.randn(batch_size, seq_len, head_dim, device='cuda', requires_grad=True)
+    
+    # 预热
+    _ = flash_attention_v2(q, k, v)
+    torch.cuda.synchronize()
+    
+    # 测量前向时间
+    torch.cuda.synchronize()
+    start_time = time.time()
+    output = flash_attention_v2(q, k, v)
+    torch.cuda.synchronize()
+    forward_time = (time.time() - start_time) * 1000
+    
+    # 测量反向时间
+    loss = output.sum()
+    torch.cuda.synchronize()
+    start_time = time.time()
+    loss.backward()
+    torch.cuda.synchronize()
+    backward_time = (time.time() - start_time) * 1000
+    
+    return forward_time, backward_time
+
+def main():
+    """主函数：运行Flash Attention v2性能测试"""
+    print("Flash Attention v2 性能测试")
+    print("========================")
+    
+    batch_size = 4
+    head_dim = 64
+    seq_lengths = [512, 1024, 2048, 4096]
+    
+    print("序列长度 | 前向时间 (ms) | 反向时间 (ms) | 总时间 (ms)")
+    print("--------|-------------|-------------|----------")
+    
+    for seq_len in seq_lengths:
+        try:
+            forward_time, backward_time = benchmark_flash_attention_v2(batch_size, seq_len, head_dim)
+            total_time = forward_time + backward_time
+            print(f"{seq_len:8d} | {forward_time:13.2f} | {backward_time:13.2f} | {total_time:10.2f}")
+        except RuntimeError as e:
+            print(f"{seq_len:8d} | 内存不足       | 内存不足       | 内存不足")
+    
+    print("\nFlash Attention v2的主要优势:")
+    print("1. 支持反向传播，可用于模型训练")
+    print("2. 更好的IO-awareness，减少HBM访问次数")
+    print("3. 优化的块大小和计算顺序")
+    print("4. 更好的数值稳定性")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--batch", type=int, default=132, help="batch size")
-    parser.add_argument("--heads", type=int, default=128, help="q heads number")
-    parser.add_argument("--kv_heads", type=int, default=1, help="kv heads number")
-    parser.add_argument("--kv_ctx", type=int, default=8192, help="kv context length")
-    parser.add_argument("--dim", type=int, default=512, help="head dim")
-    parser.add_argument("--pe_dim", type=int, default=64, help="pe head dim")
-    args = parser.parse_args()
-    batch, heads, kv_heads, kv_ctx, dim, pe_dim = args.batch, args.heads, args.kv_heads, args.kv_ctx, args.dim, args.pe_dim
-    main(batch, heads, kv_heads, kv_ctx, dim, pe_dim)`;
+    main()`;
 
 const S3 = String.raw`// flash_mla_decode.cpp · AscendC 核  (AscendPort · S3 自动生成)
 // 由 example_mla_decode.py 迁移 —— SIMT grid → 分核 SPMD
@@ -673,8 +764,10 @@ function renderDiff(key){
 }
 const ANALYSIS_LABELS={
   graph:'计算图',
+  api:'API可视化',
   generated:'生成代码',
   flow:'数据流',
+  plan:'算子规划',
   tiling:'分块',
   pipeline:'流水',
   accuracy:'精度',
@@ -761,13 +854,13 @@ function openCompare(diffKey){
   unlockAnalysisView('generated');
   setAnalysisView('generated');
   renderTabs(); renderTree();
-  const f=document.getElementById('etbFile'); if(f) f.textContent='example_mla_decode.py ↔ flash_mla_decode.cpp';
+  const f=document.getElementById('etbFile'); if(f) f.textContent='flash_attention_v2.py ↔ flash_mla_decode.cpp';
   tagLinkGroups(diffKey);                          // 建立相同计算过程的联动呼应
 }
 function closeCompare(){
   const sp=document.getElementById('split');
   sp.classList.remove('compare-open'); sp.classList.remove('link-active');
-  clearLinkHot();
+  clearLinkHot(); hideLinkPop();
   document.getElementById('leftPaneH').style.display='none';
   if(currentAnalysisView()==='generated') closeAnalysisView();
 }
@@ -778,10 +871,26 @@ let linkGroups=[]; // 当前对比视图的分组
 const LINKMAP={
   s3:[
     {label:'内核入口 / 参数', cuda:[124,129], asc:[13,16]},
-    {label:'T.Kernel → 分核 SPMD', cuda:[131,131], asc:[18,19]},
-    {label:'Q / Q_pe 载入', cuda:[148,149], asc:[22,26]},
-    {label:'QKᵀ+PEᵀ → 在线 Softmax → P·V', cuda:[155,175], asc:[30,36]},
-    {label:'use_swizzle / GemmWarpPolicy (SIMT 专属)', cuda:[53,53], asc:[37,37]},
+    {label:'T.Kernel → 分核 SPMD', cuda:[131,131], asc:[18,19],
+     explain:{title:'线程网格 → 分核 SPMD', api:'tl.program_id(0) → GetBlockIdx()',
+       gpu:'Triton/CUDA 用 <code>tl.program_id(0)</code> 从 SIMT 线程网格取块索引：每个 program 即一个 GPU 线程块，由硬件调度器分发到 SM 上并发执行。',
+       npu:'昇腾无线程网格 / SM 概念，改为 <code>GetBlockIdx()</code> 让每个 AI Core 主动认领 (行块, batch) 分片，做 SPMD 分核。',
+       why:'达芬奇是「多算力核 + 核内多单元 (Cube/Vector)」架构，没有 warp / 线程块调度器，并行度以物理算力核为粒度，故用分核认领替代网格映射。'}},
+    {label:'Q / Q_pe 载入', cuda:[148,149], asc:[22,26],
+     explain:{title:'指针访存 → 分级 DataCopy', api:'tl.load(ptr+offs, mask) → DataCopy (GM→L1→L0A)',
+       gpu:'GPU 用指针算术 + mask 直接从 HBM 按偏移寻址：<code>tl.load(ptr+offs, mask=…)</code>，缓存层次由硬件自动托管。',
+       npu:'改为显式 <code>DataCopy</code> 逐级搬运 GM→L1→L0A，缓冲由 <code>InitBuffer</code> / <code>TQue</code> 声明，无裸指针访存。',
+       why:'达芬奇是显式多级片上缓冲 (L1/L0/UB) 架构，访存必须经 DMA 逐级搬运并双缓冲流水；不存在 GPU 那种由缓存自动托管的指针访存模型。'}},
+    {label:'QKᵀ+PEᵀ → 在线 Softmax → P·V', cuda:[155,175], asc:[30,36],
+     explain:{title:'warp 张量核 → Cube/Vector 分派', api:'tl.dot + warp shuffle → Mmad + ReduceMax/Exp/ReduceSum',
+       gpu:'<code>tl.dot</code> 在 warp 级张量核 (MMA) 上做矩阵乘，softmax 的 max/exp/sum 借 warp shuffle 跨线程归约，全部融合在一个 kernel 的寄存器里完成。',
+       npu:'Q·Kᵀ / P·V 交给 Cube 矩阵单元 <code>Mmad</code> (自管 L0A/L0B/L0C)；在线 Softmax 的 <code>ReduceMax</code> / <code>Exp</code> / <code>ReduceSum</code> 交给 Vector 向量单元片上归约。',
+       why:'达芬奇 Cube 与 Vector 是物理分离的执行单元，没有 warp 也没有 warp shuffle；矩阵与向量运算须分派到各自单元，且 Cube 输出 L0C 无直连 UB，打分要 L0C→GM→UB 中转。'}},
+    {label:'use_swizzle / GemmWarpPolicy (SIMT 专属)', cuda:[53,53], asc:[37,37],
+     explain:{title:'SIMT 专属旋钮 → 直接删除', api:'use_swizzle / GemmWarpPolicy → (移除)',
+       gpu:'<code>use_swizzle</code> / <code>GemmWarpPolicy</code> 是为 GPU L2 命中率与 warp 内 tensor-core 分工设的调度旋钮。',
+       npu:'直接删除 —— 昇腾没有 warp / L2-swizzle 概念，其职责由分核 + 向量单元规约承担。',
+       why:'这些是 SIMT / warp 硬件模型专属参数，在达芬奇架构上无对应物，保留反而误导，故整体移除。'}},
     {label:'Output 写回', cuda:[176,179], asc:[26,26]},
   ],
   s4:[
@@ -812,7 +921,9 @@ function tagLinkGroups(diffKey){
   const reset=el=>{el.classList.remove('link-grp');el.removeAttribute('data-grp');};
   leftLns.forEach(reset); rightLns.forEach(reset);
   const add=(el,gi)=>{ if(!el) return; el.classList.add('link-grp');
-    const cur=el.dataset.grp?el.dataset.grp.split(','):[]; if(!cur.includes(''+gi)){cur.push(''+gi);el.dataset.grp=cur.join(',');} };
+    const cur=el.dataset.grp?el.dataset.grp.split(','):[]; if(!cur.includes(''+gi)){cur.push(''+gi);el.dataset.grp=cur.join(',');}
+    // 改写行（该组带架构差异解释）：打标记 + 记录首个解释组
+    if(linkGroups[gi] && linkGroups[gi].explain){ el.classList.add('link-diff'); if(el.dataset.diffgrp==null) el.dataset.diffgrp=''+gi; } };
   linkGroups.forEach((g,gi)=>{
     for(let i=g.cuda[0]-1;i<=g.cuda[1]-1;i++) add(leftLns[i],gi);
     for(let i=g.asc[0]-1;i<=g.asc[1]-1;i++) add(rightLns[i],gi);
@@ -823,6 +934,39 @@ function clearLinkHot(){
   document.querySelectorAll('.ln.link-hot').forEach(el=>el.classList.remove('link-hot'));
   document.getElementById('split').classList.remove('link-active');
 }
+/* ---------- 改写行架构差异浮窗 ---------- */
+let linkPopEl=null;
+function ensureLinkPop(){
+  if(linkPopEl) return linkPopEl;
+  linkPopEl=document.createElement('div');
+  linkPopEl.className='link-pop'; linkPopEl.id='linkPop';
+  document.body.appendChild(linkPopEl);
+  return linkPopEl;
+}
+function showLinkPop(el){
+  const gi=el.dataset.diffgrp; if(gi==null) return;
+  const g=linkGroups[Number(gi)]; if(!g||!g.explain) return;
+  const e=g.explain;
+  const pop=ensureLinkPop();
+  pop.innerHTML=`<div class="lp-h"><span class="lp-tag">改写 · 算子 API 差异</span><b>${e.title}</b></div>
+    ${e.api?`<div class="lp-arrow" style="padding-top:7px"><code style="font-size:11px">${e.api.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</code></div>`:''}
+    <div class="lp-row lp-gpu"><span class="lp-k">GPU · SIMT</span><p>${e.gpu}</p></div>
+    <div class="lp-arrow">↓ 昇腾达芬奇改写为</div>
+    <div class="lp-row lp-npu"><span class="lp-k">昇腾 · 达芬奇</span><p>${e.npu}</p></div>
+    <div class="lp-why"><b>为什么这么改</b>${e.why}</div>`;
+  pop.style.visibility='hidden'; pop.classList.add('show');
+  // 定位：优先置于该行右侧，空间不足则左侧；纵向以行为中心并夹在视口内
+  const r=el.getBoundingClientRect();
+  const pw=pop.offsetWidth, ph=pop.offsetHeight, gap=10, m=8;
+  let left = r.right + gap;
+  if(left + pw > window.innerWidth - m) left = r.left - gap - pw;   // 右侧放不下 → 左侧
+  if(left < m) left = Math.min(window.innerWidth - pw - m, Math.max(m, r.left)); // 仍放不下 → 夹取
+  let top = r.top + r.height/2 - ph/2;
+  top = Math.max(m, Math.min(top, window.innerHeight - ph - m));
+  pop.style.left=left+'px'; pop.style.top=top+'px';
+  pop.style.visibility='visible';
+}
+function hideLinkPop(){ if(linkPopEl) linkPopEl.classList.remove('show'); }
 function highlightGroup(grpAttr, originSide){
   clearLinkHot();
   if(grpAttr==null||grpAttr==='') return;
@@ -855,12 +999,12 @@ function bindLinkHover(lns, side){
   lns.forEach(el=>{
     if(!el.classList.contains('link-grp')) return;
     if(el.__linkSide===side) return; el.__linkSide=side;
-    el.onmouseenter=()=>highlightGroup(el.dataset.grp, side);
+    el.onmouseenter=()=>{ highlightGroup(el.dataset.grp, side); if(el.classList.contains('link-diff')) showLinkPop(el); else hideLinkPop(); };
     el.onclick=()=>highlightGroup(el.dataset.grp, side); // 点击滚动到对侧
   });
-  // 离开代码区清除高亮
+  // 离开代码区清除高亮 + 关闭浮窗
   const wrap = side==='left'?document.getElementById('codewrap'):document.getElementById('diffwrap');
-  wrap.onmouseleave=()=>clearLinkHot();
+  wrap.onmouseleave=()=>{ clearLinkHot(); hideLinkPop(); };
 }
 
 /* ============================ S4 硬件数据流动画 ============================ */
@@ -1023,7 +1167,7 @@ function activatePanelTab(p){
   document.getElementById('probs').style.display=p==='probs'?'block':'none';
 }
 
-/* ============================ S7 精度报告 ============================ */
+/* ============================ S6 精度报告 ============================ */
 // 逐算子对齐 CUDA 黄金基准。fixed 表示已应用修复后的复测结果。
 let accFixed=false;
 const ACC_OPS=[
@@ -1111,7 +1255,7 @@ function openAccPanel(){
   renderAccReport();
 }
 
-/* ============================ S8 性能报告 ============================ */
+/* ============================ S7 性能报告 ============================ */
 // 泳道图:每条泳道一个硬件单元,cell 为 {s起, w宽, cls, l标签}。时间以格为单位。
 // 直译版:串行,单元间大量空转。
 function perfSwimBefore(){
@@ -1186,13 +1330,13 @@ function renderPerfReport(play){
 
     <div class="perf-sec-h">调优发现与建议</div>
     <div class="perf-tune">
-      <div class="pt-item"><span class="ic" style="color:var(--ok)">✓</span><div><b>双缓冲重叠</b> <span class="pv">已消除搬运气泡,流水气泡 21%→4%(见 S6)。</span></div></div>
+      <div class="pt-item"><span class="ic" style="color:var(--ok)">✓</span><div><b>双缓冲重叠</b> <span class="pv">已消除搬运气泡,流水气泡 21%→4%(见 S5)。</span></div></div>
       <div class="pt-item"><span class="ic" style="color:var(--ok)">✓</span><div><b>矩阵单元满流水</b> <span class="pv">Mmad 连续无断流,矩阵单元占用 76%。</span></div></div>
       <div class="pt-item"><span class="ic" style="color:var(--warn)">◐</span><div><b>向量单元仍有空隙</b> <span class="pv">在线 Softmax 归约与矩阵单元存在轻微串行,可进一步用统一缓冲双缓冲重叠(潜在 +6%)。</span></div></div>
       <div class="pt-item"><span class="ic" style="color:var(--warn)">◐</span><div><b>末块尾效应</b> <span class="pv">末块无预取对象,建议按分块长度对齐序列长度以摊薄尾延迟。</span></div></div>
     </div>
 
-    <div class="perf-reg"><b>✓ 已注册 aclNN 算子:</b> <code>aclnnFlashMLADecode</code> —— 可供图层直接调用。端到端相较直译版 <b>3.1×</b> 加速,精度余弦相似度 0.99987。</div>`;
+    <div class="perf-reg"><b>✓ 已注册 aclNN 算子:</b> <code>aclnnFlashAttentionV2</code> —— 可供图层直接调用。端到端相较直译版 <b>3.1×</b> 加速,精度余弦相似度 0.99987。</div>`;
   const pb=document.getElementById('perfPlay');
   if(pb) pb.onclick=()=>renderPerfReport(true);
 }
@@ -1570,6 +1714,261 @@ function openPipe(){
   renderPipeViz(false);
 }
 function closePipe(){ if(currentAnalysisView()==='pipeline') closeAnalysisView();else document.getElementById('split').classList.remove('pipe-open'); }
+
+/* ============================ S5 算子规划视图（变量控制 · Tiling 可视化 · Pipeline） ============================ */
+// 合并原 S5「自动分块」+ S6「流水线编排」。内容取自 Operator Plan 工作面的三个区域，适配 MLA Decode。
+const PLAN_SOC={ '910C':{name:'910C',cores:24,ub:'256KB',align:32}, '910B':{name:'910B',cores:20,ub:'192KB',align:32}, '310P':{name:'310P',cores:8,ub:'128KB',align:32} };
+// KV 分块方案（与左卡 A/B/C 决策同源，state.choices['S5']）
+const PLAN_SCHEMES={
+  A:{blockN:128, buffer:1, ubPct:61,  cyc:'1.00×', l0c:'富余',        tone:'warn', tag:'基线',  desc:'分块 128 · 单缓冲'},
+  B:{blockN:256, buffer:2, ubPct:88,  cyc:'0.72×', l0c:'恰好容纳',    tone:'ok',   tag:'推荐',  desc:'分块 256 · 双缓冲'},
+  C:{blockN:512, buffer:2, ubPct:103, cyc:'0.95×', l0c:'超容量·回退', tone:'risk', tag:'溢出',  desc:'分块 512 · 双缓冲'},
+};
+const PLAN_KVSEQ=4000;   // KV 上下文长度（decode），故意非整除以显示核内末块
+const PLAN_WORK=40;      // batch × qHeads，映射到核间
+const planState={ soc:'910C', dtype:'half', tailPolicy:'branch', bufferOverride:null, pipeline:'db', coreTab:'former', selCore:0, selLine:10 };
+function planFmt(n){ return n.toLocaleString('en-US'); }
+function planScheme(){ return PLAN_SCHEMES[state.choices['S5']||'B']; }
+function planModel(){
+  const scheme=planScheme(), soc=PLAN_SOC[planState.soc];
+  const buffer=planState.bufferOverride!=null?planState.bufferOverride:scheme.buffer;
+  const loopCount=Math.ceil(PLAN_KVSEQ/scheme.blockN);
+  const lastValid=PLAN_KVSEQ-(loopCount-1)*scheme.blockN;
+  const partial=lastValid!==scheme.blockN;
+  const base=Math.floor(PLAN_WORK/soc.cores), rem=PLAN_WORK%soc.cores;
+  const activeCores = base>0 ? soc.cores : rem;
+  const overlap = planState.pipeline!=='serial' && buffer===2;
+  return {scheme, soc, buffer, loopCount, lastValid, partial, base, rem, activeCores, overlap};
+}
+// ---- 变量控制 ----
+function planSeg(seg,label,opts,active,hint){
+  const btns=opts.map(o=>`<button type="button" data-plan-set="${seg}" data-val="${o.v}" class="${o.v===active?'on':''}">${o.t}</button>`).join('');
+  return `<div class="pv-field"><label>${label}</label><div class="pv-seg">${btns}</div>${hint?`<div class="pv-hint">${hint}</div>`:''}</div>`;
+}
+function renderPlanControls(m){
+  const cur=state.choices['S5']||'B';
+  const schemes=Object.entries(PLAN_SCHEMES).map(([k,s])=>{
+    const badge = s.tag==='推荐'?`<span class="rec">推荐</span>`:(s.tone==='risk'?`<span class="warn">溢出</span>`:'');
+    return `<button type="button" class="pv-scheme ${k===cur?'on':''}" data-plan-scheme="${k}">
+      <b>${k} · ${s.desc} ${badge}</b><span>UB ${s.ubPct}% · L0C ${s.l0c} · 周期 ${s.cyc}</span></button>`;
+  }).join('');
+  return `<div class="pv-block pv-ctrl">
+    <div class="pv-h"><h4>变量控制</h4><span>hardware · tiling</span></div>
+    <div class="pv-body">
+      <div class="pv-group"><p class="pv-gt">目标硬件</p>
+        ${planSeg('soc','SOC',Object.keys(PLAN_SOC).map(k=>({v:k,t:k})),planState.soc,`决定核数上限 ${m.soc.cores} · UB ${m.soc.ub} · 对齐 ${m.soc.align}B`)}
+        ${planSeg('dtype','dtype',[{v:'half',t:'half'},{v:'bf16',t:'bf16'},{v:'float',t:'float'}],planState.dtype,'影响元素字节数与对齐单元对应的元素数')}
+      </div>
+      <div class="pv-group"><p class="pv-gt">Tiling 可调项</p>
+        <div class="pv-field"><label>KV 分块方案</label><div class="pv-schemes">${schemes}</div></div>
+        ${planSeg('buffer','BUFFER_NUM',[{v:1,t:'1 · 单缓冲'},{v:2,t:'2 · 双缓冲'}],m.buffer,m.buffer===2?'双缓冲让 KV 搬运与计算重叠':'单缓冲：搬运与计算串行')}
+        ${planSeg('tailPolicy','核内尾块策略',[{v:'branch',t:'Branch'},{v:'pad',t:'Pad'}],planState.tailPolicy,planState.tailPolicy==='branch'?'末块走分支 + Mask，避免读越界':'末块 Pad 到对齐长度，多算被丢弃')}
+      </div>
+    </div>
+  </div>`;
+}
+// ---- Tiling 可视化（核间 / 核内） ----
+function renderPlanViz(m){
+  // 核间
+  let cores='';
+  for(let i=0;i<m.soc.cores;i++){
+    const active=i<m.activeCores;
+    let cls='idle', load=0;
+    if(active){
+      const heavy = m.rem===0 || i<m.rem;
+      load = m.base + (i<m.rem?1:0);
+      cls = heavy ? 'former' : 'tail';
+    }
+    const sel = i===planState.selCore ? ' sel':'';
+    cores+=`<button type="button" class="pv-core ${cls}${sel}" data-plan-core="${i}" ${active?'':'disabled'} title="core ${i} · ${active?load+' 个工作项':'空闲'}">${active?load:''}</button>`;
+  }
+  const heavyCores = m.rem===0 ? m.activeCores : m.rem;
+  // 核内分块（KV 分块）
+  const cap=16; const tiles=[]; const total=m.loopCount;
+  const push=(i)=>{
+    const partial = i===total-1 && m.partial;
+    const valid = partial ? m.lastValid : m.scheme.blockN;
+    const slot = m.buffer===2 ? `slot${i%2}` : 'slot0';
+    tiles.push(`<span class="pv-tile ${partial?'partial':''}" title="KV 分块 ${i} · 有效 ${valid} / 对齐 ${m.scheme.blockN}${partial?(planState.tailPolicy==='branch'?' · Branch/Mask':' · Pad'):''}">
+      <b>${valid}</b>${partial?`<small>/${m.scheme.blockN}</small>`:''}<span class="slot">${slot}</span></span>`);
+  };
+  if(total<=cap){ for(let i=0;i<total;i++) push(i); }
+  else { for(let i=0;i<cap-2;i++) push(i); tiles.push(`<span class="pv-tile" style="opacity:.6" title="省略 ${total-cap+1} 块">…<small>+${total-cap+1}</small></span>`); push(total-1); }
+  const tailNote = m.partial ? `<div class="pv-tailnote">核内末块：有效 ${m.lastValid} / 对齐 ${m.scheme.blockN} · ${planState.tailPolicy==='branch'?'Branch / Mask':'Pad'}</div>` : '';
+  return `<div class="pv-block pv-viz">
+    <div class="pv-h"><h4>Tiling 可视化</h4><span>核间分核 · 核内分块</span>
+      <span class="pv-badge" style="color:var(--${m.scheme.tone==='ok'?'ok':m.scheme.tone==='risk'?'risk':'warn'});background:color-mix(in srgb, var(--${m.scheme.tone==='ok'?'ok':m.scheme.tone==='risk'?'risk':'warn'}) 15%, transparent)">UB ${m.scheme.ubPct}%</span></div>
+    <div class="pv-body">
+      <div class="pv-vizsec">
+        <div class="pv-vh"><strong>核间</strong><span>${m.activeCores} / ${m.soc.cores} 核激活 · ${heavyCores} 满载 / ${m.activeCores-heavyCores} 尾核</span></div>
+        <div class="pv-coremap">${cores}</div>
+      </div>
+      <div class="pv-vizsec">
+        <div class="pv-vh"><strong>核内</strong><span>KV ${planFmt(PLAN_KVSEQ)} → ${m.loopCount} 分块 × ${m.buffer} 缓冲</span></div>
+        <div class="pv-tilemap">${tiles.join('')}</div>
+        ${tailNote}
+      </div>
+    </div>
+  </div>`;
+}
+// ---- Pipeline（伪代码驱动泳道 + Inspector） ----
+const PLAN_PIPE={
+  serial:{name:'串行基线', lines:[
+    ['for (n = 0; n &lt; loopCount; n++) {','steady'],
+    ['  CopyIn KV(n);','MTE2'],
+    ['  S = Mmad(Q, Kᵀ[n]);','Cube'],
+    ['  P = SoftmaxOnline(S);','Vector'],
+    ['  O += Mmad(P, V[n]);','Cube'],
+    ['  CopyOut(partial);','MTE3'],
+    ['}','drain'],
+    ['Normalize(O);','post'],
+  ]},
+  db:{name:'双缓冲循环', lines:[
+    ['// prologue: 预取前两个 KV 分块','phase'],
+    ['CopyIn KV(0);','slot0'],
+    ['CopyIn KV(1);','slot1'],
+    ['for (n = 0; n &lt; loopCount; n++) {','steady'],
+    ['  S = Mmad(Q, Kᵀ[n]);','Cube'],
+    ['  P = SoftmaxOnline(S);','Vector'],
+    ['  O += Mmad(P, V[n]);','Cube'],
+    ['  if (n &gt; 0) CopyOut(O[n-1]);','MTE3'],
+    ['  next = n + BUFFER_NUM;','index'],
+    ['  if (next &lt; loopCount) CopyIn KV(next);','prefetch'],
+    ['}','drain'],
+    ['CopyOut(O[last]); Normalize(O);','post'],
+  ]},
+  cv:{name:'Cube+Vector 交接', lines:[
+    ['// prologue: 预取 KV 分块','phase'],
+    ['CopyIn KV(0); CopyIn KV(1);','MTE2'],
+    ['for (n = 0; n &lt; loopCount; n++) {','steady'],
+    ['  S = Mmad(Q, Kᵀ[n]);            // L0C','Cube'],
+    ['  CopyGM(S);  // L0C→GM→UB 中转','transit'],
+    ['  P = SoftmaxOnline(S);          // UB','Vector'],
+    ['  O += Mmad(P, V[n]);','Cube'],
+    ['  if (next &lt; loopCount) CopyIn KV(next);','prefetch'],
+    ['}','drain'],
+  ]},
+};
+// 泳道时序（3 个分块 t0/t1/t2）：x/w 为百分比。串行无重叠、双缓冲压缩重叠。
+const PLAN_LANES={
+  serial:[
+    ['MTE2 / CopyIn', [['t0',2,8],['t1',34,8],['t2',66,8]]],
+    ['Cube / Mmad',   [['t0',11,9],['t1',43,9],['t2',75,9]]],
+    ['Vector / Softmax',[['t0',21,7],['t1',53,7],['t2',85,7]]],
+    ['MTE3 / CopyOut', [['t0',29,4],['t1',61,4],['t2',93,4]]],
+    ['FLOWCTRL',       [['wait',30,3],['wait',62,3]]],
+  ],
+  db:[
+    ['MTE2 / CopyIn', [['t0',2,8],['t1',11,8],['t2',30,8]]],
+    ['Cube / Mmad',   [['t0',18,11],['t1',38,11],['t2',56,11]]],
+    ['Vector / Softmax',[['t0',28,9],['t1',48,9],['t2',66,9]]],
+    ['MTE3 / CopyOut', [['t0',37,6],['t1',56,6],['t2',74,6]]],
+    ['FLOWCTRL',       [['wait',64,2]]],
+  ],
+  cv:[
+    ['MTE2 / CopyIn', [['t0',2,8],['t1',11,8],['t2',32,8]]],
+    ['Cube / Mmad',   [['t0',18,10],['t1',40,10],['t2',60,10]]],
+    ['Vector / Softmax',[['t0',31,9],['t1',53,9],['t2',73,9]]],
+    ['MTE3 / CopyOut', [['t0',42,6],['t1',64,6],['t2',84,6]]],
+    ['FLOWCTRL',       [['wait',28,3],['wait',50,3],['wait',70,3]]],
+  ],
+};
+const PLAN_TILECOL={t0:'var(--mem)', t1:'var(--cube)', t2:'var(--vec)'};
+// 选中伪代码行的解释（按 tag 归类，配合当前 preset）
+function planInspector(tag){
+  const M={
+    prefetch:{sel:'CopyIn KV(next)', dep:'BUFFER_NUM=2', queue:'inQueue slot(n%2)', mem:'UB 输入 slot', risk:'预取未被计算隐藏',
+      note:'double buffer 是否真正 overlap 的关键行：若 slot 未释放或 UB 接近上限，prefetch 会从隐藏延迟变成阻塞源。'},
+    Cube:{sel:'Mmad(Q, Kᵀ / P, V)', dep:'L0A / L0B → L0C', queue:'L0C 累加区', mem:'FP32 累加', risk:'L0C 无直连 UB',
+      note:'矩阵单元计算落 L0C。910C 的 L0C 不能直连 UB，打分须经 L0C→GM→UB 中转再交向量单元。'},
+    Vector:{sel:'SoftmaxOnline(S)', dep:'ReduceMax/Exp/ReduceSum', queue:'UB 打分区', mem:'acc_o / l_i FP32', risk:'rescale 次序影响精度',
+      note:'在线 Softmax 由向量单元片上归约，保持 acc_o/l_i 的 FP32 累加以稳住 rescale 次序（见 S6 精度对齐）。'},
+    transit:{sel:'CopyGM(S)  L0C→GM→UB', dep:'GM workspace', queue:'ubQK', mem:'GM 中转', risk:'中转带宽',
+      note:'Cube 与 Vector 物理分离、L0C 无直连 UB，打分结果须经 GM 中转，这是 910C 上 Cube+Vector 交接的固有代价。'},
+    MTE3:{sel:'CopyOut(O[n-1])', dep:'outQueue', queue:'outQueue slot', mem:'UB→GM', risk:'output queue 反压',
+      note:'写回单元。观察 CopyOut 是否反向阻塞 output queue，形成 back pressure。'},
+    MTE2:{sel:'CopyIn KV(n)', dep:'GM→L1', queue:'inQueue', mem:'UB 输入 slot', risk:'搬运未隐藏',
+      note:'KV 分块载入。串行模式下搬运与计算无法重叠，是主要空转来源。'},
+  };
+  return M[tag] || {sel:'—', dep:'—', queue:'—', mem:'—', risk:'—', note:'点击伪代码行查看该阶段在流水中的角色、依赖与风险。'};
+}
+function renderPlanPipe(m){
+  const preset=PLAN_PIPE[planState.pipeline];
+  const presets=Object.entries(PLAN_PIPE).map(([k,p])=>`<button type="button" data-plan-pipe="${k}" class="${k===planState.pipeline?'on':''}">${p.name}</button>`).join('');
+  const nLines=preset.lines.length;
+  if(planState.selLine>=nLines) planState.selLine=nLines-1;
+  const code=preset.lines.map(([txt,tag],i)=>`<div class="pv-cline ${i===planState.selLine?'on':''}" data-plan-line="${i}"><span class="pv-cnum">${String(i+1).padStart(2,'0')}</span><span>${txt}</span><span class="pv-ctag">${tag}</span></div>`).join('');
+  const lanes=(m.overlap?(planState.pipeline==='cv'?PLAN_LANES.cv:PLAN_LANES.db):PLAN_LANES.serial);
+  const swim=lanes.map(([label,stages])=>{
+    const blocks=stages.map(([cls,x,w])=>{
+      if(cls==='wait') return `<span class="pv-stage wait" style="left:${x}%;width:${w}%">·</span>`;
+      return `<span class="pv-stage" style="left:${x}%;width:${w}%;background:${PLAN_TILECOL[cls]}">${cls}</span>`;
+    }).join('');
+    return `<div class="pv-lane-l">${label}</div><div class="pv-lane">${blocks}</div>`;
+  }).join('');
+  const tag=preset.lines[planState.selLine]?.[1]||'';
+  const ins=planInspector(tag);
+  const overlapNote = m.overlap ? '双缓冲已形成搬运/计算重叠，流水气泡 21%→4%。' : '串行搬运-计算，无重叠，存在明显空转。';
+  return `<div class="pv-block pv-pipe">
+    <div class="pv-h"><h4>Pipeline</h4><span>伪代码驱动泳道</span>
+      <span class="pv-badge" style="color:var(--${m.overlap?'ok':'warn'});background:color-mix(in srgb, var(--${m.overlap?'ok':'warn'}) 15%, transparent)">${m.overlap?'重叠':'串行'} · ${m.scheme.cyc}</span></div>
+    <div class="pv-pipebody">
+      <div class="pv-field"><label>Pipeline 方案</label><div class="pv-seg">${presets}</div></div>
+      <div class="pv-code">${code}</div>
+      <div class="pv-swim">
+        <div class="pv-swim-legend">
+          <span><i style="background:${PLAN_TILECOL.t0}"></i>t0</span>
+          <span><i style="background:${PLAN_TILECOL.t1}"></i>t1</span>
+          <span><i style="background:${PLAN_TILECOL.t2}"></i>t2</span>
+          <span><i style="background:var(--risk)"></i>wait</span>
+          <span style="margin-left:auto">${overlapNote}</span>
+        </div>
+        ${swim}
+      </div>
+      <div class="pv-insp">
+        <div class="soft">${ins.note}</div>
+        <div class="pv-insp-rows">
+          <div class="pv-insp-row"><span>selected</span><b>${ins.sel}</b></div>
+          <div class="pv-insp-row"><span>depends</span><b>${ins.dep}</b></div>
+          <div class="pv-insp-row"><span>queue/slot</span><b>${ins.queue}</b></div>
+          <div class="pv-insp-row"><span>memory</span><b>${ins.mem}</b></div>
+          <div class="pv-insp-row"><span>risk</span><b>${ins.risk}</b></div>
+          <div class="pv-insp-row"><span>tail policy</span><b>${planState.tailPolicy==='branch'?'Branch/Mask':'Pad'}</b></div>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+function renderPlanView(){
+  const pane=document.getElementById('planpane'); if(!pane) return;
+  const m=planModel();
+  pane.innerHTML=`<div class="pv">${renderPlanControls(m)}${renderPlanViz(m)}${renderPlanPipe(m)}</div>`;
+  // 变量控制交互
+  pane.querySelectorAll('[data-plan-set]').forEach(b=>b.onclick=()=>{
+    const seg=b.dataset.planSet, val=b.dataset.val;
+    if(seg==='buffer') planState.bufferOverride=Number(val);
+    else planState[seg]=val;
+    renderPlanView();
+  });
+  pane.querySelectorAll('[data-plan-scheme]').forEach(b=>b.onclick=()=>{
+    state.choices['S5']=b.dataset.planScheme;
+    planState.bufferOverride=null;           // 跟随新方案的缓冲
+    if(planState.selCore>=planModel().soc.cores) planState.selCore=0;
+    renderPlanView(); renderWizard();          // 同步左卡决策
+  });
+  pane.querySelectorAll('[data-plan-core]').forEach(b=>b.onclick=()=>{ if(b.disabled) return; planState.selCore=Number(b.dataset.planCore); renderPlanView(); });
+  pane.querySelectorAll('[data-plan-pipe]').forEach(b=>b.onclick=()=>{ planState.pipeline=b.dataset.planPipe; planState.selLine=Math.min(planState.selLine, PLAN_PIPE[b.dataset.planPipe].lines.length-1); renderPlanView(); });
+  pane.querySelectorAll('[data-plan-line]').forEach(b=>b.onclick=()=>{ planState.selLine=Number(b.dataset.planLine); renderPlanView(); });
+}
+function openPlanView(){
+  closeGraph(); closeCompare(); closeTiling(); closePipe();
+  activeTab='s6'; renderCode('s6'); renderTabs(); renderTree();
+  const h=document.getElementById('leftPaneH'); if(h) h.style.display='none';
+  const f=document.getElementById('etbFile'); if(f) f.textContent='flash_mla_decode.cpp';
+  unlockAnalysisView('plan');
+  setAnalysisView('plan');
+  renderPlanView();
+}
 function renderPipeViz(play){
   const ser=buildSerial(), pip=buildPipe();
   const serBubbles=ser.rows.cube.filter(c=>c.cls==='bub').length;
@@ -1598,29 +1997,28 @@ function renderPipeViz(play){
 /* ============================ 计算图 ============================ */
 // unit: mem|cube|vector|scalar|risk
 const GNODES=[
-  {id:'q', x:20, y:20, w:122, h:42, unit:'mem', t:'Q', s:'[batch, heads, dim]', d:'查询向量输入。main_no_split 中先按 hid 和 VALID_BLOCK_H 切片,复制到 Q_shared,供后续 Q·K^T GEMM 使用。', lines:[122,129]},
-  {id:'qpe', x:20, y:80, w:122, h:42, unit:'mem', t:'Q_pe', s:'[batch, heads, pe_dim]', d:'RoPE/位置编码维度的查询输入。它会复制到 Q_pe_shared,并与 K_pe 做第二路 GEMM,结果累加到同一个注意力分数 acc_s。', lines:[123,131]},
-  {id:'kv', x:200, y:20, w:122, h:42, unit:'mem', t:'KV', s:'[batch, seqlen_kv, kv_head, dim]', d:'值缓存同时承担 K 的非位置编码部分和 V。循环内按 block_N 分块复制到 KV_shared,既参与 Q·K^T,也作为 softmax 权重乘以 V 的右矩阵。', lines:[124,153]},
-  {id:'kpe', x:200, y:80, w:122, h:42, unit:'mem', t:'K_pe', s:'[batch, seqlen_kv, kv_head, pe_dim]', d:'位置编码维度的 K。每个 KV 分块复制到 K_pe_shared,用于 Q_pe·K_pe^T,与 Q·KV^T 的分数相加。', lines:[125,154]},
-  {id:'cfg', x:440, y:50, w:122, h:42, unit:'scalar', t:'分块参数', s:'block_N / block_H / num_split', d:'flashattn 根据 heads、kv_head_num、block_H 计算 kv_group_num 与 VALID_BLOCK_H,并用 block_N 控制 KV 序列维分块。num_split>1 时进入 split kernel 与 combine kernel。', lines:[14,20]},
-  {id:'copyq', x:70, y:170, w:126, h:44, unit:'mem', t:'载入 Q 块', s:'T.copy → shared', d:'将当前 batch/head group 的 Q 与 Q_pe 复制到 shared memory。no_split 路径对应 Q_shared、Q_pe_shared,split 路径也执行同样的数据准备。', lines:[145,146]},
-  {id:'copykv', x:270, y:170, w:126, h:44, unit:'mem', t:'载入 KV 块', s:'T.Pipelined + T.copy', d:'沿 seqlen_kv 按 block_N 流水分块,复制 KV 与 K_pe 到 shared memory。split 路径还会按 bz 计算 kv_start/kv_end。', lines:[151,154]},
-  {id:'gemm_qk', x:50, y:280, w:136, h:46, unit:'cube', t:'Q·KV^T', s:'T.gemm transpose_B', d:'第一路矩阵乘: Q_shared 与 KV_shared 做 GEMM,写入 acc_s。这里覆盖普通 head_dim 部分的注意力 logits。', lines:[155,155]},
-  {id:'gemm_pe', x:270, y:280, w:136, h:46, unit:'cube', t:'Q_pe·K_pe^T', s:'T.gemm accumulate', d:'第二路矩阵乘: Q_pe_shared 与 K_pe_shared 做 GEMM,累加到 acc_s,形成完整的 MLA logits。', lines:[156,156]},
-  {id:'softmax', x:160, y:400, w:136, h:58, unit:'vector', t:'在线 Softmax', s:'max / exp2→exp / sum', d:'对 acc_s 做 reduce_max、exp2 和 reduce_sum,维护 scores_max、scores_scale、scores_sum 与 logsum,实现分块在线 softmax。迁移到昇腾时 exp2 须改自然 T.exp,去掉 log2(e) 预乘。', lines:[157,169]},
-  {id:'pv', x:160, y:520, w:136, h:46, unit:'cube', t:'P·V 累加', s:'T.gemm(acc_s, KV)', d:'将 softmax 后的 acc_s/S_shared 作为概率矩阵,与 KV_shared 做 GEMM,累加到 acc_o；循环间用 scores_scale 保持在线归一化。', lines:[170,172]},
-  {id:'norm', x:60, y:630, w:126, h:46, unit:'vector', t:'归一化', s:'acc_o / logsum', d:'KV 循环结束后,按 logsum 对 acc_o 做归一化。split 路径还会计算每个 split 的 logsum-exp 值 glse。', lines:[173,175]},
-  {id:'combine', x:270, y:700, w:126, h:50, unit:'vector', t:'Split Combine', s:'lse 合并 / 加权求和', d:'当 num_split>1 时,combine kernel 先找各 split 的 lse 最大值,再用 exp2 权重合并 Output_partial。num_split=1 时该节点不参与执行。', lines:[92,118]},
-  {id:'swizzle', x:530, y:170, w:130, h:42, unit:'risk', gpuOnly:true, t:'T.use_swizzle', s:'GPU L2 swizzle 调度', d:'T.use_swizzle(10) 是 GPU 全局内存/共享内存的 swizzle 调度,昇腾达芬奇架构无对应硬件机制,须在 S2 删除并改用 T.Persistent 核间并行。', lines:[53,53]},
-  {id:'warp', x:530, y:280, w:130, h:42, unit:'risk', gpuOnly:true, t:'GemmWarpPolicy', s:'GPU warp 划分策略', d:'GemmWarpPolicy.FullCol 将 GEMM 按 warp 列划分,依赖 GPU SIMT 模型。昇腾无 warp 概念,须删除并改用分核 + 向量单元片上归约。', lines:[68,69]},
-  {id:'exp2', x:530, y:400, w:130, h:44, unit:'risk', gpuOnly:true, t:'T.exp2+log2(e)', s:'GPU 底数技巧', d:'源端用 T.exp2(x·log2e) 代替自然指数以利用 GPU 硬件 exp2 指令。昇腾需改为自然 T.exp,去掉 log2(e) 预乘,否则精度错误。', lines:[157,169]},
-  {id:'out', x:160, y:810, w:126, h:44, unit:'mem', t:'Output', s:'[batch, heads, dim]', d:'no_split 路径直接把 O_shared 写回 Output；split 路径先写 Output_partial,再由 combine kernel 写最终 Output。', lines:[175,176]},
+  {id:'q', x:16, y:20, w:130, h:42, unit:'mem', t:'Q', s:'[batch, seq, dim]', d:'查询张量输入。前向核按 BLOCK_SIZE_M 把序列行分块,由 program_id 决定当前行块,tl.load 将 Q 块读入片上 SRAM,在整个列循环中常驻,参与每个 KV 块的 Q·Kᵀ。', lines:[34,36]},
+  {id:'k', x:170, y:20, w:130, h:42, unit:'mem', t:'K', s:'[batch, seq, dim]', d:'键张量输入。列循环中按 BLOCK_SIZE_N 分块,tl.load 逐块读入当前 K 块,再经 tl.trans 转置后与 Q 做点积得到注意力分数。', lines:[54,55]},
+  {id:'v', x:324, y:20, w:130, h:42, unit:'mem', t:'V', s:'[batch, seq, dim]', d:'值张量输入。与 K 同步按列分块 tl.load 载入,softmax 归一化后的概率矩阵 P 与之相乘累加到输出 acc_o。', lines:[58,59]},
+  {id:'cfg', x:530, y:24, w:150, h:42, unit:'scalar', t:'分块 / 缩放参数', s:'BLOCK_M/N/D · scale', d:'BLOCK_SIZE_M/N/DMODEL 决定行列与特征维分块大小,scale=1/sqrt(head_dim) 作为 logits 缩放因子,共同控制分块循环范围与数值范围。', lines:[14,21]},
+  {id:'loadq', x:40, y:150, w:140, h:44, unit:'mem', t:'载入 Q 块', s:'tl.load → SRAM', d:'把当前行块的 Q 通过 tl.load 读入片上 SRAM,并用 row_mask 处理序列尾块。Flash Attention 让 Q 块常驻,不在列循环中重复搬运。', lines:[34,39]},
+  {id:'loadkv', x:250, y:150, w:170, h:44, unit:'mem', t:'载入 K / V 块 (列循环)', s:'for start_n · tl.load', d:'沿 seq_len 按 BLOCK_SIZE_N 循环,tl.load 逐块把 K、V 读入片上,并用 col_mask 处理尾块。分块流式加载是 v2 减少 HBM 访问的核心。', lines:[44,59]},
+  {id:'qk', x:110, y:280, w:160, h:46, unit:'cube', t:'Q·Kᵀ · scale', s:'tl.dot(q, kᵀ)', d:'第一路矩阵乘: q_block 与转置后的 k_block 做 tl.dot,再乘 scale 得到当前 KV 块的注意力 logits qk。', lines:[59,59]},
+  {id:'mask', x:120, y:400, w:160, h:46, unit:'vector', t:'因果 Mask', s:'tl.where(-inf)', d:'因果场景下当列块处于当前行块之后时,用 tl.where 把上三角(col>row)的 logits 置为 -inf,保证只关注历史位置。', lines:[62,64]},
+  {id:'softmax', x:100, y:520, w:200, h:62, unit:'vector', t:'在线 Softmax', s:'max · exp · p_scale · l_i', d:'在线 softmax: 计算块内行最大 m_ij 并更新 m_i,用自然 tl.exp 得到概率 p_ij,以 p_scale=exp(m_i-m_i_new) 修正历史贡献,滚动更新归一化分母 l_i。昇腾向量单元可直接对应,无需 exp2/log2 底数技巧。', lines:[67,75]},
+  {id:'pv', x:120, y:662, w:160, h:46, unit:'cube', t:'P·V 累加', s:'tl.dot(p, v)', d:'第二路矩阵乘: 概率矩阵 p_ij 与 v_block 做 tl.dot,先按 p_scale 缩放历史 acc_o 再累加,实现分块在线加权求和。', lines:[78,78]},
+  {id:'norm', x:110, y:772, w:160, h:44, unit:'vector', t:'归一化', s:'acc_o / l_i', d:'列循环结束后用累积分母 l_i 对 acc_o 做逐元素归一化,得到最终注意力输出。', lines:[85,85]},
+  {id:'out', x:60, y:862, w:150, h:44, unit:'mem', t:'Output', s:'tl.store → HBM', d:'把归一化后的输出块 tl.store 写回 output,并用 row_mask 跳过尾块无效行。', lines:[88,89]},
+  {id:'lmstat', x:250, y:862, w:170, h:44, unit:'mem', t:'保存 L / M 统计', s:'l_i / m_i (backward)', d:'存储每行的 softmax 统计量 l_i、m_i,供反向核重算概率并计算 dq/dk/dv 梯度使用。', lines:[92,95]},
+  {id:'simt', x:520, y:150, w:160, h:44, unit:'risk', gpuOnly:true, t:'SIMT grid 映射', s:'tl.program_id', d:'Triton 用 tl.program_id 把 (行块, batch) 映射到 GPU 线程网格,依赖 SIMT 执行模型。昇腾达芬奇无 SIMT,须在 S2 决策改为分核 SPMD,用 block_idx 切分行块。', lines:[22,28]},
+  {id:'warp', x:520, y:290, w:160, h:44, unit:'risk', gpuOnly:true, t:'warp 级 tl.dot', s:'MMA / num_warps', d:'tl.dot 借助 GPU warp 级张量核 (MMA) 完成分块矩阵乘,受 num_warps 调度。昇腾无 warp 概念,须在 S2 决策删除,改用 Cube 矩阵单元 Mmad + 分核并行。', lines:[59,59]},
 ];
 const GEDGES=[
-  ['q','copyq'],['qpe','copyq'],['kv','copykv'],['kpe','copykv'],['cfg','copyq'],['cfg','copykv'],
-  ['copyq','gemm_qk'],['copykv','gemm_qk'],['copyq','gemm_pe'],['copykv','gemm_pe'],
-  ['gemm_qk','softmax'],['gemm_pe','softmax'],['softmax','pv'],['copykv','pv'],['pv','norm'],['norm','out'],['norm','combine'],['combine','out'],
-  ['swizzle','copyq'],['swizzle','copykv'],['warp','gemm_qk'],['warp','gemm_pe'],['warp','pv'],['exp2','softmax']
+  ['q','loadq'],['cfg','loadq'],['k','loadkv'],['v','loadkv'],['cfg','loadkv'],
+  ['loadq','qk'],['loadkv','qk'],
+  ['qk','mask'],['mask','softmax'],
+  ['softmax','pv'],['loadkv','pv'],['pv','norm'],['norm','out'],['softmax','lmstat'],
+  ['simt','loadq'],['simt','loadkv'],['warp','qk'],['warp','pv']
 ];
 const UNITC={mem:'--mem',cube:'--cube',vector:'--vec',scalar:'--scalar',risk:'--risk'};
 let graphMapped=false; // 经 S2 后 risk→vector
@@ -1663,7 +2061,7 @@ function selectNode(id){
   const label={mem:'片上搬运',cube:'矩阵单元',vector:'向量单元',scalar:'标量单元',risk:'仅源端支持 · 无直接适配'}[u];
   const col=unitColor(u);
   let note=n.d;
-  if(graphMapped&&n.unit==='risk') note='【已在 S2 改写】'+n.d.replace(/S2 决策.*$/,'现映射为分核 + 向量单元片上归约,见 S6 的在线 Softmax 规约实现。');
+  if(graphMapped&&n.unit==='risk') note='【已在 S2 改写】'+n.d.replace(/S2 决策.*$/,'现映射为分核 + 向量单元片上归约,见 S5 的在线 Softmax 规约实现。');
   document.getElementById('gdetail').innerHTML=
     `<span class="badge" style="background:${col}22;color:${col};border:1px solid ${col}66">${label}</span>`+
     `<b>${n.t}</b> · <code style="font-family:var(--mono);font-size:13px">${n.s}</code><br>`+
@@ -1680,18 +2078,89 @@ function selectNode(id){
 /* ---------- S2 算子映射清单（主内容区展示） ---------- */
 // CUDA 算子 → 昇腾算子/执行单元 对照。risk 项随 S2 决策变化。
 const OPMAP=[
-  {cuda:'T.copy(Q / Q_pe → shared)', op:'DataCopy / Shared staging', unit:'mem', node:'copyq', rewrite:false},
-  {cuda:'T.copy(KV / K_pe → shared)', op:'DataCopy + pipeline stage', unit:'mem', node:'copykv', rewrite:false},
-  {cuda:'T.gemm(Q_shared, KV_shared)', op:'Mmad / Cube GEMM', unit:'cube', node:'gemm_qk', rewrite:false},
-  {cuda:'T.gemm(Q_pe_shared, K_pe_shared)', op:'Mmad / Cube GEMM', unit:'cube', node:'gemm_pe', rewrite:false},
-  {cuda:'reduce_max + exp2 + reduce_sum', op:'Vector Reduce / Exp', unit:'vector', node:'softmax', rewrite:false},
-  {cuda:'T.gemm(P, KV_shared)', op:'Mmad / Cube GEMM', unit:'cube', node:'pv', rewrite:false},
-  {cuda:'acc_o /= logsum', op:'Vector Div', unit:'vector', node:'norm', rewrite:false},
-  {cuda:'split lse merge', op:'Vector weighted combine', unit:'vector', node:'combine', rewrite:false},
-  {cuda:'T.use_swizzle(10)', op:'无对应 → 删除，改 T.Persistent', unit:'risk', node:'swizzle', rewrite:true},
-  {cuda:'GemmWarpPolicy.FullCol', op:'无对应 → 删除，改分核+向量归约', unit:'risk', node:'warp', rewrite:true},
-  {cuda:'T.exp2 + log2(e) 快速指数', op:'无对应 → 改向量单元 EXP', unit:'risk', node:'exp2', rewrite:true},
+  {cuda:'tl.load(Q → SRAM)', op:'DataCopy / 片上暂存', unit:'mem', node:'loadq', rewrite:false},
+  {cuda:'tl.load(K / V → SRAM, 列循环)', op:'DataCopy + pipeline stage', unit:'mem', node:'loadkv', rewrite:false},
+  {cuda:'tl.dot(q, kᵀ) · scale', op:'Mmad / Cube GEMM', unit:'cube', node:'qk', rewrite:false},
+  {cuda:'tl.where 因果 Mask', op:'Vector Select', unit:'vector', node:'mask', rewrite:false},
+  {cuda:'max / tl.exp / sum (在线 Softmax)', op:'Vector Reduce / Exp', unit:'vector', node:'softmax', rewrite:false},
+  {cuda:'tl.dot(p, v)', op:'Mmad / Cube GEMM', unit:'cube', node:'pv', rewrite:false},
+  {cuda:'acc_o /= l_i', op:'Vector Div', unit:'vector', node:'norm', rewrite:false},
+  {cuda:'tl.store(L / M 统计)', op:'DataCopy → GM', unit:'mem', node:'lmstat', rewrite:false},
+  {cuda:'tl.program_id (SIMT 网格)', op:'无对应 → 改分核 SPMD (GetBlockIdx)', unit:'risk', node:'simt', rewrite:true},
+  {cuda:'warp 级 tl.dot (MMA / num_warps)', op:'无对应 → Cube Mmad + 分核', unit:'risk', node:'warp', rewrite:true},
 ];const UNIT_LABEL={mem:'片上搬运',cube:'矩阵单元',vector:'向量单元',scalar:'标量单元',risk:'仅源端支持 · 无直接适配'};
+/* ---------- 迁移可行性雷达 ---------- */
+// 六维评分(0-100,越高越易迁移)。s1=S1 初判(未做映射决策);v=S2 选「向量单元片上归约」后;
+// s=S2 选「标量单元模拟」后。S2 雷达随 S2 决策实时切换主多边形并叠加 S1 基线做对比。
+const FEAS_AXES=[
+  {label:'计算密度', s1:82, v:92, s:88, tip:'Q·Kᵀ / P·V GEMM 直接落 Cube 矩阵单元'},
+  {label:'API 覆盖', s1:70, v:90, s:78, tip:'DataCopy / Mmad / Reduce* 均有昇腾对应算子'},
+  {label:'精度对齐', s1:58, v:60, s:56, tip:'FP16 + FP32 累加;在线 Softmax rescale 次序待 S6 校验'},
+  {label:'性能收益', s1:60, v:88, s:34, tip:'向量单元片上归约吞吐最高;标量模拟严重浪费算力'},
+  {label:'并行模型', s1:28, v:82, s:44, tip:'SIMT 网格 + warp 级 MMA 无对应 → 分核 SPMD 重写'},
+  {label:'内存层次', s1:52, v:66, s:60, tip:'GPU 共享内存 → L1 / L0 / UB;L0C 无直连 UB 需中转'},
+];
+function feasVerdict(avg){
+  if(avg>=75) return {t:'高可行', c:'var(--ok)'};
+  if(avg>=60) return {t:'可迁移 · 有改写点', c:'var(--warn)'};
+  return {t:'需重写关键路径', c:'var(--risk)'};
+}
+function heatColor(v){ return v<45?'var(--risk)':(v<66?'var(--warn)':'var(--ok)'); }
+function renderFeasRadar(stage){
+  const isS2 = stage==='S2';
+  const choice = state.choices['S2'] || 'vector';
+  const mainKey = !isS2 ? 's1' : (choice==='scalar'?'s':'v');
+  const mainVals = FEAS_AXES.map(a=>a[mainKey]);
+  const baseVals = FEAS_AXES.map(a=>a.s1);           // S2 叠加的对比基线
+  const avg = Math.round(mainVals.reduce((x,y)=>x+y,0)/mainVals.length);
+  const vd = feasVerdict(avg);
+  const mainCol = !isS2 ? 'var(--mem)' : (choice==='scalar'?'var(--risk)':'var(--ok)');
+  // ---- SVG 几何 ----
+  const cx=120, cy=104, R=74, N=FEAS_AXES.length;
+  const ang=i=>(-90 + i*360/N)*Math.PI/180;
+  const pt=(i,val)=>[cx+R*val/100*Math.cos(ang(i)), cy+R*val/100*Math.sin(ang(i))];
+  const polyStr=vals=>vals.map((v,i)=>pt(i,v).join(',')).join(' ');
+  // 网格环 + 轴线
+  let grid='';
+  [25,50,75,100].forEach(r=>{ grid+=`<polygon class="grid" points="${polyStr(FEAS_AXES.map(()=>r))}"/>`; });
+  for(let i=0;i<N;i++){ const p=pt(i,100); grid+=`<line class="spoke" x1="${cx}" y1="${cy}" x2="${p[0].toFixed(1)}" y2="${p[1].toFixed(1)}"/>`; }
+  // 轴标签
+  let labels='';
+  for(let i=0;i<N;i++){
+    const a=ang(i), lx=cx+(R+13)*Math.cos(a), ly=cy+(R+13)*Math.sin(a);
+    const c=Math.cos(a); const anchor=Math.abs(c)<0.3?'middle':(c>0?'start':'end');
+    const dy=Math.sin(a)<-0.3?-1:(Math.sin(a)>0.3?8:3);
+    labels+=`<text class="axl" x="${lx.toFixed(1)}" y="${(ly+dy).toFixed(1)}" text-anchor="${anchor}">${FEAS_AXES[i].label}</text>`;
+  }
+  // 基线多边形(仅 S2)+ 主多边形 + 顶点
+  const basePoly = isS2 ? `<polygon class="poly-base" points="${polyStr(baseVals)}"/>` : '';
+  const mainPoly = `<polygon class="poly-main" points="${polyStr(mainVals)}" style="fill:color-mix(in srgb, ${mainCol} 18%, transparent);stroke:${mainCol}"/>`;
+  const dots = mainVals.map((v,i)=>{const p=pt(i,v);return `<circle class="dot" cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="2.4" style="fill:${mainCol}"/>`;}).join('');
+  const svg=`<svg class="feas-plot" viewBox="0 0 240 216" role="img" aria-label="迁移可行性雷达图">
+    ${grid}${labels}${basePoly}${mainPoly}${dots}</svg>`;
+  // 图例(S2)
+  const legend = isS2 ? `<div class="feas-legend">
+    <span><i style="border-top-color:${mainCol}"></i>映射后 (${choice==='scalar'?'标量模拟':'向量单元'})</span>
+    <span><i style="border-top-color:var(--foreground-secondary);border-top-style:dashed"></i>S1 源端基线</span>
+  </div>` : '';
+  // 逐轴条形
+  const rows=FEAS_AXES.map((a,i)=>{
+    const v=mainVals[i];
+    let delta='';
+    if(isS2){ const d=v-a.s1; delta = d===0?'' : ` <span class="${d>0?'up':'dn'}">${d>0?'▲':'▼'}${Math.abs(d)}</span>`; }
+    return `<div class="feas-row" title="${a.tip}">
+      <span class="fl">${a.label}</span>
+      <span class="fbar"><i style="width:${v}%;background:${heatColor(v)}"></i>${isS2?`<u style="left:${a.s1}%"></u>`:''}</span>
+      <span class="fv">${v}${delta}</span>
+    </div>`;
+  }).join('');
+  const title = isS2 ? '🛰 迁移可行性雷达 · 映射后 vs 源端基线' : '🛰 迁移可行性雷达 · 源端初判';
+  return `<div class="feas">
+    <div class="feas-h">${title}<span class="verdict" style="color:${vd.c};background:color-mix(in srgb, ${vd.c} 14%, transparent)">${vd.t} · <b>${avg}</b>/100</span></div>
+    ${svg}${legend}
+    <div class="feas-rows">${rows}</div>
+  </div>`;
+}
 function renderOpMapTable(){
   const choice = state.choices['S2'] || 'vector';
   let rows='';
@@ -1708,21 +2177,223 @@ function renderOpMapTable(){
       st='直接映射'; stCls='ok';
     }
     const col=unitColor(unit);
-    rows+=`<tr class="${isRw?'rw':''}">
+    const on=(lastApiNode===m.node && currentAnalysisView()==='api')?'on':'';
+    rows+=`<tr class="${isRw?'rw':''} ${on}" data-node="${m.node}" title="查看 ${op} 的昇腾 API 详情">
       <td class="cuda">${m.cuda}</td>
       <td class="op">${op}</td>
       <td><span class="unit" style="color:${col}"><i style="background:${col}"></i>${UNIT_LABEL[unit]}</span></td>
       <td><span class="st ${stCls}">${st}</span></td>
+      <td><span class="api-link">详情<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"></path></svg></span></td>
     </tr>`;
   });
   const rwN=OPMAP.filter(m=>m.rewrite).length, okN=OPMAP.length-rwN;
   return `<div class="opmap">
-    <div class="opmap-h">🗺 算子映射清单 · 源端 → 昇腾<span class="cnt">${okN} 直接映射 · ${rwN} 需重写</span></div>
+    <div class="opmap-h">🗺 算子映射清单 · 源端 → 昇腾<span class="cnt">${okN} 直接映射 · ${rwN} 需重写 · 点击行查看 API</span></div>
     <table>
-      <thead><tr><th>源端算子</th><th>昇腾算子</th><th>执行单元</th><th>状态</th></tr></thead>
+      <thead><tr><th>源端算子</th><th>昇腾算子</th><th>执行单元</th><th>状态</th><th>API</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
   </div>`;
+}
+/* ---------- S4 内存层次注入代码清单（源码定位 + 数据流动画） ---------- */
+// 注入到 flash_mla_decode.cpp (S4 视图) 的关键内存层次代码。line 为渲染源码行号(1-based)，
+// flow 为对应「数据流」动画步骤索引 (FLOW_STEPS)。
+const S4_SITES=[
+  {unit:'mem',  where:'片上缓冲层次声明', what:'InitBuffer × 6 分配 L1 / L0 / UB 缓冲',
+   code:'pipe.InitBuffer(qL1, 1, (DIM+PE_DIM)*sizeof(half));', line:[27,32], flow:0},
+  {unit:'mem',  where:'Q | Q_pe 载入', what:'DataCopy · GM → L1 → L0A',
+   code:'DataCopy(qLoc, qGm[…], DIM);', line:[38,39], flow:0},
+  {unit:'mem',  where:'KV | K_pe 分块载入', what:'DataCopy · GM → L1 → L0B (列循环)',
+   code:'DataCopy(kLoc, kvGm[…], tileSize*DIM);', line:[64,65], flow:1},
+  {unit:'cube', where:'Q·Kᵀ 矩阵乘', what:'Mmad · 结果落 L0C (FP32 累加)',
+   code:'Mmad(logits, q, k, {1, tileSize, DIM+PE_DIM});', line:[71,72], flow:2},
+  {unit:'risk', where:'打分回写中转', what:'DataCopy ×2 · L0C → GM → UB (无直连)',
+   code:'DataCopy(wsGm[…], lg, tileSize);   // L0C→GM\nDataCopy(qkScores, wsGm[…], tileSize); // GM→UB', line:[78,80], flow:3},
+  {unit:'vec',  where:'在线 Softmax 归约', what:'向量单元 · ReduceMax / Exp / ReduceSum 片上归约',
+   code:'ReduceMax(qkScores,…) → Exp(qkScores,…) → ReduceSum(qkScores,…);', line:[81,88], flow:4},
+];
+function renderS4CodeSites(){
+  const rows=S4_SITES.map((s,i)=>{
+    const col=unitColor(s.unit==='risk'?'risk':s.unit);
+    const ln = s.line[0]===s.line[1] ? `L${s.line[0]}` : `L${s.line[0]}–${s.line[1]}`;
+    return `<div class="s4site" data-i="${i}" title="定位源码并播放数据流">
+      <div class="s4-top">
+        <span class="s4-dot" style="background:${col}"></span>
+        <b>${s.where}</b>
+        <span class="s4-ln">${ln}</span>
+      </div>
+      <div class="s4-what">${s.what}</div>
+      <pre class="s4-code">${s.code.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</pre>
+    </div>`;
+  }).join('');
+  return `<div class="s4list">
+    <div class="s4list-h">🧩 内存层次注入代码 · <code>flash_mla_decode.cpp</code><span class="cnt">${S4_SITES.length} 处 · 点击定位源码 + 播放数据流</span></div>
+    ${rows}
+  </div>`;
+}
+// 让左侧编辑器显示 S4 版 AscendC 源码（若尚未显示）
+function ensureS4Source(){
+  if(activeTab!=='cpp'){
+    activeTab='cpp'; renderTabs(); renderTree();
+  }
+  renderCode('s4');
+  const h=document.getElementById('leftPaneH'); if(h) h.style.display='none';
+  const f=document.getElementById('etbFile'); if(f) f.textContent='flash_mla_decode.cpp';
+}
+// 点击清单项：定位左侧源码 + 在「数据流」视图播放对应动画步骤
+function gotoS4Site(i){
+  const s=S4_SITES[i]; if(!s) return;
+  // 1) 先打开「数据流」视图并播放对应流转步骤（先切视图，稳定编辑器布局）
+  if(!unlockedAnalysisViews.has('flow')) unlockAnalysisView('flow');
+  setAnalysisView('flow');
+  if(!document.getElementById('flowpane').innerHTML.trim()) renderFlow();
+  stopFlow();
+  flowIdx = Math.max(0, Math.min(FLOW_STEPS.length-1, s.flow));
+  showFlowStep(flowIdx);
+  // 2) 定位左侧源码：高亮 + 即时滚动到目标行（规避 smooth 被布局变更打断）
+  ensureS4Source();
+  highlightCodeLines(s.line[0], s.line[1]);
+  const cw=document.getElementById('codewrap');
+  const cl=document.getElementById('codelines');
+  const t=cl && cl.querySelectorAll('.ln')[s.line[0]-1];
+  if(cw && t){
+    const wr=cw.getBoundingClientRect(), lr=t.getBoundingClientRect();
+    cw.scrollTop = Math.max(0, (lr.top - wr.top) + cw.scrollTop - cw.clientHeight/3);
+  }
+}
+
+/* ---------- S2 昇腾算子 API 详情（点击映射清单 → 在计算图面板区展示） ---------- */
+// 复用的 AscendC API 卡片定义。签名中的尖括号/取址符已按 HTML 实体转义。
+const API_DATACOPY={nm:'DataCopy',ns:'AscendC',since:'CANN 8.0.RC1',
+  brief:'在 GM 与片上缓冲（L1 / L0 / UB）之间搬运连续数据块，是所有数据流动的基础搬运指令。',
+  sig:'template &lt;typename T&gt;\nvoid DataCopy(const LocalTensor&lt;T&gt;&amp; dst,\n              const GlobalTensor&lt;T&gt;&amp; src,\n              const uint32_t calCount);',
+  params:[
+    {n:'dst',t:'LocalTensor&lt;T&gt;',d:'目的片上张量（L1 / L0 / UB），由 <code>TQue</code> 分配'},
+    {n:'src',t:'GlobalTensor&lt;T&gt;',d:'源全局张量（GM）'},
+    {n:'calCount',t:'uint32_t',d:'搬运元素个数，起止地址需 <code>32B</code> 对齐'},
+  ],
+  notes:['搬运方向由张量的 <code>TPosition</code> 决定：GM ↔ L1 ↔ L0 ↔ UB。','大块搬运建议配合 <code>TQue</code> 深度 2 双缓冲，让搬运与计算重叠（见 S5）。'],
+  ex:'DataCopy(qLocal, qGm[bOffset], BLOCK_M * headDim);'};
+const API_MMAD={nm:'Mmad',ns:'AscendC',since:'CANN 8.0.RC1',
+  brief:'矩阵单元（Cube）GEMM 指令：dst = a · b，FP16 输入、FP32 片上累加，结果落 L0C。',
+  sig:'void Mmad(const LocalTensor&lt;float&gt;&amp; dstL0C,\n          const LocalTensor&lt;half&gt;&amp; a,\n          const LocalTensor&lt;half&gt;&amp; b,\n          const MmadParams&amp; params);',
+  params:[
+    {n:'dstL0C',t:'LocalTensor&lt;float&gt;',d:'结果矩阵，位于 L0C，FP32 累加'},
+    {n:'a',t:'LocalTensor&lt;half&gt;',d:'左矩阵（L0A），由矩阵单元自动分形'},
+    {n:'b',t:'LocalTensor&lt;half&gt;',d:'右矩阵（L0B）'},
+    {n:'params',t:'MmadParams',d:'含 <code>m / n / k</code> 尺寸与 <code>cmatrixInitVal</code>（是否清零累加）'},
+  ],
+  notes:['昇腾<b>无 warp 概念</b>：矩阵单元自管 L0A / L0B 分形，源端 <code>num_warps</code> / warp 级 MMA 整体删除。','沿 <code>k</code> 方向可累加，配合 KV 分块循环实现大 GEMM 分块。'],
+  ex:'Mmad(scoreL0C, qL0A, kL0B, {BLOCK_M, BLOCK_N, headDim, false});'};
+const API_SELECT={nm:'Select',ns:'AscendC',since:'CANN 8.0.RC1',
+  brief:'向量单元按位选择：mask 为真取 src0，否则取标量 src1，用于因果 Mask 屏蔽上三角。',
+  sig:'template &lt;typename T&gt;\nvoid Select(const LocalTensor&lt;T&gt;&amp; dst,\n            const LocalTensor&lt;uint8_t&gt;&amp; mask,\n            const LocalTensor&lt;T&gt;&amp; src0, T src1,\n            SELMODE mode, const uint32_t count);',
+  params:[
+    {n:'dst',t:'LocalTensor&lt;T&gt;',d:'输出张量（UB）'},
+    {n:'mask',t:'LocalTensor&lt;uint8_t&gt;',d:'因果掩码，1 保留、0 屏蔽'},
+    {n:'src0 / src1',t:'LocalTensor&lt;T&gt; / T',d:'保留值 / 屏蔽填充值（<code>-inf</code>）'},
+    {n:'mode',t:'SELMODE',d:'选择模式，逐元素用 <code>VSEL_TENSOR_SCALAR_MODE</code>'},
+  ],
+  notes:['在向量单元执行，替代源端 <code>tl.where</code> 的指针 + mask 寻址。'],
+  ex:'Select(qk, causalMask, qk, -INFINITY, VSEL_TENSOR_SCALAR_MODE, sTile);'};
+const API_REDUCEMAX={nm:'ReduceMax',ns:'AscendC',since:'CANN 8.0.RC1',
+  brief:'向量单元树形归约求每行最大值，用于在线 Softmax 的数值稳定项 m_i。',
+  sig:'template &lt;typename T&gt;\nvoid ReduceMax(const LocalTensor&lt;T&gt;&amp; dst,\n               const LocalTensor&lt;T&gt;&amp; src,\n               const LocalTensor&lt;T&gt;&amp; work,\n               const uint32_t count, bool calIndex);',
+  params:[
+    {n:'dst',t:'LocalTensor&lt;T&gt;',d:'归约结果（每行最大值）'},
+    {n:'src',t:'LocalTensor&lt;T&gt;',d:'输入打分张量'},
+    {n:'work',t:'LocalTensor&lt;T&gt;',d:'归约中间缓冲'},
+    {n:'calIndex',t:'bool',d:'是否同时输出最大值下标，此处 <code>false</code>'},
+  ],
+  notes:['与 <code>ReduceSum</code> 一起构成在线 Softmax 的 running max / sum 更新。']};
+const API_EXP={nm:'Exp',ns:'AscendC',since:'CANN 8.0.RC1',
+  brief:'向量单元逐元素自然指数。昇腾用自然底 Exp，须去掉源端 <code>exp2</code> 的 <code>log2(e)</code> 预乘（否则 S6 精度异常）。',
+  sig:'template &lt;typename T&gt;\nvoid Exp(const LocalTensor&lt;T&gt;&amp; dst,\n         const LocalTensor&lt;T&gt;&amp; src,\n         const uint32_t count);',
+  params:[
+    {n:'dst',t:'LocalTensor&lt;T&gt;',d:'输出 exp 值'},
+    {n:'src',t:'LocalTensor&lt;T&gt;',d:'输入 = (score - m_i) · softmaxScale'},
+    {n:'count',t:'uint32_t',d:'元素个数'},
+  ],
+  notes:['源端 <code>tl.exp2(x·log2e)</code> → 昇腾 <code>Exp((x - m)·scale)</code>，底数改写须一致（见 S6 精度对齐）。'],
+  ex:'Exp(p, (qk - mNew) * softmaxScale, sTile);'};
+const API_REDUCESUM={nm:'ReduceSum',ns:'AscendC',since:'CANN 8.0.RC1',
+  brief:'向量单元树形归约求每行和，得到在线 Softmax 的归一化分母 l_i（建议 FP32 累加）。',
+  sig:'template &lt;typename T&gt;\nvoid ReduceSum(const LocalTensor&lt;T&gt;&amp; dst,\n               const LocalTensor&lt;T&gt;&amp; src,\n               const LocalTensor&lt;T&gt;&amp; work,\n               const uint32_t count);',
+  params:[
+    {n:'dst',t:'LocalTensor&lt;T&gt;',d:'每行求和结果 l_i'},
+    {n:'src',t:'LocalTensor&lt;T&gt;',d:'exp 后的概率张量'},
+    {n:'work',t:'LocalTensor&lt;T&gt;',d:'归约中间缓冲'},
+  ],
+  notes:['跨 KV 分块在线合并时以 <code>float</code> 累加，避免 FP16 舍入放大（见 S6）。']};
+const API_DIV={nm:'Div',ns:'AscendC',since:'CANN 8.0.RC1',
+  brief:'向量单元逐元素除法，用于末尾归一化 acc_o /= l_i。',
+  sig:'template &lt;typename T&gt;\nvoid Div(const LocalTensor&lt;T&gt;&amp; dst,\n         const LocalTensor&lt;T&gt;&amp; src0,\n         const LocalTensor&lt;T&gt;&amp; src1,\n         const uint32_t count);',
+  params:[
+    {n:'dst',t:'LocalTensor&lt;T&gt;',d:'归一化后的输出'},
+    {n:'src0',t:'LocalTensor&lt;T&gt;',d:'P·V 累加结果 acc_o'},
+    {n:'src1',t:'LocalTensor&lt;T&gt;',d:'归一化分母 l_i（按行广播）'},
+  ],
+  notes:['也可先 <code>Reciprocal</code> 求倒数再 <code>Muls</code>，减少一次向量除法开销。']};
+const API_GETBLOCKIDX={nm:'GetBlockIdx',ns:'AscendC',since:'CANN 8.0.RC1',
+  brief:'返回当前算力核编号，用于分核 SPMD：源端 SIMT 网格无对应物，改为每核认领 (行块, batch)。',
+  sig:'__aicore__ inline int64_t GetBlockIdx();',
+  params:[
+    {n:'返回',t:'int64_t',d:'当前核索引，范围 <code>[0, blockDim)</code>'},
+  ],
+  notes:['源端 <code>tl.program_id</code> 的二维 SIMT 网格 → 一维分核，<code>blockDim</code> 由 Tiling 决定。','<b>warp / num_warps 概念整体删除</b>，核内串行执行，多核间并行。'],
+  ex:'int64_t core = GetBlockIdx();\nint64_t mBlk = core % mBlocks;\nint64_t bIdx = core / mBlocks;'};
+
+// 计算图节点 → 昇腾算子及其 API 卡片（可含多个相关 API）。
+const ASCEND_API={
+  loadq:{op:'DataCopy · Q 片上暂存',unit:'mem',apis:[API_DATACOPY]},
+  loadkv:{op:'DataCopy · K/V 流式载入',unit:'mem',apis:[API_DATACOPY]},
+  qk:{op:'Mmad · Q·Kᵀ Cube GEMM',unit:'cube',apis:[API_MMAD]},
+  mask:{op:'Select · 因果 Mask',unit:'vector',apis:[API_SELECT]},
+  softmax:{op:'在线 Softmax · 向量归约',unit:'vector',apis:[API_REDUCEMAX,API_EXP,API_REDUCESUM]},
+  pv:{op:'Mmad · P·V Cube GEMM',unit:'cube',apis:[API_MMAD]},
+  norm:{op:'Div · 输出归一化',unit:'vector',apis:[API_DIV]},
+  lmstat:{op:'DataCopy · L/M 统计写回',unit:'mem',apis:[API_DATACOPY]},
+  simt:{op:'分核 SPMD · GetBlockIdx（重写）',unit:'risk',apis:[API_GETBLOCKIDX]},
+  warp:{op:'Cube Mmad + 分核（删 warp，重写）',unit:'cube',apis:[API_MMAD,API_GETBLOCKIDX]},
+};
+let lastApiNode=null;
+function apiUnitBadge(unit){
+  const col=unitColor(unit);
+  return `<span class="ah-unit" style="color:${col};background:color-mix(in srgb, ${col} 14%, transparent)"><i style="background:${col}"></i>${UNIT_LABEL[unit]}</span>`;
+}
+function renderApiCard(a){
+  const params=(a.params&&a.params.length)?`<table class="api-ptable"><thead><tr><th>参数</th><th>类型</th><th>说明</th></tr></thead><tbody>${a.params.map(p=>`<tr><td class="pn">${p.n}</td><td class="pt">${p.t}</td><td class="pd">${p.d}</td></tr>`).join('')}</tbody></table>`:'';
+  const notes=(a.notes&&a.notes.length)?`<ul class="api-notes">${a.notes.map(n=>`<li>${n}</li>`).join('')}</ul>`:'';
+  const ex=a.ex?`<div class="api-ex-h">示例</div><pre class="api-ex">${a.ex}</pre>`:'';
+  return `<div class="api-card">
+    <div class="apc-h"><span class="nm">${a.nm}</span><span class="ns">${a.ns}</span>${a.since?`<span class="since">${a.since}</span>`:''}</div>
+    <div class="apc-brief">${a.brief}</div>
+    <pre class="api-sig">${a.sig}</pre>
+    ${params}${notes}${ex}
+  </div>`;
+}
+function renderApiDetail(node){
+  const pane=document.getElementById('apipane');
+  if(!pane) return;
+  const key=node||lastApiNode;
+  const info=key?ASCEND_API[key]:null;
+  if(!info){
+    pane.innerHTML=`<div class="api-empty">在 S2「算子映射清单」中点击任意映射行，<br>即可在此查看对应昇腾算子的 API 详情。</div>`;
+    return;
+  }
+  lastApiNode=key;
+  const m=OPMAP.find(x=>x.node===key);
+  pane.innerHTML=`<div class="api-head">
+      <div class="ah-t"><b>${info.op}</b><span>源端 ${m?`<code>${m.cuda}</code>`:''} → 昇腾算子 · 共 ${info.apis.length} 个 API</span></div>
+      ${apiUnitBadge(info.unit)}
+    </div>
+    ${info.apis.map(renderApiCard).join('')}`;
+}
+// 从映射清单点击某算子 → 在计算图所在面板区打开「API可视化」视图
+function openApiPanel(node){
+  unlockAnalysisView('api');
+  if(!setAnalysisView('api')) return;
+  renderApiDetail(node);
 }
 function syncParseBtn(){const open=currentAnalysisView()==='graph'&&document.getElementById('split')?.classList.contains('analysis-open');
   document.getElementById('parseBtn')?.classList.toggle('on',open);}
@@ -1773,9 +2444,9 @@ let hasCpp=false, activeTab='cuda', tilingReady=false;
 function renderTree(){
   const t=document.getElementById('tree');
   t.innerHTML=`
-   <div class="node"><svg class="fic" viewBox="0 0 24 24" fill="none" stroke="var(--dim)" stroke-width="1.6"><path d="m6 9 6 6 6-6"/></svg><b style="font-weight:600;color:#cfd6ea">DEEPSEEK-V3 · FLASH MLA</b></div>
+   <div class="node"><svg class="fic" viewBox="0 0 24 24" fill="none" stroke="var(--dim)" stroke-width="1.6"><path d="m6 9 6 6 6-6"/></svg><b style="font-weight:600;color:#cfd6ea">openPangu-2.0-flash.MLA</b></div>
    <div class="node ind"><svg class="fic" viewBox="0 0 24 24" fill="none" stroke="var(--dim)" stroke-width="1.5"><path d="m6 9 6 6 6-6"/></svg>ops/</div>
-   <div class="node ind2 ${activeTab==='cuda'?'sel':''}" data-open="cuda"><span class="dot-c" style="background:var(--cube)"></span>example_mla_decode.py</div>
+   <div class="node ind2 ${activeTab==='cuda'?'sel':''}" data-open="cuda"><span class="dot-c" style="background:var(--cube)"></span>flash_attention_v2</div>
    ${hasCpp?`<div class="node ind2 ${(activeTab!=='cuda'&&activeTab!=='tiling')?'sel':''}" data-open="cpp"><span class="dot-c" style="background:var(--acc)"></span>flash_mla_decode.cpp<span class="tag new">新</span></div>`:''}
    ${tilingReady?`<div class="node ind2 ${activeTab==='tiling'?'sel':''}" data-open="tiling"><span class="dot-c" style="background:var(--vec)"></span>tiling.h<span class="tag new">新</span></div>`:''}
    <div class="node ind2"><span class="dot-c" style="background:var(--dim2)"></span>mla_ref.py</div>
@@ -1793,7 +2464,7 @@ function codeKey(){ if(state.step>=6)return's6'; if(state.step>=4)return's4'; if
 function renderTabs(){
   const tabs=document.getElementById('tabs');
   let html=`<div class="tab ${activeTab==='cuda'?'on':''}" data-t="cuda">
-     <span class="dot-c" style="background:var(--cube)"></span>example_mla_decode.py<span class="x">×</span></div>`;
+     <span class="dot-c" style="background:var(--cube)"></span>flash_attention_v2.py<span class="x">×</span></div>`;
   if(hasCpp) html+=`<div class="tab ${(activeTab!=='cuda'&&activeTab!=='tiling')?'on':''}" data-t="cpp">
      <span class="dot-c" style="background:var(--acc)"></span>flash_mla_decode.cpp<span class="x">×</span></div>`;
   if(tilingReady) html+=`<div class="tab ${activeTab==='tiling'?'on':''}" data-t="tiling">
@@ -1808,7 +2479,7 @@ function renderTabs(){
 }
 function switchTab(key){ closeCompare(); closeTiling(); closePipe(); activeTab = (key==='cuda')?'cuda':key; renderCode(activeTab==='cuda'?'cuda':key); renderTabs(); renderTree();
   document.getElementById('leftPaneH').style.display='none';
-  const f=document.getElementById('etbFile'); if(f) f.textContent=(activeTab==='cuda')?'example_mla_decode.py':'flash_mla_decode.cpp'; }
+  const f=document.getElementById('etbFile'); if(f) f.textContent=(activeTab==='cuda')?'flash_attention_v2.py':'flash_mla_decode.cpp'; }
 // 打开 tiling.h 文件 + 右侧 Tiling 可视化
 function openTilingFile(){
   closeCompare(); closeGraph(); closePipe();
@@ -1846,116 +2517,104 @@ function flashCodeLines(a,b){
 /* ============================ 步骤定义 ============================ */
 const STEPS=[
  {n:'S1',t:'解析算子',sub:'源码语法树 → 计算图',
-  body:`扫描 <code>example_mla_decode.py</code> 的 <code>flashattn</code>,抽取算子结构并生成计算图。识别为<b>「MLA Flash-Decoding」融合算子</b>:Q·KVᵀ + Q_pe·K_peᵀ 两路 GEMM → 在线 Softmax → P·V 累加,末尾按 <code>num_split</code> 做 flash-decoding 合并。
-  <div class="inspector-soft-card is-info" style="margin-top:12px">
-    <div style="font-size:14px;color:var(--dim);margin-bottom:6px">💡 提示</div>
-    <div style="font-size:14px;color:var(--txt)">点击右上角「解析算子 · 计算图」按钮打开计算图画布，然后点击各个节点可查看对应的源码位置</div>
-  </div>`,
-  risk:{h:'检测到源端专属结构',p:'<code>T.use_swizzle(10)</code> L2 swizzle、<code>GemmWarpPolicy.FullCol</code> warp 划分、<code>T.exp2</code>+log2(e) 底数技巧 —— 均依赖 GPU 线程/warp 硬件模型,昇腾达芬奇架构<b>无直接对应物</b>,须在 S2 决策改写。'},
-  log:[['','ascendport migrate ./ops/example_mla_decode.py','p'],
-       ['解析 TileLang / Python translation unit … 179 行','d'],
-       ['✓ 识别 kernel: flashattn (main_split / main_no_split)','g'],
-       ['  ├─ 融合级别: QKᵀ+PEᵀ → 在线 Softmax → P·V (fused)','d'],
-       ['  ├─ 精度: FP16 (Q/KV) · FP32 累加','d'],
-       ['  └─ 并行粒度: 1 block = 1 (batch, head-group)','d'],
-       ['构建数据流图 … 13 节点 / 18 边','b'],
-       ['⚠ 检测 SIMT 专属原语 ×3: use_swizzle, GemmWarpPolicy, exp2/log2','r'],
+  body:`扫描 <code>flash_attention_v2.py</code> 的 <code>_flash_attention_v2_forward_kernel</code>,抽取算子结构并生成计算图。识别为<b>「Flash Attention v2」融合注意力算子</b>:Q·Kᵀ GEMM → 因果 Mask → 在线 Softmax → P·V 累加 → 归一化,沿 KV 序列逐块流式处理并维护 running max/sum,末尾保存 L/M 统计供反向传播。`,
+  risk:{h:'检测到源端专属结构',p:'<code>tl.program_id</code> 的 SIMT 网格映射、<code>tl.dot</code> 的 warp 级张量核 (MMA)、指针算术 + mask 的 HBM 分块寻址 —— 均依赖 GPU 线程/warp 硬件模型,昇腾达芬奇架构<b>无直接对应物</b>,须在 S2 决策改写。'},
+  log:[['','ascendport migrate ./ops/flash_attention_v2.py','p'],
+       ['解析 Triton / Python translation unit … 362 行','d'],
+       ['✓ 识别 kernel: _flash_attention_v2_forward_kernel (+ backward)','g'],
+       ['  ├─ 融合级别: Q·Kᵀ → Causal Mask → 在线 Softmax → P·V (fused)','d'],
+       ['  ├─ 精度: FP16 输入 · FP32 累加 (acc_o/m_i/l_i)','d'],
+       ['  └─ 并行粒度: 1 program = 1 (行块 BLOCK_M, batch)','d'],
+       ['构建数据流图 … 15 节点 / 18 边','b'],
+       ['⚠ 检测 SIMT 专属原语 ×2: program_id 网格, warp 级 tl.dot','r'],
        ['✓ 计算图已生成 → 右侧画布','a']],
   run(){ hasCpp=false; graphMapped=false; renderTree(); renderTabs(); switchTab('cuda'); openGraph(); }},
 
  {n:'S2',t:'算子映射',sub:'算子 → 达芬奇执行单元',
-  body:`把计算图里的每个源端算子映射到目标昇腾算子与达芬奇执行单元。下方清单列出全部映射结果 —— 两路 GEMM 与 P·V 直接落矩阵单元、在线 Softmax 落向量单元,仅 GPU 专属的 <b>warp 划分 + swizzle 调度</b>无对应物、需重写。`,
-  choice:{q:'GemmWarpPolicy 的 warp 划分 + use_swizzle 调度如何在昇腾重写?',
+  body:`把计算图里的每个源端算子映射到目标昇腾算子与达芬奇执行单元。下方清单列出全部映射结果 —— Q·Kᵀ 与 P·V 直接落矩阵单元、因果 Mask 与在线 Softmax 落向量单元,仅 GPU 专属的 <b>SIMT 网格 + warp 级 MMA</b>无对应物、需重写。`,
+  choice:{q:'tl.program_id 的 SIMT 网格 + warp 级 tl.dot 如何在昇腾重写?',
     opts:[
-     {v:'vector',rec:'推荐',title:'删 warp 概念,分核 + 向量单元片上归约',
-      desc:'GEMM 交给矩阵单元自管 L0A/L0B,warp 划分整体删除;在线 Softmax 的 max/exp/sum 用向量单元树形归约,调度用 T.Persistent 做核间均衡。吞吐最高。'},
+     {v:'vector',rec:'推荐',title:'删 warp 概念,分核 SPMD + 向量单元片上归约',
+      desc:'tl.dot 交给矩阵单元自管 L0A/L0B,warp 划分整体删除;program_id 网格改为 GetBlockIdx() 分核认领 (行块, batch);在线 Softmax 的 max/exp/sum 用向量单元树形归约。吞吐最高。'},
      {v:'scalar',warn:'不推荐',title:'标量单元逐元素模拟归约',
       desc:'用标量循环逐元素模拟 softmax 归约。语义等价但向量单元闲置,严重浪费算力。'}]},
   log:[['','ascendport map --target davinci','p'],
        ['映射计算图节点 → 执行单元 …','d'],
-       ['  Q·KVᵀ / Q_pe·K_peᵀ → 矩阵单元 (Mmad, FP16)','g'],
-       ['  在线 Softmax        → 向量单元','g'],
-       ['  P·V 累加            → 矩阵单元','g'],
-       ['  T.copy → shared     → GM→L1/UB 逐级搬运','g']],
-  logVector:[['  warp 划分 + swizzle → 分核 + 向量单元片上归约 (T.Persistent)','g'],
+       ['  Q·Kᵀ (tl.dot)         → 矩阵单元 (Mmad, FP16)','g'],
+       ['  因果 Mask + 在线 Softmax → 向量单元','g'],
+       ['  P·V 累加 (tl.dot)      → 矩阵单元','g'],
+       ['  tl.load/store + mask   → GM↔L1/UB DataCopy','g']],
+  logVector:[['  SIMT 网格 + warp → 分核 SPMD + 向量单元片上归约','g'],
        ['✓ 计算图风险节点已更新: 源端专属 → 分核/向量单元','a'],
-       ['⚠ 注意:exp2→exp 底数改写与在线归约次序 → S7 校验精度','y']],
-  logScalar:[['  warp 划分 + swizzle → 标量单元逐元素模拟','y'],
+       ['⚠ 注意:在线 Softmax rescale 次序与 FP16 累加 → S6 校验精度','y']],
+  logScalar:[['  SIMT 网格 + warp → 标量单元逐元素模拟','y'],
        ['⚠ 向量单元将闲置,预计算力利用率 < 40% —— 不推荐','r']]},
 
  {n:'S3',t:'代码生成',sub:'线程模型 → 分核模型',
-  body:`生成 AscendC 骨架 <code>flash_mla_decode.cpp</code>,并在编辑器<b>左源端 · 右昇腾</b>同屏对比。<code>T.Kernel(...threads=256)</code> 的线程块映射为按算力核分核(<code>GetBlockIdx()</code> 认领 (batch, head) 对);<code>use_swizzle</code> / <code>GemmWarpPolicy</code> 等 warp 概念删除,改为核内 KV 分块循环。`,
+  body:`生成 AscendC 算子核骨架,并在编辑器<b>左源端 · 右昇腾</b>同屏对比。<code>tl.program_id</code> 的 (行块, batch) 二维网格映射为按算力核分核(<code>GetBlockIdx()</code> 认领);<code>tl.dot</code> 的 warp 级 MMA 改为 Cube 矩阵单元 <code>Mmad</code>;指针算术 + mask 寻址删除,改为核内 KV 分块循环 + <code>DataCopy</code>。`,
   log:[['','ascendport codegen --arch ascend910c','p'],
        ['生成 AscendC kernel 类 …','d'],
-       ['✓ 新建 flash_mla_decode.cpp','g'],
+       ['✓ 新建 AscendC kernel 类','g'],
        ['  ├─ Init/Process/ComputeAttention/ComputeTile','d'],
-       ['  ├─ T.Kernel(threads) → GetBlockIdx() 分核','g'],
-       ['  └─ use_swizzle / GemmWarpPolicy → 删除 (warp 概念)','g'],
-       ['插入 2 处 TODO 标记 (S4 内存 / S6 流水)','y'],
+       ['  ├─ program_id 网格 → GetBlockIdx() 分核','g'],
+       ['  └─ warp 级 tl.dot → Cube Mmad (删 warp 概念)','g'],
+       ['插入 2 处 TODO 标记 (S4 内存 / S5 流水)','y'],
        ['✓ 已开启源端 ↔ 昇腾同屏对比视图 (计算图已收起)','a']],
   run(){ hasCpp=true; renderTree(); renderTabs(); openCompare('s3'); }},
 
  {n:'S4',t:'内存层次映射',sub:'显式片上缓冲 + DataCopy',
-  body:`为每处数据流动生成逐级搬运:<code>Q|Q_pe</code> 走 GM→L1→L0A、<code>KV|K_pe</code>→L0B、<code>QKᵀ</code> 打分结果落 L0C,在线 Softmax 在 UB。<b>关键落差</b>:910C 的 Cube/Vector 分离,<code>L0C</code> 无直连 <code>UB</code>,打分须 <code>L0C→GM→UB</code> 中转。右侧 AscendC 中<b>新注入的内存层次代码已高亮标记</b>,「数据流」视图动画演示数据如何在 GM ↔ L1 ↔ L0 ↔ 矩阵单元 ↔ UB ↔ 向量单元之间流动。`,
+  body:`为每处数据流动生成逐级搬运:<code>Q</code> 块走 GM→L1→L0A、<code>K/V</code> 块→L0B、<code>Q·Kᵀ</code> 打分结果落 L0C,因果 Mask 与在线 Softmax 在 UB。<b>关键落差</b>:910C 的 Cube/Vector 分离,<code>L0C</code> 无直连 <code>UB</code>,打分须 <code>L0C→GM→UB</code> 中转。下方清单列出注入到 <code>flash_mla_decode.cpp</code> 的内存层次代码 —— 点击可定位源码并播放数据流动画。`,
   log:[['','ascendport memmap --emit-datacopy','p'],
-       ['分析数据生命周期 … 5 个张量','d'],
+       ['分析数据生命周期 … Q/K/V/O + L/M 统计','d'],
        ['✓ 注入 InitBuffer × 6 (L1/L0A/L0B/L0C/UB)','g'],
-       ['✓ 注入 DataCopy: Q|Q_pe GM→L1, KV|K_pe GM→L1','g'],
+       ['✓ 注入 DataCopy: Q GM→L1(常驻), K|V GM→L1(列循环)','g'],
        ['✓ Mmad→L0C, 在线 Softmax(经 GM→UB 中转)→向量单元','g'],
        ['✓ 新注入代码已在 AscendC 侧高亮','a'],
        ['▶ 已生成硬件数据流动画 → 右侧「数据流」视图','a'],
-       ['当前为串行搬运-计算,S6 将做双缓冲重叠','y']],
+       ['当前为串行搬运-计算,S5 将做双缓冲重叠','y']],
   run(){ openCompare('s4'); }},
 
- {n:'S5',t:'自动分块',sub:'贴合缓冲容量的分块',
-  body:`沿 KV 序列维搜索分块长度,在 L1/L0/UB 容量约束下最大化片上驻留、最小化回 GM 次数,结果写入 <code>tiling.h</code>(默认打开)。注意 MLA 的 KV 同时充当 QKᵀ 的 K(dim=512)与 P·V 的 V,L1 容量需核算。右侧 <b>分块可视化</b>直观呈现:KV 维如何被切成多个分块、各方案的缓冲占用与代价。给出候选,由你确认:`,
-  choice:{q:'选择 KV 序列维分块方案:',
+ {n:'S5',t:'分块与流水编排',sub:'变量控制 · Tiling 可视化 · Pipeline',
+  body:`把「自动分块」与「流水线编排」合并为一次算子规划:在<b>变量控制</b>里调 SOC / dtype / KV 分块方案 / BUFFER_NUM / 尾块策略;<b>Tiling 可视化</b>实时呈现核间分核与核内分块 + 缓冲占用;<b>Pipeline</b>把伪代码编排成双缓冲软件流水泳道 —— 预取 KV(n+1) ∥ 计算 n ∥ 写回 n-1。右侧「算子规划」视图给出全部内容,由你确认 KV 分块方案:`,
+  choice:{q:'选择 KV 序列维分块方案(驱动 Tiling 可视化与流水):',
     opts:[
-     {v:'A',title:'分块长度 = 128',desc:'UB 利用率 61% · 回 GM 次数多 · 周期基线 1.00×'},
-     {v:'B',rec:'推荐',title:'分块长度 = 256',desc:'UB 利用率 88% · L0C 恰好容纳 · 周期 0.72× —— 综合最优'},
-     {v:'C',warn:'溢出风险',title:'分块长度 = 512',desc:'UB 利用率 103% · 超 L0C 容量 → 触发回退搬运,周期 0.95×'}]},
-  log:[['','ascendport tiling --search --constraint l0c,ub','p'],
-       ['枚举分块长度 ∈ {128,256,512} …','d'],
-       ['  分块长度=128 → UB 61%  周期 1.00×','d'],
-       ['  分块长度=256 → UB 88%  周期 0.72×  ★','g'],
-       ['  分块长度=512 → UB 103% 溢出回退 0.95×','y']],
-  logDone:[['✓ tiling.h 已生成 (分块长度写入 TilingData)','a'],
-       ['▶ 已打开 tiling.h 并生成分块可视化 → 右侧','a']],
+     {v:'A',title:'分块长度 = 128 · 单缓冲',desc:'UB 利用率 61% · 回 GM 次数多 · 无重叠 · 周期基线 1.00×'},
+     {v:'B',rec:'推荐',title:'分块长度 = 256 · 双缓冲',desc:'UB 利用率 88% · L0C 恰好容纳 · 搬运/计算重叠 · 周期 0.72×'},
+     {v:'C',warn:'溢出风险',title:'分块长度 = 512 · 双缓冲',desc:'UB 利用率 103% · 超 L0C → 回退搬运 · 周期 0.95×'}]},
+  log:[['','ascendport plan --tiling --pipeline --double-buffer','p'],
+       ['① 变量控制 → 搜索 KV 分块 ∈ {128,256,512} …','d'],
+       ['  分块=128 → UB 61%  周期 1.00×','d'],
+       ['  分块=256 → UB 88%  周期 0.72×  ★','g'],
+       ['  分块=512 → UB 103% 溢出回退 0.95×','y'],
+       ['② Tiling 可视化 → 核间 20/24 核激活,核内分块 + 双缓冲 slot','g'],
+       ['③ 软件流水 → 预取 CopyIn KV(n+1) ∥ Compute(n) ∥ CopyOut(n-1)','g'],
+       ['✓ TQue 深度 1→2 (kvL1/cO/ubQK) 双缓冲,流水气泡 21%→4%','g'],
+       ['✓ 在线 Softmax 保持 acc_o/l_i 的 FP32 累加,稳住 rescale 次序','g']],
+  logDone:[['✓ tiling.h 已生成 (分块长度写入 TilingData) + 软件流水已编排','a'],
+       ['▶ 已打开「算子规划」视图 → 变量控制 · Tiling 可视化 · Pipeline','a']],
   run(){ tilingReady=true; renderTree(); renderTabs(); }},
 
- {n:'S6',t:'流水线编排',sub:'双缓冲重叠',
-  body:`把串行的「搬运→计算」重排为软件流水:<b>预取 n+1 ∥ 计算 n ∥ 写回 n-1</b>。<code>TQue</code> 深度 1→2,让 KV 搬运与矩阵/向量计算重叠 —— 这是开箱性能翻倍的关键。同时把在线 Softmax 的 <code>exp2</code> 落地为自然 <code>Exp</code>(去 log2(e))。完成后定位回 <code>flash_mla_decode.cpp</code>,<b>高亮新增流水代码</b>,右侧给出编排前后的流水时序对比。`,
-  log:[['','ascendport pipeline --double-buffer','p'],
-       ['构建软件流水 …','d'],
-       ['✓ TQue 深度 1→2 (kL1/cO/ubQK) 双缓冲','g'],
-       ['✓ 预取 CopyInKV(n+1) 与 Compute(n) 重叠','g'],
-       ['✓ exp2 落地: T.exp2·log2(e) → 自然 Exp (向量单元)','g'],
-       ['✓ 已定位回 AscendC 源码并高亮新增流水代码','a'],
-       ['▶ 流水前后对比 → 右侧面板','a'],
-       ['流水气泡 21% → 4%','a']],
-  run(){ /* 完成后在回调中定位源码 */ }},
-
- {n:'S7',t:'精度对齐',sub:'以源端为基准',
-  body:`用相同输入跑昇腾 kernel 与源端参考,逐元素比对,生成<b>精度报告</b>(见右侧「精度」视图)。报告会定位精度异常的算子、给出根因与修复方案 —— 一键应用修复即可复测通过。`,
-  log:[['','ascendport verify --golden cuda --rtol 1e-3','p'],
+ {n:'S6',t:'精度对齐',sub:'以源端为基准',
+  body:`用相同输入跑昇腾 kernel 与源端参考(Triton FA2 / torch 注意力),逐元素比对,生成<b>精度报告</b>(见右侧「精度」视图)。报告会定位精度异常的算子、给出根因与修复方案 —— 一键应用修复即可复测通过。`,
+  log:[['','ascendport verify --golden triton --rtol 1e-3','p'],
        ['运行昇腾 kernel 对比源端参考 …','d'],
        ['逐算子比对 … 5 个算子','d'],
-       ['  Mmad·QKᵀ 2.4e-4 ✓ · ReduceMax 0 ✓ · DataCopy 0 ✓','g'],
+       ['  Mmad·Q·Kᵀ 2.4e-4 ✓ · ReduceMax 0 ✓ · DataCopy 0 ✓','g'],
        ['✗ Exp·在线 Softmax: 最大绝对误差 3.1e-2 (超阈值 30×)','r'],
-       ['  根因: exp2→exp 底数改写 + 在线归约次序 → 误差放大','y'],
+       ['  根因: 在线 rescale 次序 + FP16 累加 → 误差放大','y'],
        ['▶ 精度报告已生成 → 右侧「精度」视图,可查看根因与修复方案','a']],
   run(){ /* 报告在完成回调中打开 */ }},
 
- {n:'S8',t:'性能剖析与调优',sub:'msProf → aclNN 注册',
-  body:`采集硬件流水,定位瓶颈并给出调优建议,最后把算子注册为 <code>aclNN</code> 供图层调用。完成后生成<b>性能报告</b>(见右侧「性能」视图):含 msProf <b>流水泳道图</b>(直译对比优化)、利用率对比与调优建议。相比直译版,端到端 <b>3.1×</b> 加速(参考 tilelang-ascend SparseMLA ≈ 0.90× AscendC)。`,
+ {n:'S7',t:'性能剖析与调优',sub:'msProf → aclNN 注册',
+  body:`采集硬件流水,定位瓶颈并给出调优建议,最后把算子注册为 <code>aclNN</code> 供图层调用。完成后生成<b>性能报告</b>(见右侧「性能」视图):含 msProf <b>流水泳道图</b>(直译对比优化)、利用率对比与调优建议。相比直译版,端到端 <b>3.1×</b> 加速。`,
   log:[['','ascendport profile --with msprof','p'],
        ['采集算力核流水利用率 …','d'],
        ['  直译版算力核利用率: 31%  (矩阵单元空转,串行搬运)','y'],
        ['  优化版算力核利用率: 82%  (双缓冲重叠)','g'],
        ['  端到端加速: 3.1× · 矩阵单元占用 76% · 搬运隐藏 94%','g'],
-       ['✓ 注册 aclNN 算子: aclnnFlashMLADecode','a'],
+       ['✓ 注册 aclNN 算子: aclnnFlashAttentionV2','a'],
        ['▶ 性能报告已生成 → 右侧「性能」视图','a'],
-       ['✓ 迁移完成 —— S1→S8 全流程通过','a']],
+       ['✓ 迁移完成 —— S1→S7 全流程通过','a']],
   run(){ if(!accFixed){ accFixed=true; setProblems(0); } setAicore('82%'); }},
 ];
 
@@ -1995,8 +2654,12 @@ function renderWizard(){
       <div class="sc-h"><div class="sc-n" style="${viewedDone?'background:#48d59722;color:var(--ok)':(viewedNext?'background:var(--state-selected);color:var(--primary)':'')}">${icon}</div>
         <div class="sc-t"><b>${viewedStep.n} · ${viewedStep.t}</b><span>${viewedStep.sub} · ${status}</span></div></div>
       <div class="sc-body">${viewedStep.body}`;
+    // S1：源端初判的迁移可行性雷达（六维评分）
+    if(viewedStep.n==='S1') html+=renderFeasRadar('S1');
     // S2：在主内容区展示"算子映射清单"，直观呈现 CUDA 算子 → 昇腾算子/单元
-    if(viewedStep.n==='S2') html+=renderOpMapTable();
+    if(viewedStep.n==='S2'){ html+=renderOpMapTable(); html+=renderFeasRadar('S2'); }
+    // S4：列出注入到 AscendC 源码的内存层次代码（行号 + 代码），点击定位源码 + 播放数据流
+    if(viewedStep.n==='S4') html+=renderS4CodeSites();
     if(viewedStep.risk) html+=`<div class="riskcard"><div class="rh">⚠ ${viewedStep.risk.h}</div><p>${viewedStep.risk.p}</p></div>`;
     if(viewedStep.choice && viewIndex <= state.step){
       const sel=state.choices[viewedStep.n]||viewedStep.choice.opts.find(o=>o.rec)?.v||viewedStep.choice.opts[0].v;
@@ -2013,18 +2676,30 @@ function renderWizard(){
     // 全部完成
     html+=`<div class="stepcard" style="border-color:var(--ok);background:#48d5970d">
       <div class="sc-h"><div class="sc-n" style="background:#48d59722;color:var(--ok)">✓</div>
-      <div class="sc-t"><b>迁移完成</b><span>S1 → S8 全流程通过</span></div></div>
-      <div class="sc-body">MLA Decode 算子已迁移为 AscendC 算子并注册为 <code>aclnnFlashMLADecode</code>。端到端 <b>3.1×</b> 加速,算力核利用率 31%→82%,精度余弦相似度 0.99987。</div></div>`;
+      <div class="sc-t"><b>迁移完成</b><span>S1 → S7 全流程通过</span></div></div>
+      <div class="sc-body">Flash Attention v2 算子已迁移为 AscendC 算子并注册为 <code>aclnnFlashAttentionV2</code>。端到端 <b>3.1×</b> 加速,算力核利用率 31%→82%,精度余弦相似度 0.99987。</div></div>`;
   }
   sc.innerHTML=html;
+  // S2 映射清单：点击任意行 → 在计算图面板区打开该算子的「API可视化」
+  sc.querySelectorAll('.opmap tbody tr[data-node]').forEach(tr=>tr.onclick=()=>{
+    sc.querySelectorAll('.opmap tbody tr.on').forEach(x=>x.classList.remove('on'));
+    tr.classList.add('on');
+    openApiPanel(tr.dataset.node);
+  });
+  // S4 注入代码清单：点击 → 定位左侧源码 + 播放数据流动画
+  sc.querySelectorAll('.s4site[data-i]').forEach(el=>el.onclick=()=>{
+    sc.querySelectorAll('.s4site.on').forEach(x=>x.classList.remove('on'));
+    el.classList.add('on');
+    gotoS4Site(Number(el.dataset.i));
+  });
   sc.querySelectorAll('.opt').forEach(o=>o.onclick=()=>{
     state.choices[o.dataset.step]=o.dataset.v;
     // 若在 S2 卡片上改变映射决策，实时反映到计算图
     if(o.dataset.step==='S2'){ graphMapped=(o.dataset.v==='vector'); renderGraph(false); }
-    // 若在 S5 卡片上改变 tiling 决策，实时反映到 tiling.h 与可视化
+    // 若在 S5 卡片上改变 tiling 决策，实时反映到「算子规划」视图
     if(o.dataset.step==='S5'){
-      if(document.getElementById('split').classList.contains('tiling-open')) renderTilingViz();
-      if(activeTab==='tiling') renderCode('tiling');
+      planState.bufferOverride=null;
+      if(currentAnalysisView()==='plan') renderPlanView();
     }
     renderWizard();
   });
@@ -2035,12 +2710,12 @@ function renderWizard(){
   if(state.step>=STEPS.length){
     btn.disabled=false; btn.textContent='↻ 重新开始迁移'; btn.className='run ghost';
     if(allBtn){allBtn.disabled=true; allBtn.textContent='全部完成';}
-    hint.textContent='全部 8 个阶段已完成';
+    hint.textContent=`全部 ${STEPS.length} 个阶段已完成`;
   } else {
     btn.disabled=false; btn.className='run';
     btn.textContent=`执行${nextStep.t}`;
     if(allBtn){allBtn.disabled=false; allBtn.textContent='全部执行';}
-    hint.textContent=`共 8 个阶段 · 当前 ${state.step} / 8 完成`;
+    hint.textContent=`共 ${STEPS.length} 个阶段 · 当前 ${state.step} / ${STEPS.length} 完成`;
   }
   document.getElementById('sbStep').textContent = state.step>=STEPS.length?'✓ 完成':(completedStep?`${completedStep.n} · 已完成`:'准备就绪');
 }
@@ -2083,7 +2758,7 @@ function initProblems(){
    <div class="prob"><span class="pi" style="color:var(--risk)">⚠</span><div><div><code style="font-family:var(--mono)">GemmWarpPolicy.FullCol</code> / <code style="font-family:var(--mono)">use_swizzle</code> 无昇腾对应 —— warp/swizzle 概念删除,改 Cube/Vector 分核 + <code style="font-family:var(--mono)">T.Persistent</code></div><div class="pf">flash_mla_decode · GEMM 调度</div></div></div>
    <div class="prob"><span class="pi" style="color:var(--warn)">⚠</span><div><div>split-KV + combine(flash-decoding)—— 需改 GM workspace 多核归约;<code style="font-family:var(--mono)">L0C→UB</code> 无直连,须经 GM 中转</div><div class="pf">example_mla_decode.py · num_split / combine</div></div></div>`;
 }
-// S7：精度异常写入问题面板
+// S6：精度异常写入问题面板
 function setAccProblem(){
   problems=1;const c=document.getElementById('probCnt');c.textContent=1;c.className='cnt err';
   document.getElementById('probs').innerHTML=`
@@ -2108,6 +2783,7 @@ document.querySelectorAll('.analysis-tab[data-analysis]').forEach(t=>t.onclick=(
   const view=t.dataset.analysis;
   if(t.hidden || t.disabled || !setAnalysisView(view)) return;
   if(view==='graph') renderGraph(false);
+  if(view==='api') renderApiDetail(lastApiNode);
   if(view==='generated'){
     if(!document.getElementById('diffLines')?.innerHTML.trim()) renderDiff(hasCpp?'s3':'s3');
   }
@@ -2176,14 +2852,12 @@ function runStep(){
         });
       });
     }
-    // S5：完成后默认打开 tiling.h 并展示 Tiling 可视化
-    if(s.n==='S5'){ openTilingFile(); }
-    // S6：完成后定位回 AscendC 源码,高亮新增流水代码并展示前后对比
-    if(s.n==='S6'){ openS6Source(); }
-    // S7：完成后打开精度报告(异常态),用户可查看根因/修复方案并一键修复
-    if(s.n==='S7'){ accFixed=false; setAccProblem(); openAccPanel(); }
-    // S8：完成后打开性能报告(泳道图 + 对比)
-    if(s.n==='S8'){ openPerfPanel(); }
+    // S5：完成后打开「算子规划」视图（变量控制 · Tiling 可视化 · Pipeline）
+    if(s.n==='S5'){ openPlanView(); }
+    // S6：完成后打开精度报告(异常态),用户可查看根因/修复方案并一键修复
+    if(s.n==='S6'){ accFixed=false; setAccProblem(); openAccPanel(); }
+    // S7：完成后打开性能报告(泳道图 + 对比)
+    if(s.n==='S7'){ openPerfPanel(); }
     const done=state.step>=STEPS.length;
     notify(done?'🎉 迁移完成':`✓ ${s.n} 完成`, done?'MLA Decode 算子已注册为 aclNN 算子':`${s.t} —— ${s.sub}`, done?'ok':'ok');
     if(runAllMode && !done){
@@ -2213,6 +2887,7 @@ function reset(){
   document.getElementById('flowpane').innerHTML='';
   document.getElementById('accpane').innerHTML='';
   document.getElementById('perfpane').innerHTML='';
+  document.getElementById('apipane').innerHTML=''; lastApiNode=null;
   initProblems(); setProblems(3); setAicore('—');
   renderTree(); renderTabs(); renderCode('cuda'); renderProg(); renderWizard();
   openGraph(); // S1 已完成，展示计算图

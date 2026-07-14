@@ -389,7 +389,9 @@
     .analysis-body > .pipepane,
     .analysis-body > .flowpane,
     .analysis-body > .accpane,
-    .analysis-body > .perfpane {
+    .analysis-body > .perfpane,
+    .analysis-body > .apipane,
+    .analysis-body > .planpane {
       display: none;
       width: 100%;
       height: 100%;
@@ -412,7 +414,9 @@
       display: flex;
     }
     .analysispane[data-analysis-view="accuracy"] .accpane,
-    .analysispane[data-analysis-view="performance"] .perfpane {
+    .analysispane[data-analysis-view="performance"] .perfpane,
+    .analysispane[data-analysis-view="api"] .apipane,
+    .analysispane[data-analysis-view="plan"] .planpane {
       display: block;
     }
     .analysispane .gp-head,
@@ -518,6 +522,83 @@
     .ln.link-grp:hover { background: color-mix(in srgb, var(--vec) 12%, transparent); }
     .edit-split.compare-open.link-active .ln.link-grp:not(.link-hot),
     .edit-split.compare-open.link-active .ln:not(.link-hot) { opacity: .5; }
+    /* 改写行（两平台算子 API 差异）：左侧强调条 + 悬停徽标 */
+    .ln.link-diff { box-shadow: inset 2px 0 0 var(--cube); }
+    .ln.link-diff::after {
+      content: "Δ API";
+      position: absolute;
+      right: 12px;
+      top: 1px;
+      color: var(--cube);
+      background: color-mix(in srgb, var(--cube) 15%, transparent);
+      border-radius: 2px;
+      padding: 0 5px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: var(--font-weight-bold);
+      letter-spacing: .3px;
+      opacity: 0;
+      transition: opacity var(--duration-fast) var(--easing-default);
+      pointer-events: none;
+    }
+    .ln.link-diff:hover::after { opacity: 1; }
+    /* 架构差异解释浮窗 */
+    .link-pop {
+      position: fixed;
+      z-index: 999;
+      width: 340px;
+      max-width: calc(100vw - 24px);
+      border: 1px solid var(--border-strong, var(--border-subtle));
+      border-radius: var(--radius-md);
+      background: var(--surface-1);
+      box-shadow: var(--shadow-lg, 0 12px 32px rgba(0,0,0,.4));
+      padding: 0;
+      overflow: hidden;
+      pointer-events: none;
+      opacity: 0;
+      transform: translateY(4px);
+      transition: opacity var(--duration-fast) var(--easing-default), transform var(--duration-fast) var(--easing-default);
+    }
+    .link-pop.show { opacity: 1; transform: translateY(0); }
+    .lp-h {
+      display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+      padding: 9px 12px;
+      background: color-mix(in srgb, var(--cube) 10%, var(--surface-2));
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .lp-h b { color: var(--foreground); font-size: 13px; font-weight: var(--font-weight-semibold); }
+    .lp-tag {
+      flex: none;
+      border-radius: var(--radius-sm);
+      padding: 1px 7px;
+      font-size: 10px; font-weight: var(--font-weight-bold);
+      color: var(--cube);
+      background: color-mix(in srgb, var(--cube) 16%, transparent);
+    }
+    .lp-row { padding: 8px 12px 6px; }
+    .lp-k {
+      display: inline-block; margin-bottom: 3px;
+      border-radius: var(--radius-sm);
+      padding: 1px 7px;
+      font-family: var(--font-mono); font-size: 10px; font-weight: var(--font-weight-bold);
+    }
+    .lp-gpu .lp-k { color: var(--risk); background: color-mix(in srgb, var(--risk) 14%, transparent); }
+    .lp-npu .lp-k { color: var(--ok);   background: color-mix(in srgb, var(--ok) 14%, transparent); }
+    .lp-row p { margin: 0; color: var(--foreground-secondary); font-size: 12px; line-height: 1.5; }
+    .lp-row code, .lp-why code {
+      font-family: var(--font-mono); font-size: 11px;
+      padding: 0 3px; border-radius: var(--radius-sm);
+      color: var(--foreground);
+      background: color-mix(in srgb, var(--foreground) 9%, transparent);
+    }
+    .lp-arrow { padding: 0 12px; color: var(--cube); font-size: 11px; font-weight: var(--font-weight-semibold); }
+    .lp-why {
+      margin: 4px 0 0; padding: 8px 12px 10px;
+      border-top: 1px solid var(--border-subtle);
+      background: color-mix(in srgb, var(--surface-2) 55%, transparent);
+      color: var(--foreground-secondary); font-size: 12px; line-height: 1.5;
+    }
+    .lp-why b { display: block; margin-bottom: 2px; color: var(--foreground); font-size: 11px; }
     .c-k { color: var(--k); }
     .c-ty { color: var(--ty); }
     .c-fn { color: var(--fn); }
@@ -691,7 +772,7 @@
     @keyframes pulse { 0%, 100% { opacity: .38; } 50% { opacity: .92; } }
     @keyframes pop { from { opacity: 0; transform: translateY(6px) scale(.94); } to { opacity: 1; transform: none; } }
 
-    .tp-body, .accpane, .perfpane {
+    .tp-body, .accpane, .perfpane, .apipane, .planpane {
       flex: 1;
       min-height: 0;
       overflow: auto;
@@ -1218,7 +1299,7 @@
       font-size: 12px;
     }
     .ptab .cnt.err { background: color-mix(in srgb, var(--danger) 18%, transparent); color: var(--danger); }
-    .term, .outputpane, .probs, .flowpane, .accpane, .perfpane {
+    .term, .outputpane, .probs, .flowpane, .accpane, .perfpane, .apipane, .planpane {
       min-height: 0;
       overflow: auto;
     }
@@ -1450,6 +1531,111 @@
     .acc-diff .add { color: color-mix(in srgb, var(--success) 72%, white); background: color-mix(in srgb, var(--success) 12%, transparent); }
     .acc-diff .ctx { color: var(--foreground-muted); }
 
+    /* ---------- S2 API 可视化面板 ---------- */
+    .api-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .api-head .ah-t { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .api-head .ah-t b { color: var(--foreground); font-size: 16px; font-family: var(--font-mono); }
+    .api-head .ah-t span { color: var(--foreground-secondary); font-size: 13px; }
+    .api-head .ah-unit {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      margin-left: auto;
+      flex: none;
+      border-radius: var(--radius-sm);
+      padding: 3px 9px;
+      font-size: 12px;
+      font-weight: var(--font-weight-bold);
+    }
+    .api-head .ah-unit i { width: 8px; height: 8px; border-radius: 2px; }
+    .api-empty {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      padding: 24px;
+      text-align: center;
+      color: var(--foreground-muted);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    .api-card {
+      border-radius: var(--radius-md);
+      background: color-mix(in srgb, var(--surface-2) 64%, transparent);
+      margin-bottom: 12px;
+      overflow: hidden;
+    }
+    .api-card .apc-h {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      flex-wrap: wrap;
+      padding: 10px 13px;
+      box-shadow: inset 0 -1px 0 var(--border-subtle);
+    }
+    .api-card .apc-h .nm { color: var(--foreground); font-weight: var(--font-weight-semibold); font-family: var(--font-mono); font-size: 14px; }
+    .api-card .apc-h .ns { color: var(--foreground-muted); font-size: 12px; font-family: var(--font-mono); }
+    .api-card .apc-h .since {
+      margin-left: auto;
+      border-radius: var(--radius-sm);
+      padding: 1px 7px;
+      font-size: 11px;
+      color: var(--foreground-secondary);
+      background: var(--comp-tag-bg);
+    }
+    .api-card .apc-brief { padding: 9px 13px 3px; color: var(--foreground-secondary); font-size: 14px; line-height: 1.55; }
+    .api-sig {
+      margin: 9px 13px;
+      padding: 9px 12px;
+      border-radius: var(--radius-sm);
+      background: color-mix(in srgb, var(--surface-1) 78%, transparent);
+      color: var(--foreground);
+      font: var(--text-mono);
+      white-space: pre-wrap;
+      overflow-x: auto;
+    }
+    .api-sig .kw { color: var(--vec); }
+    .api-sig .ty { color: var(--cube); }
+    .api-sig .fn { color: var(--primary); font-weight: var(--font-weight-bold); }
+    .api-ptable { width: 100%; border-collapse: collapse; font-size: 13px; margin: 4px 0 6px; }
+    .api-ptable th, .api-ptable td { padding: 6px 13px; text-align: left; box-shadow: inset 0 1px 0 var(--border-subtle); vertical-align: top; }
+    .api-ptable th { color: var(--foreground-muted); font: var(--text-label); text-transform: uppercase; }
+    .api-ptable .pn { color: var(--foreground); font-family: var(--font-mono); white-space: nowrap; }
+    .api-ptable .pt { color: var(--cube); font-family: var(--font-mono); white-space: nowrap; }
+    .api-ptable .pd { color: var(--foreground-secondary); line-height: 1.45; }
+    .api-notes { list-style: none; margin: 6px 13px 10px; padding: 0; }
+    .api-notes li {
+      position: relative;
+      padding: 3px 0 3px 16px;
+      color: var(--foreground-secondary);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .api-notes li::before { content: "▸"; position: absolute; left: 0; color: var(--primary); }
+    .api-notes li code, .api-card .apc-brief code, .api-ptable code {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      padding: 0 3px;
+      border-radius: var(--radius-sm);
+      background: color-mix(in srgb, var(--foreground) 8%, transparent);
+    }
+    .api-ex-h { padding: 4px 13px; color: var(--foreground-muted); font: var(--text-label); text-transform: uppercase; }
+    .api-ex {
+      margin: 0 13px 12px;
+      padding: 9px 12px;
+      border-radius: var(--radius-sm);
+      background: color-mix(in srgb, var(--surface-1) 78%, transparent);
+      color: var(--foreground-secondary);
+      font: var(--text-mono);
+      white-space: pre-wrap;
+      overflow-x: auto;
+    }
+
     .perf-tune { overflow: hidden; }
     .perf-tune .pt-item {
       display: flex;
@@ -1595,6 +1781,244 @@
     .opmap .st { display: inline-flex; border-radius: var(--radius-sm); padding: 1px 6px; font-size: 12px; font-weight: var(--font-weight-bold); }
     .opmap .st.ok { color: var(--success); background: color-mix(in srgb, var(--success) 14%, transparent); }
     .opmap .st.rw { color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); }
+    .opmap tbody tr { cursor: pointer; transition: background var(--duration-fast) var(--easing-default); }
+    .opmap tbody tr:hover { background: var(--state-hover); }
+    .opmap tbody tr.on { background: var(--state-selected); }
+    .opmap .api-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      border-radius: var(--radius-sm);
+      padding: 1px 7px;
+      font-size: 12px;
+      font-weight: var(--font-weight-bold);
+      color: var(--primary);
+      background: color-mix(in srgb, var(--primary) 12%, transparent);
+      white-space: nowrap;
+    }
+    .opmap .api-link svg { width: 12px; height: 12px; }
+    .opmap tbody tr:hover .api-link { background: color-mix(in srgb, var(--primary) 22%, transparent); }
+
+    /* ---------- S4 内存层次注入代码清单 ---------- */
+    .s4list {
+      margin: 12px 0 4px;
+      border-radius: var(--radius-md);
+      background: color-mix(in srgb, var(--surface-2) 64%, transparent);
+      overflow: hidden;
+    }
+    .s4list-h {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      padding: 8px 11px;
+      color: var(--foreground);
+      font-weight: var(--font-weight-semibold);
+      font-size: 14px;
+    }
+    .s4list-h .cnt { margin-left: auto; color: var(--foreground-secondary); font-size: 12px; font-weight: var(--font-weight-normal); }
+    .s4site {
+      padding: 8px 11px;
+      cursor: pointer;
+      box-shadow: inset 0 1px 0 var(--border-subtle);
+      transition: background var(--duration-fast) var(--easing-default);
+    }
+    .s4site:hover { background: var(--state-hover); }
+    .s4site.on { background: var(--state-selected); }
+    .s4-top { display: flex; align-items: center; gap: 7px; }
+    .s4-dot { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+    .s4-top b { color: var(--foreground); font-size: 13px; font-weight: var(--font-weight-semibold); }
+    .s4-ln {
+      margin-left: auto;
+      flex: none;
+      border-radius: var(--radius-sm);
+      padding: 1px 7px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--foreground-secondary);
+      background: var(--comp-tag-bg);
+    }
+    .s4-what { margin: 3px 0 0 16px; color: var(--foreground-secondary); font-size: 12px; line-height: 1.45; }
+    .s4-code {
+      margin: 6px 0 0 16px;
+      padding: 6px 9px;
+      border-radius: var(--radius-sm);
+      background: color-mix(in srgb, var(--surface-1) 78%, transparent);
+      color: var(--foreground);
+      font: var(--text-mono);
+      font-size: 12px;
+      white-space: pre-wrap;
+      overflow-x: auto;
+    }
+    .s4list code {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      padding: 0 3px;
+      border-radius: var(--radius-sm);
+      background: color-mix(in srgb, var(--foreground) 8%, transparent);
+    }
+    /* ---- 迁移可行性雷达 ---- */
+    .feas {
+      margin: 12px 0 4px;
+      border-radius: var(--radius-md);
+      background: color-mix(in srgb, var(--surface-2) 64%, transparent);
+      overflow: hidden;
+    }
+    .feas-h {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      padding: 8px 11px;
+      color: var(--foreground);
+      font-weight: var(--font-weight-semibold);
+      font-size: 14px;
+    }
+    .feas-h .verdict {
+      margin-left: auto;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      border-radius: var(--radius-sm);
+      padding: 1px 8px;
+      font-size: 12px;
+      font-weight: var(--font-weight-semibold);
+    }
+    .feas-h .verdict b { font-family: var(--font-mono); }
+    .feas-plot { display: block; width: 100%; max-width: 252px; height: auto; margin: 0 auto; padding: 2px 6px 0; box-sizing: border-box; }
+    .feas-plot .grid { fill: none; stroke: var(--border-subtle); }
+    .feas-plot .spoke { stroke: var(--border-subtle); }
+    .feas-plot .axl { fill: var(--foreground-secondary); font-size: 9px; font-family: var(--font-sans, inherit); }
+    .feas-plot .poly-base { fill: color-mix(in srgb, var(--foreground) 8%, transparent); stroke: var(--foreground-secondary); stroke-width: 1; stroke-dasharray: 3 3; }
+    .feas-plot .poly-main { stroke-width: 1.6; }
+    .feas-plot .dot { stroke: var(--surface-1); stroke-width: 0.8; }
+    .feas-legend { display: flex; gap: 14px; flex-wrap: wrap; padding: 2px 12px 6px; }
+    .feas-legend span { display: inline-flex; align-items: center; gap: 5px; color: var(--foreground-secondary); font-size: 11px; }
+    .feas-legend i { width: 14px; height: 0; border-top-width: 2px; border-top-style: solid; display: inline-block; }
+    .feas-rows { padding: 4px 11px 9px; display: grid; gap: 5px; }
+    .feas-row { display: grid; grid-template-columns: 62px 1fr auto; align-items: center; gap: 8px; }
+    .feas-row .fl { color: var(--foreground); font-size: 12px; }
+    .feas-row .fbar { position: relative; height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--foreground) 8%, transparent); overflow: hidden; }
+    .feas-row .fbar i { position: absolute; inset: 0 auto 0 0; border-radius: 3px; transition: width var(--duration-normal, .3s) var(--easing-default); }
+    .feas-row .fbar u { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--foreground-secondary); opacity: .55; }
+    .feas-row .fv { font-family: var(--font-mono); font-size: 11px; color: var(--foreground-secondary); min-width: 58px; text-align: right; }
+    .feas-row .fv .up { color: var(--ok); }
+    .feas-row .fv .dn { color: var(--risk); }
+    /* ================= 算子规划视图（变量控制 / Tiling 可视化 / Pipeline） ================= */
+    .planpane { container-type: inline-size; }
+    .pv {
+      display: grid;
+      grid-template-columns: minmax(228px, 264px) minmax(0, 1fr);
+      grid-template-areas: "ctrl viz" "ctrl pipe";
+      grid-template-rows: auto minmax(0, 1fr);
+      gap: var(--space-3);
+      align-content: start;
+    }
+    @container (max-width: 720px) {
+      .pv { grid-template-columns: 1fr; grid-template-areas: "ctrl" "viz" "pipe"; }
+    }
+    .pv-block {
+      display: flex; flex-direction: column; min-width: 0; overflow: hidden;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      background: color-mix(in srgb, var(--surface-2) 70%, transparent);
+    }
+    .pv-ctrl { grid-area: ctrl; }
+    .pv-viz  { grid-area: viz; }
+    .pv-pipe { grid-area: pipe; }
+    .pv-h {
+      display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+      padding: 8px 12px;
+      background: color-mix(in srgb, var(--surface-3) 52%, transparent);
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .pv-h h4 { margin: 0; font-size: 13px; font-weight: var(--font-weight-semibold); color: var(--foreground); }
+    .pv-h span { color: var(--foreground-secondary); font-size: 11px; }
+    .pv-h .pv-badge { margin-left: auto; font-family: var(--font-mono); font-size: 11px; border-radius: var(--radius-sm); padding: 1px 8px; font-weight: var(--font-weight-semibold); }
+    .pv-body { padding: 10px 12px; display: grid; gap: 12px; overflow: auto; }
+    .pv-group { display: grid; gap: 7px; }
+    .pv-group > .pv-gt { margin: 0; font-size: 11px; font-weight: var(--font-weight-bold); letter-spacing: .4px; text-transform: uppercase; color: var(--foreground-secondary); }
+    .pv-field { display: grid; gap: 4px; }
+    .pv-field > label { font-size: 11px; color: var(--foreground-secondary); letter-spacing: .3px; }
+    .pv-hint { font-size: 11px; color: var(--foreground-muted, var(--foreground-secondary)); line-height: 1.4; }
+    .pv-seg { display: flex; flex-wrap: wrap; gap: 5px; }
+    .pv-seg button {
+      border: 1px solid var(--border-subtle); border-radius: var(--radius-md);
+      padding: 4px 10px; cursor: pointer; font-size: 12px;
+      background: color-mix(in srgb, var(--surface-3) 64%, transparent);
+      color: var(--foreground-secondary);
+      transition: background var(--duration-fast) var(--easing-default), color var(--duration-fast) var(--easing-default);
+    }
+    .pv-seg button:hover { background: var(--state-hover); }
+    .pv-seg button.on { background: var(--foreground); color: var(--background); font-weight: var(--font-weight-semibold); border-color: transparent; }
+    .pv-schemes { display: grid; gap: 6px; }
+    .pv-scheme {
+      display: grid; gap: 2px; text-align: left; cursor: pointer;
+      border: 1px solid var(--border-subtle); border-radius: var(--radius-md);
+      padding: 7px 10px; background: color-mix(in srgb, var(--surface-3) 58%, transparent);
+      transition: background var(--duration-fast) var(--easing-default);
+    }
+    .pv-scheme:hover { background: var(--state-hover); }
+    .pv-scheme.on { border-color: var(--primary); background: var(--state-selected); }
+    .pv-scheme b { font-size: 12.5px; color: var(--foreground); display: flex; align-items: center; gap: 6px; }
+    .pv-scheme .rec { font-size: 10px; font-weight: var(--font-weight-bold); border-radius: var(--radius-sm); padding: 0 5px; color: var(--ok); background: color-mix(in srgb, var(--ok) 15%, transparent); }
+    .pv-scheme .warn { font-size: 10px; font-weight: var(--font-weight-bold); border-radius: var(--radius-sm); padding: 0 5px; color: var(--risk); background: color-mix(in srgb, var(--risk) 15%, transparent); }
+    .pv-scheme span { font-size: 11px; color: var(--foreground-secondary); }
+    /* Tiling 可视化 */
+    .pv-vizsec { display: grid; gap: 6px; }
+    .pv-vizsec .pv-vh { display: flex; align-items: baseline; gap: 8px; }
+    .pv-vizsec .pv-vh strong { font-size: 12px; color: var(--foreground); }
+    .pv-vizsec .pv-vh span { font-size: 11px; color: var(--foreground-secondary); margin-left: auto; }
+    .pv-coremap { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 4px; }
+    .pv-core {
+      min-height: 26px; border-radius: var(--radius-sm); cursor: pointer;
+      background: color-mix(in srgb, var(--surface-3) 70%, transparent);
+      color: var(--foreground-secondary); border: 1px solid transparent;
+      font-family: var(--font-mono); font-size: 10px; line-height: 24px; text-align: center;
+    }
+    .pv-core.former { background: color-mix(in srgb, var(--mem) 78%, transparent); color: #fff; font-weight: var(--font-weight-bold); }
+    .pv-core.tail { background: var(--warn); color: #10131a; font-weight: var(--font-weight-bold); }
+    .pv-core.idle { opacity: .35; cursor: default; }
+    .pv-core.sel { outline: 2px solid var(--primary); outline-offset: 1px; }
+    .pv-tabs { display: flex; gap: 6px; }
+    .pv-tabs button { font-size: 11px; padding: 3px 9px; border-radius: var(--radius-sm); cursor: pointer; border: 1px solid var(--border-subtle); background: color-mix(in srgb, var(--surface-3) 60%, transparent); color: var(--foreground-secondary); }
+    .pv-tabs button.on { background: var(--primary); color: #fff; border-color: transparent; font-weight: var(--font-weight-semibold); }
+    .pv-tilemap { display: grid; grid-template-columns: repeat(auto-fill, minmax(52px, 1fr)); gap: 5px; }
+    .pv-tile {
+      min-height: 34px; border-radius: var(--radius-sm);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      background: color-mix(in srgb, var(--vec) 24%, transparent);
+      color: var(--foreground); font-family: var(--font-mono); font-size: 11px;
+      border: 1px solid color-mix(in srgb, var(--vec) 40%, transparent);
+    }
+    .pv-tile small { font-size: 9px; color: var(--foreground-secondary); }
+    .pv-tile .slot { font-size: 8px; letter-spacing: .3px; color: var(--foreground-secondary); text-transform: uppercase; }
+    .pv-tile.partial { background: color-mix(in srgb, var(--warn) 24%, transparent); border-color: color-mix(in srgb, var(--warn) 46%, transparent); }
+    .pv-tailnote { font-size: 11px; color: var(--warn); }
+    /* Pipeline */
+    .pv-pipebody { padding: 10px 12px; display: grid; gap: 10px; grid-template-rows: auto auto auto auto; min-height: 0; overflow: auto; }
+    .pv-code { border-radius: var(--radius-md); overflow: auto; background: color-mix(in srgb, var(--surface-1) 82%, transparent); padding: 6px 0; }
+    .pv-cline { display: grid; grid-template-columns: 26px minmax(0,1fr) auto; gap: 8px; align-items: center; padding: 2px 10px; cursor: pointer; font-family: var(--font-mono); font-size: 12px; color: var(--foreground-secondary); }
+    .pv-cline:hover { background: var(--state-hover); }
+    .pv-cline.on { background: var(--state-selected); color: var(--foreground); }
+    .pv-cnum { color: var(--foreground-muted, var(--foreground-secondary)); opacity: .6; }
+    .pv-ctag { font-family: var(--font-sans); font-size: 9.5px; padding: 1px 6px; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--surface-3) 72%, transparent); color: var(--vec); }
+    .pv-swim { display: grid; grid-template-columns: 92px minmax(0,1fr); gap: 6px 8px; align-items: center; }
+    .pv-swim-legend { grid-column: 1 / -1; display: flex; gap: 12px; flex-wrap: wrap; color: var(--foreground-secondary); font-size: 11px; }
+    .pv-swim-legend span { display: inline-flex; align-items: center; gap: 5px; }
+    .pv-swim-legend i { width: 9px; height: 9px; border-radius: 2px; }
+    .pv-lane-l { font-size: 11px; color: var(--foreground-secondary); }
+    .pv-lane { position: relative; height: 24px; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--surface-3) 50%, transparent); overflow: hidden; }
+    .pv-lane::before { content: ""; position: absolute; inset: 0; background-image: linear-gradient(to right, color-mix(in srgb, var(--foreground) 7%, transparent) 1px, transparent 1px); background-size: 12.5% 100%; }
+    .pv-stage { position: absolute; top: 4px; height: 16px; border-radius: 3px; font-size: 9.5px; font-weight: var(--font-weight-bold); line-height: 16px; text-align: center; color: #10131a; overflow: hidden; white-space: nowrap; }
+    .pv-stage.wait { background: var(--risk); color: #fff; }
+    .pv-insp { border-top: 1px solid var(--border-subtle); padding-top: 8px; display: grid; gap: 6px; }
+    .pv-insp .soft { font-size: 11.5px; line-height: 1.5; color: var(--foreground-secondary); background: color-mix(in srgb, var(--surface-3) 46%, transparent); border-radius: var(--radius-md); padding: 7px 10px; }
+    .pv-insp .soft code { font-family: var(--font-mono); font-size: 11px; padding: 0 3px; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--foreground) 9%, transparent); color: var(--foreground); }
+    .pv-insp-rows { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 4px 12px; }
+    .pv-insp-row { display: flex; justify-content: space-between; gap: 6px; font-size: 11px; border-bottom: 1px solid color-mix(in srgb, var(--foreground) 7%, transparent); padding: 3px 0; }
+    .pv-insp-row span { color: var(--foreground-muted, var(--foreground-secondary)); }
+    .pv-insp-row b { color: var(--foreground); font-family: var(--font-mono); font-size: 10.5px; text-align: right; }
     .wz-foot {
       position: sticky;
       bottom: -32px;
@@ -1751,7 +2175,7 @@
           <section class="pto-ide-frame__pane pto-ide-frame__pane--stack" data-ide-pane="main-row">
             <div class="pto-ide-frame__split" data-ide-split="standalone-main" data-split-direction="horizontal" data-sizes="17,64,19" data-min-size="220,640,300" data-storage-key="ascendport-mla-pto-main-v1">
               <aside class="pto-ide-frame__pane pto-ide-frame__explorer" data-ide-pane="explorer" id="explorer-pane">
-                <header class="pto-ide-frame__pane-header"><div class="explorer-head"><span>资源管理器</span><span>DEEPSEEK-V3</span></div></header>
+                <header class="pto-ide-frame__pane-header"><div class="explorer-head"><span>资源管理器</span><span>flash_attention_v2</span></div></header>
                 <div class="pto-ide-frame__pane-body"><div class="tree" id="tree"></div></div>
               </aside>
 
@@ -1764,7 +2188,7 @@
                       </div>
                       <header class="pto-ide-frame__pane-header">
                         <div class="edtoolbar">
-                          <span class="etb-path"><b>ops</b> / <span id="etbFile">example_mla_decode.py</span></span>
+                          <span class="etb-path"><b>ops</b> / <span id="etbFile">flash_attention_v2.py</span></span>
                           <span class="etb-spacer"></span>
                           <button class="etb-btn" id="parseBtn" type="button" title="解析算子并打开计算图">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="6" cy="6" r="2.5"></circle><circle cx="18" cy="6" r="2.5"></circle><circle cx="12" cy="18" r="2.5"></circle><path d="M7.5 7.5 11 15m6-8.5L13 15"></path></svg>
@@ -1774,7 +2198,7 @@
                       </header>
                       <div class="codewrap" id="codewrap" data-ide-pane="source-code">
                         <div class="pane-h" id="leftPaneH" style="display:none">
-                          <span class="dot-c" style="background:var(--cube)"></span><b>example_mla_decode.py</b><span class="pane-tag cuda">源端代码</span>
+                          <span class="dot-c" style="background:var(--cube)"></span><b>flash_attention_v2</b><span class="pane-tag cuda">源端代码</span>
                           <span class="link-hint">悬停/点击代码 ↔ 联动对侧</span>
                         </div>
                         <div class="code"><div class="gutter" id="gutter"></div><div class="codelines" id="codelines"></div></div>
@@ -1785,8 +2209,10 @@
                       <div class="pto-ide-frame__tabstrip">
                         <div class="tabs analysis-tabs" aria-label="分析视图">
                           <button class="tab analysis-tab on" type="button" data-analysis="graph">计算图<span class="x">×</span></button>
+                          <button class="tab analysis-tab" type="button" data-analysis="api">API可视化<span class="x">×</span></button>
                           <button class="tab analysis-tab" type="button" data-analysis="generated">生成代码<span class="x">×</span></button>
                           <button class="tab analysis-tab" type="button" data-analysis="flow">数据流<span class="x">×</span></button>
+                          <button class="tab analysis-tab" type="button" data-analysis="plan">算子规划<span class="x">×</span></button>
                           <button class="tab analysis-tab" type="button" data-analysis="tiling">分块<span class="x">×</span></button>
                           <button class="tab analysis-tab" type="button" data-analysis="pipeline">流水<span class="x">×</span></button>
                           <button class="tab analysis-tab" type="button" data-analysis="accuracy">精度<span class="x">×</span></button>
@@ -1843,6 +2269,8 @@
 
                         <div class="accpane" id="accpane"></div>
                         <div class="perfpane" id="perfpane"></div>
+                        <div class="apipane" id="apipane"></div>
+                        <div class="planpane" id="planpane"></div>
                       </div>
                     </section>
                   </div>
@@ -1852,7 +2280,7 @@
               <aside class="pto-ide-frame__pane" data-ide-pane="inspector" id="inspector-pane">
                 <header class="pto-ide-frame__pane-header">
                   <span class="pto-ide-frame__pane-title">算子迁移向导</span>
-                  <span class="pto-ide-frame__pane-meta">S1-S8</span>
+                  <span class="pto-ide-frame__pane-meta">S1-S7</span>
                 </header>
                 <div class="pto-ide-frame__pane-body">
                   <div class="wizard-shell">
@@ -1986,7 +2414,7 @@
         const nodes = GNODES.map((node) => {
           const unit = effectiveGraphUnit(node);
           const rewritten = graphMapped && node.unit === 'risk';
-          const isTensor = ['q', 'qpe', 'kv', 'kpe', 'out'].includes(node.id);
+          const isTensor = ['q', 'k', 'v', 'out', 'lmstat'].includes(node.id);
           const isGpuOnly = node.gpuOnly || gpuOnlyGraphNodeIds.has(node.id);
           return {
             id: node.id,
@@ -2006,7 +2434,7 @@
         const edges = GEDGES.map(([source, target]) => ({
           source,
           target,
-          edgeType: ['q', 'qpe', 'kv', 'kpe', 'cfg', 'copyq', 'copykv', 'out'].includes(source) ? 'communication' : 'activation',
+          edgeType: ['q', 'k', 'v', 'cfg', 'loadq', 'loadkv', 'lmstat'].includes(source) ? 'communication' : 'activation',
         }));
         return {
           width: 800,
@@ -2061,7 +2489,7 @@
         if (!canvas || !modelGraph?.renderController) return;
         graphController?.destroy?.();
         graphController = modelGraph.renderController(canvas, buildPatternGraph(), {
-          ariaLabel: 'AscendPort TileLang MLA Decode 计算图',
+          ariaLabel: 'AscendPort Flash Attention v2 计算图',
           interaction: { selectableClusters: false },
           overlays: { edgeTags: false, evidence: false },
           fitMode: 'full',
