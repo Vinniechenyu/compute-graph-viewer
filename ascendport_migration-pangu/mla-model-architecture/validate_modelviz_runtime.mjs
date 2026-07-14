@@ -20,10 +20,19 @@ const initializationMarker = '    const graphStage = document.getElementById(\'g
 const initializationIndex = scriptMatch[1].indexOf(initializationMarker);
 if (initializationIndex < 0) throw new Error('modelviz initialization marker was not found');
 const testableSource = scriptMatch[1].slice(0, initializationIndex)
-  + '\nreturn { state, nodeById, defaultCollapsedIds, buildVisibleGraph, aggregateAccuracyOverlay, applyAccuracyOverlay, preservedTransform, popoverPosition, sourceLinesForNode };';
+  + '\nreturn { state, nodeById, defaultCollapsedIds, buildVisibleGraph, aggregateAccuracyOverlay, applyAccuracyOverlay, preservedTransform, popoverPosition, sourceLinesForNode, modelArchitectureColormapFor };';
 const api = new Function('window', 'document', testableSource)({}, {
   getElementById() { return { clientWidth: 1440, clientHeight: 960 }; },
 });
+
+const pinnedPatternColormap = { coreColors: ['#123456'], ioColors: {} };
+if (api.modelArchitectureColormapFor({ standardColormap: pinnedPatternColormap }, graph) !== pinnedPatternColormap) {
+  throw new Error('pinned Pages pattern does not fall back to standardColormap');
+}
+const modernPatternColormap = { semanticColors: { 'sem:act': '#654321' } };
+if (api.modelArchitectureColormapFor({ modelArchitectureColormap: () => modernPatternColormap }, graph) !== modernPatternColormap) {
+  throw new Error('modern modelArchitectureColormap capability is not preferred when available');
+}
 
 function buildHierarchy(sourceGraph) {
   const clusters = new Map(sourceGraph.clusters.map((cluster) => [cluster.id, cluster]));

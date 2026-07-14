@@ -25,6 +25,7 @@
 - **恢复精度图默认 Fit 与原生交互**(`mla-model-architecture/assets/modelviz.html`):精度消息不再通过 `renderGraph({preserveTransform:true})` 销毁并重建 controller，而是在现有 visible graph / SVG 上原位清理并更新状态边框和 badge；因此拖拽、缩放、折叠、选中状态及 renderer 的 ResizeObserver 行为保持原样。精度 iframe 首次拿到叠加数据、pane 尺寸稳定后仅执行一次 Fit，后续修复复测只换状态装饰，不重置用户视口。
 - **恢复精度 Tab 的 S6 执行门禁**(`ascendport_migration_V3_MLA_pto_legacy.js`):删除为调试预览加入的 `?analysis=accuracy` 启动旁路，页面初始化重新严格只解锁“计算图”；“精度”唯一解锁点是 S6 执行完成后的 `openAccPanel()`，并给 legacy 脚本增加 `workflow-gate-v9` 缓存版本，避免旧旁路继续命中浏览器缓存。
 - **保持计算图入口并恢复源码联动**(`ascendport_migration_V3_MLA_pto.html` + `_legacy.js` + `mla-model-architecture/assets/modelviz.html`):移除 S4 对已解锁“计算图/生成代码”Tab 的删除操作，后续阶段只增量解锁新视图，迁移完成后仍可切回原计算图；ModelViz selection 现在携带 canonical provenance 行号，折叠父节点会汇总所有子算子的离散源码行。工作台按需加载提取产物 `outputs/example_mla_decode.py`、切回对应源码页签并精确高亮/滚动，详情浮层与源码定位可同时触发；UI 缓存版本提升为 `source-link-v10`，集成断言覆盖 Tab 单调解锁与 `selection → source` 消息链。
+- **修复 GitHub Pages 的 pattern API 版本不匹配**(`mla-model-architecture/assets/modelviz.html` + validators):Pages 按主仓库 gitlink 检出 design-system 子模块 `6941fa7`，其 renderer 有 `renderController/standardColormap` 但尚无本地工作区新版 `modelArchitectureColormap()`，导致线上计算图在初始化时抛错。ModelViz 现对新版 API 做能力检测，可用时保持模型专用配色，否则退回锁定 pattern 自带标准 colormap，布局/折叠/交互不变；UI 版本提升为 `pages-compat-v11`。运行时校验覆盖新旧 API 两条分支，工作台集成校验直接核对 Pages 锁定 pattern 的兼容面。
 
 ## 2026-07-14 — training-run-twin 监控栏改为占整面板 40% + 顶栏 step 合并为「当前/总」
 - **监控栏宽度基准**(`wzh_index.html`):网格列由 `1fr minmax(420px, 0.4fr)`(相对整网图列 40%)改为 `1fr minmax(420px, 40%)`,百分比相对 grid 容器=整个大面板,即分辨率足够时监控栏占整面板宽度的 40%,整网图占 60%;仍保留 420px 最小宽度。

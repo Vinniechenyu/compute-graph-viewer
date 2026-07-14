@@ -9,12 +9,14 @@ const moduleRoot = path.dirname(here);
 const workbenchPath = path.join(moduleRoot, 'ascendport_migration_V3_MLA_pto.html');
 const legacyPath = path.join(moduleRoot, 'ascendport_migration_V3_MLA_pto_legacy.js');
 const modelvizPath = path.join(here, 'assets', 'modelviz.html');
+const pinnedPatternPath = path.join(path.dirname(moduleRoot), 'vendor', 'pto-design-system', 'patterns', 'model-graphviz', 'pattern.js');
 const schemaPath = path.join(here, 'outputs', 'model_architecture.json');
 const mappingPath = path.join(here, 'outputs', 'operator_mapping.json');
 
 const workbench = fs.readFileSync(workbenchPath, 'utf8');
 const legacy = fs.readFileSync(legacyPath, 'utf8');
 const modelviz = fs.readFileSync(modelvizPath, 'utf8');
+const pinnedPattern = fs.readFileSync(pinnedPatternPath, 'utf8');
 const schema = JSON.parse(fs.readFileSync(schemaPath, 'utf8'));
 const mappings = JSON.parse(fs.readFileSync(mappingPath, 'utf8'));
 
@@ -38,7 +40,7 @@ function checkInlineScriptSyntax(name, html) {
 assert(schema.nodes.length === 29, `expected 29 nodes, got ${schema.nodes.length}`);
 assert(schema.edges.length === 42, `expected 42 edges, got ${schema.edges.length}`);
 assert(mappings.mappings.length === 18, `expected 18 mappings, got ${mappings.mappings.length}`);
-assert(workbench.includes("modelvizUiVersion = 'source-link-v10'"), 'workbench modelviz UI version is missing');
+assert(workbench.includes("modelvizUiVersion = 'pages-compat-v11'"), 'workbench modelviz UI version is missing');
 assert(workbench.includes('?embed=workbench&ui=${modelvizUiVersion}'), 'workbench modelviz source is not versioned');
 assert(workbench.includes('?embed=accuracy&view=accuracy&ui=${modelvizUiVersion}'), 'S6 accuracy modelviz source is not versioned');
 assert(workbench.includes("modelvizFrame.className = 'mla-modelviz-frame'"), 'workbench iframe mount is missing');
@@ -105,7 +107,17 @@ assert(legacy.includes("if(s.n==='S6'){ accFixed=false; setAccProblem(); openAcc
   'S6 completion no longer owns the accuracy-tab unlock');
 assert(modelviz.includes("html[data-embed] .mla-viz__title"), 'modelviz embed presentation is missing');
 assert(modelviz.includes("type: 'pto-mla-modelviz-ready'"), 'modelviz ready message is missing');
-assert(modelviz.includes("MODEL_VIZ_UI_VERSION = 'source-link-v10'"), 'modelviz UI version is missing');
+assert(modelviz.includes("MODEL_VIZ_UI_VERSION = 'pages-compat-v11'"), 'modelviz UI version is missing');
+assert(pinnedPattern.includes('renderController'), 'pinned Pages pattern is missing renderController');
+assert(pinnedPattern.includes('standardColormap'), 'pinned Pages pattern is missing the compatibility colormap');
+assert(modelviz.includes('function modelArchitectureColormapFor(pattern, graph)'),
+  'modelviz pattern capability adapter is missing');
+assert(modelviz.includes('typeof pattern?.modelArchitectureColormap'),
+  'modelviz does not feature-detect the newer model architecture colormap API');
+assert(modelviz.includes('return pattern?.standardColormap || {}'),
+  'modelviz cannot fall back to the colormap shipped by the pinned Pages pattern');
+assert(!modelviz.includes('colormap: pattern.modelArchitectureColormap('),
+  'modelviz still calls the optional colormap API without a compatibility guard');
 assert(modelviz.includes('uiVersion: MODEL_VIZ_UI_VERSION'), 'modelviz ready version is missing');
 assert(modelviz.includes("type: 'pto-mla-modelviz-selection'"), 'modelviz selection message is missing');
 assert(modelviz.includes('sourceLines: sourceLinesForNode(node)'),
