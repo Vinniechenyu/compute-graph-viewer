@@ -2221,7 +2221,7 @@
           <section class="pto-ide-frame__pane pto-ide-frame__pane--stack" data-ide-pane="main-row">
             <div class="pto-ide-frame__split" data-ide-split="standalone-main" data-split-direction="horizontal" data-sizes="17,64,19" data-min-size="220,640,300" data-storage-key="ascendport-mla-pto-main-v1">
               <aside class="pto-ide-frame__pane pto-ide-frame__explorer" data-ide-pane="explorer" id="explorer-pane">
-                <header class="pto-ide-frame__pane-header"><div class="explorer-head"><span>资源管理器</span><span>flash_attention_v2</span></div></header>
+                <header class="pto-ide-frame__pane-header"><div class="explorer-head"><span>资源管理器</span><span>example_mla_decode</span></div></header>
                 <div class="pto-ide-frame__pane-body"><div class="tree" id="tree"></div></div>
               </aside>
 
@@ -2234,7 +2234,7 @@
                       </div>
                       <header class="pto-ide-frame__pane-header">
                         <div class="edtoolbar">
-                          <span class="etb-path"><b>ops</b> / <span id="etbFile">flash_attention_v2.py</span></span>
+                          <span class="etb-path"><b>ops</b> / <span id="etbFile">example_mla_decode.py</span></span>
                           <span class="etb-spacer"></span>
                           <button class="etb-btn" id="parseBtn" type="button" title="解析算子并打开计算图">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="6" cy="6" r="2.5"></circle><circle cx="18" cy="6" r="2.5"></circle><circle cx="12" cy="18" r="2.5"></circle><path d="M7.5 7.5 11 15m6-8.5L13 15"></path></svg>
@@ -2244,7 +2244,7 @@
                       </header>
                       <div class="codewrap" id="codewrap" data-ide-pane="source-code">
                         <div class="pane-h" id="leftPaneH" style="display:none">
-                          <span class="dot-c" style="background:var(--cube)"></span><b>flash_attention_v2</b><span class="pane-tag cuda">源端代码</span>
+                          <span class="dot-c" style="background:var(--cube)"></span><b>example_mla_decode.py</b><span class="pane-tag cuda">源端代码</span>
                           <span class="link-hint">悬停/点击代码 ↔ 联动对侧</span>
                         </div>
                         <div class="code"><div class="gutter" id="gutter"></div><div class="codelines" id="codelines"></div></div>
@@ -2415,7 +2415,7 @@
   <script src="../vendor/pto-design-system/patterns/aiv-core-object/pattern.js"></script>
   <script src="../vendor/pto-design-system/patterns/aic-core-object/pattern.js"></script>
   <script src="../vendor/pto-design-system/patterns/memory-architecture/pattern.js"></script>
-  <script src="./ascendport_migration_V3_MLA_pto_legacy.js?v=workflow-gate-v9"></script>
+  <script src="./ascendport_migration_V3_MLA_pto_legacy.js?v=source-link-v10"></script>
   <script>
     (function wirePtoRefresh() {
       const helper = window.PtoSwimlaneTaskPattern;
@@ -2431,7 +2431,7 @@
       let accuracyModelvizFrameObserver = null;
       let activeModelvizContext = null;
       let modelvizContextFrame = 0;
-      const modelvizUiVersion = 'accuracy-fit-v8';
+      const modelvizUiVersion = 'source-link-v10';
       const modelvizSource = `./mla-model-architecture/assets/modelviz.html?embed=workbench&ui=${modelvizUiVersion}`;
       const accuracyModelvizSource = `./mla-model-architecture/assets/modelviz.html?embed=accuracy&view=accuracy&ui=${modelvizUiVersion}`;
       const tone = {
@@ -2663,6 +2663,62 @@
         modelvizFrame.contentWindow.postMessage({ type: 'pto-mla-modelviz-focus-node', nodeId }, '*');
       }
 
+      const canonicalMlaSourceUrl = './mla-model-architecture/outputs/example_mla_decode.py';
+      let canonicalMlaSourcePromise = null;
+      let modelvizSourceSelectionToken = 0;
+
+      function ensureCanonicalMlaSource() {
+        if (!canonicalMlaSourcePromise) {
+          canonicalMlaSourcePromise = fetch(canonicalMlaSourceUrl, { cache: 'no-store' })
+            .then((response) => {
+              if (!response.ok) throw new Error(`example_mla_decode.py ${response.status}`);
+              return response.text();
+            })
+            .then((source) => {
+              const changed = VIEWS.cuda.text !== source;
+              VIEWS.cuda.file = 'example_mla_decode.py';
+              VIEWS.cuda.lang = 'py';
+              VIEWS.cuda.text = source;
+              return changed;
+            });
+        }
+        return canonicalMlaSourcePromise;
+      }
+
+      function modelvizSourceLines(payload) {
+        const candidates = [
+          ...(payload?.node?.sourceLines || []),
+          payload?.node?.provenance?.line,
+          ...(payload?.mapping?.source?.lines || []),
+        ];
+        return [...new Set(candidates
+          .map(Number)
+          .filter((line) => Number.isInteger(line) && line > 0))]
+          .sort((left, right) => left - right);
+      }
+
+      async function syncModelvizSourceSelection(payload) {
+        const sourceLines = modelvizSourceLines(payload);
+        if (!sourceLines.length) return;
+        const token = ++modelvizSourceSelectionToken;
+        try {
+          await ensureCanonicalMlaSource();
+        } catch (error) {
+          console.warn('Unable to load canonical MLA source; using the bundled source fallback.', error);
+        }
+        if (token !== modelvizSourceSelectionToken) return;
+        if (activeTab !== 'cuda') switchTab('cuda');
+        requestAnimationFrame(() => highlightCodeLineSet(sourceLines));
+      }
+
+      // Preload the architecture's source of truth so the editor and node provenance
+      // always refer to the same example_mla_decode.py line numbers.
+      ensureCanonicalMlaSource()
+        .then((changed) => {
+          if (changed && activeTab === 'cuda') renderCode('cuda');
+        })
+        .catch(() => {});
+
       function modelvizFrameForSource(source) {
         return [modelvizFrame, accuracyModelvizFrame]
           .find((frame) => frame?.contentWindow === source) || null;
@@ -2702,6 +2758,7 @@
         }
         if (event.data?.uiVersion !== modelvizUiVersion) return;
         if (event.data?.type === 'pto-mla-modelviz-selection') {
+          syncModelvizSourceSelection(event.data);
           showModelvizContext(event.data, sourceFrame);
           return;
         }

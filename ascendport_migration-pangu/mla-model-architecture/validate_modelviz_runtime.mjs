@@ -20,7 +20,7 @@ const initializationMarker = '    const graphStage = document.getElementById(\'g
 const initializationIndex = scriptMatch[1].indexOf(initializationMarker);
 if (initializationIndex < 0) throw new Error('modelviz initialization marker was not found');
 const testableSource = scriptMatch[1].slice(0, initializationIndex)
-  + '\nreturn { state, nodeById, defaultCollapsedIds, buildVisibleGraph, aggregateAccuracyOverlay, applyAccuracyOverlay, preservedTransform, popoverPosition };';
+  + '\nreturn { state, nodeById, defaultCollapsedIds, buildVisibleGraph, aggregateAccuracyOverlay, applyAccuracyOverlay, preservedTransform, popoverPosition, sourceLinesForNode };';
 const api = new Function('window', 'document', testableSource)({}, {
   getElementById() { return { clientWidth: 1440, clientHeight: 960 }; },
 });
@@ -119,6 +119,12 @@ if (defaultIds.length !== 4 || defaultGraph.nodes.length !== 15) {
 const foldedModule = api.nodeById('online_softmax_group');
 if (!foldedModule || !foldedModule.collapsed || foldedModule.kind !== 'module') {
   throw new Error('collapsed module representatives are not selectable detail targets');
+}
+const foldedModuleSourceLines = api.sourceLinesForNode(foldedModule);
+for (const expectedLine of [161, 165, 166, 169, 170]) {
+  if (!foldedModuleSourceLines.includes(expectedLine)) {
+    throw new Error(`collapsed Online Softmax source linkage is missing line ${expectedLine}`);
+  }
 }
 api.state.accuracyOverlay = new Map([
   ['q_stage', { nodeId: 'q_stage', status: 'pass', statusLabel: '通过', error: '0', badge: '通过 · 0' }],

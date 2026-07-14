@@ -854,7 +854,7 @@ function openCompare(diffKey){
   unlockAnalysisView('generated');
   setAnalysisView('generated');
   renderTabs(); renderTree();
-  const f=document.getElementById('etbFile'); if(f) f.textContent='flash_attention_v2.py ↔ flash_mla_decode.cpp';
+  const f=document.getElementById('etbFile'); if(f) f.textContent='example_mla_decode.py ↔ flash_mla_decode.cpp';
   tagLinkGroups(diffKey);                          // 建立相同计算过程的联动呼应
 }
 function closeCompare(){
@@ -2425,22 +2425,24 @@ function syncParseBtn(){const open=currentAnalysisView()==='graph'&&document.get
 function openGraph(){closeCompare();closeTiling();closePipe();setAnalysisView('graph');renderGraph(true);}
 function closeGraph(){if(currentAnalysisView()==='graph') closeAnalysisView();else syncParseBtn();}
 
-// 源码高亮联动函数
-function highlightCodeLines(startLine, endLine){
+// 架构图可携带离散源码行（尤其是折叠父节点）。精确高亮这些行，
+// 避免把不相关的中间源码也涂亮。
+function highlightCodeLineSet(lineNumbers){
   // 清除之前的高亮
   document.querySelectorAll('.ln.hl-node').forEach(el => el.classList.remove('hl-node'));
 
-  // 添加新的高亮
   const codelines = document.getElementById('codelines');
   if(!codelines) return;
 
   const lines = codelines.querySelectorAll('.ln');
-  for(let i = startLine - 1; i < endLine && i < lines.length; i++){
-    lines[i].classList.add('hl-node');
-  }
+  const selected=[...new Set((lineNumbers||[])
+    .map(Number)
+    .filter(line=>Number.isInteger(line)&&line>0&&line<=lines.length))]
+    .sort((a,b)=>a-b);
+  selected.forEach(line=>lines[line-1].classList.add('hl-node'));
 
   // 滚动到可视区域（用 rect 计算，兼容 sticky gutter 与内边距）
-  const targetLine = lines[startLine - 1];
+  const targetLine = lines[selected[0] - 1];
   if(targetLine){
     const codewrap = document.getElementById('codewrap');
     const wrapRect = codewrap.getBoundingClientRect();
@@ -2450,6 +2452,13 @@ function highlightCodeLines(startLine, endLine){
     const scrollTarget = lineOffsetInWrap - codewrap.clientHeight / 3; // 显示在上 1/3 位置
     codewrap.scrollTo({top: Math.max(0, scrollTarget), behavior: 'smooth'});
   }
+}
+
+// 旧计算图仍使用连续行范围，统一转给精确行高亮入口。
+function highlightCodeLines(startLine, endLine){
+  const selected=[];
+  for(let line=startLine; line<=endLine; line++) selected.push(line);
+  highlightCodeLineSet(selected);
 }
 
 document.getElementById('gclose').onclick=closeGraph;
@@ -2471,7 +2480,7 @@ function renderTree(){
   t.innerHTML=`
    <div class="node"><svg class="fic" viewBox="0 0 24 24" fill="none" stroke="var(--dim)" stroke-width="1.6"><path d="m6 9 6 6 6-6"/></svg><b style="font-weight:600;color:#cfd6ea">openPangu-2.0-flash.MLA</b></div>
    <div class="node ind"><svg class="fic" viewBox="0 0 24 24" fill="none" stroke="var(--dim)" stroke-width="1.5"><path d="m6 9 6 6 6-6"/></svg>ops/</div>
-   <div class="node ind2 ${activeTab==='cuda'?'sel':''}" data-open="cuda"><span class="dot-c" style="background:var(--cube)"></span>flash_attention_v2</div>
+   <div class="node ind2 ${activeTab==='cuda'?'sel':''}" data-open="cuda"><span class="dot-c" style="background:var(--cube)"></span>example_mla_decode.py</div>
    ${hasCpp?`<div class="node ind2 ${(activeTab!=='cuda'&&activeTab!=='tiling')?'sel':''}" data-open="cpp"><span class="dot-c" style="background:var(--acc)"></span>flash_mla_decode.cpp<span class="tag new">新</span></div>`:''}
    ${tilingReady?`<div class="node ind2 ${activeTab==='tiling'?'sel':''}" data-open="tiling"><span class="dot-c" style="background:var(--vec)"></span>tiling.h<span class="tag new">新</span></div>`:''}
    <div class="node ind2"><span class="dot-c" style="background:var(--dim2)"></span>mla_ref.py</div>
@@ -2489,7 +2498,7 @@ function codeKey(){ if(state.step>=6)return's6'; if(state.step>=4)return's4'; if
 function renderTabs(){
   const tabs=document.getElementById('tabs');
   let html=`<div class="tab ${activeTab==='cuda'?'on':''}" data-t="cuda">
-     <span class="dot-c" style="background:var(--cube)"></span>flash_attention_v2.py<span class="x">×</span></div>`;
+     <span class="dot-c" style="background:var(--cube)"></span>example_mla_decode.py<span class="x">×</span></div>`;
   if(hasCpp) html+=`<div class="tab ${(activeTab!=='cuda'&&activeTab!=='tiling')?'on':''}" data-t="cpp">
      <span class="dot-c" style="background:var(--acc)"></span>flash_mla_decode.cpp<span class="x">×</span></div>`;
   if(tilingReady) html+=`<div class="tab ${activeTab==='tiling'?'on':''}" data-t="tiling">
@@ -2504,7 +2513,7 @@ function renderTabs(){
 }
 function switchTab(key){ closeCompare(); closeTiling(); closePipe(); activeTab = (key==='cuda')?'cuda':key; renderCode(activeTab==='cuda'?'cuda':key); renderTabs(); renderTree();
   document.getElementById('leftPaneH').style.display='none';
-  const f=document.getElementById('etbFile'); if(f) f.textContent=(activeTab==='cuda')?'flash_attention_v2.py':'flash_mla_decode.cpp'; }
+  const f=document.getElementById('etbFile'); if(f) f.textContent=(activeTab==='cuda')?'example_mla_decode.py':'flash_mla_decode.cpp'; }
 // 打开 tiling.h 文件 + 右侧 Tiling 可视化
 function openTilingFile(){
   closeCompare(); closeGraph(); closePipe();
@@ -2542,16 +2551,16 @@ function flashCodeLines(a,b){
 /* ============================ 步骤定义 ============================ */
 const STEPS=[
  {n:'S1',t:'解析算子',sub:'源码语法树 → 计算图',
-  body:`扫描 <code>flash_attention_v2.py</code> 的 <code>_flash_attention_v2_forward_kernel</code>,抽取算子结构并生成计算图。识别为<b>「Flash Attention v2」融合注意力算子</b>:Q·Kᵀ GEMM → 因果 Mask → 在线 Softmax → P·V 累加 → 归一化,沿 KV 序列逐块流式处理并维护 running max/sum,末尾保存 L/M 统计供反向传播。`,
-  risk:{h:'检测到源端专属结构',p:'<code>tl.program_id</code> 的 SIMT 网格映射、<code>tl.dot</code> 的 warp 级张量核 (MMA)、指针算术 + mask 的 HBM 分块寻址 —— 均依赖 GPU 线程/warp 硬件模型,昇腾达芬奇架构<b>无直接对应物</b>,须在 S2 决策改写。'},
-  log:[['','ascendport migrate ./ops/flash_attention_v2.py','p'],
-       ['解析 Triton / Python translation unit … 362 行','d'],
-       ['✓ 识别 kernel: _flash_attention_v2_forward_kernel (+ backward)','g'],
-       ['  ├─ 融合级别: Q·Kᵀ → Causal Mask → 在线 Softmax → P·V (fused)','d'],
-       ['  ├─ 精度: FP16 输入 · FP32 累加 (acc_o/m_i/l_i)','d'],
-       ['  └─ 并行粒度: 1 program = 1 (行块 BLOCK_M, batch)','d'],
-       ['构建数据流图 … 15 节点 / 18 边','b'],
-       ['⚠ 检测 SIMT 专属原语 ×2: program_id 网格, warp 级 tl.dot','r'],
+  body:`扫描项目自带 <code>example_mla_decode.py</code> 的 <code>flashattn</code>,抽取完整 MLA Decode 算子结构并生成计算图。主线为 Q·KVᵀ + QPE·KPEᵀ → 在线 Softmax → P·V → 归一化,同时保留 <code>num_split &gt; 1</code> 的 LSE 与 partial output 二阶段合并分支。`,
+  risk:{h:'检测到源端专属结构',p:'<code>T.Kernel</code> 调度、<code>T.use_swizzle</code> 与 <code>T.GemmWarpPolicy</code> 依赖 GPU 的 program / warp 模型；共享内存与 fragment 缓冲也须映射到达芬奇显式存储层级,在 S2 决策改写。'},
+  log:[['','ascendport migrate ./ops/example_mla_decode.py','p'],
+       ['解析 TileLang / Python translation unit … 271 行','d'],
+       ['✓ 识别 kernel: flashattn / main_split / main_no_split','g'],
+       ['  ├─ 融合级别: Q·KVᵀ + QPE·KPEᵀ → 在线 Softmax → P·V','d'],
+       ['  ├─ 精度: FP16 输入 · FP32 累加 (acc_s/acc_o/logsum)','d'],
+       ['  └─ 条件路径: num_split=1 默认主线 + split-KV combine','d'],
+       ['构建数据流图 … 29 节点 / 42 tensor-state 边','b'],
+       ['⚠ 检测 GPU 专属调度: use_swizzle / GemmWarpPolicy','r'],
        ['✓ 计算图已生成 → 右侧画布','a']],
   run(){ hasCpp=false; graphMapped=false; renderTree(); renderTabs(); switchTab('cuda'); openGraph(); }},
 
@@ -2863,7 +2872,6 @@ function runStep(){
       activeTab='cpp'; renderCode('s4'); renderTabs(); renderTree();
       document.getElementById('leftPaneH').style.display='none';
       const f=document.getElementById('etbFile'); if(f) f.textContent='flash_mla_decode.cpp';
-      unlockedAnalysisViews.delete('graph'); unlockedAnalysisViews.delete('generated');
       openFlowPanel(false); // 不自动播放动画
       // 点击绿色高亮代码行 → 跳转到对应含义的数据流步骤（不循环播放）
       document.querySelectorAll('#codelines .ln.hl-new').forEach(el=>{
