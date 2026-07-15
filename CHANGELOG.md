@@ -5,6 +5,9 @@
 
 ---
 
+## 2026-07-15 — AscendPort 恢复源端不兼容算子标识
+- **由算子映射恢复风险节点**(`ascendport_migration_V3_MLA_pto.html` + `mla-model-architecture/assets/modelviz.html`):删除常驻 Operator Association 面板后，图节点继续从 18 条算子关联映射中聚合 `removed_with_replacement` / `planned_not_emitted` 风险；默认二级折叠态在 Kernel Dispatch、QK + PE Score Compute、Probability · Value 上显示 danger 加粗边框与“不兼容” badge，展开后精确落到 `T.use_swizzle(10)` 以及 3 个 `T.GemmWarpPolicy.FullCol` 算子。点击风险节点时优先展示不兼容映射、源端原语和替换状态，同时保留原有源码行高亮联动；S6 精度边框可独立覆盖算子结果颜色，不会抹掉兼容性 badge。运行时回归覆盖默认 3 个、展开 4 个风险节点以及 root 折叠聚合。
+
 ## 2026-07-14 — AscendPort example_mla_decode.py 架构与算子关联映射独立预览
 - **纠正事实源并可复现提取**(`ascendport_migration-pangu/mla-model-architecture/`):提取脚本直接读取项目自带 `ascendport_migration_MLA_A3_updated.zip` 中 `_legacy.js` 的 `const CUDA` payload，恢复并校验 TileLang `example_mla_decode.py`，不再误用外部 DeepSeek `model.py`，也不受工作区顶层旧 FlashAttention V2 payload 污染；输出源码 SHA-256 与可查看的 source mirror。
 - **重建算子架构**(`outputs/model_architecture.json` + `model_architecture_graph.json`):完整覆盖 `flashattn`、`main_split`、`main_no_split` 与二阶段 split combine，共 29 nodes / 42 tensor-state edges / 8 nested clusters；主链严格按 dispatch → staging → QK/PE → online softmax → P·V → normalize/store → output 自上而下排布，仅输入搬运与条件 split-KV 保留天然并行侧路；默认 `num_split=1` 与条件 split-KV 路径通过 branch/constraints 分离表达，形状、dtype 和约束只进入 edge tensor/attrs。

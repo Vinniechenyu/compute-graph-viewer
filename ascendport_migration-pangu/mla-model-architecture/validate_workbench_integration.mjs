@@ -57,7 +57,7 @@ assert(launchCard.includes('按 S1-S7 引导'), 'AscendPort card still advertise
 assert(!launchCard.includes('S1-S8'), 'AscendPort card still advertises eight workflow stages');
 assert(fs.existsSync(path.join(repoRoot, currentLaunchTarget)),
   'AscendPort launch target does not exist in the Pages artifact');
-assert(workbench.includes("modelvizUiVersion = 'stable-pane-fit-v13'"), 'workbench modelviz UI version is missing');
+assert(workbench.includes("modelvizUiVersion = 'source-compatibility-v14'"), 'workbench modelviz UI version is missing');
 assert(workbench.includes('data-ide-split="standalone-main" data-split-direction="horizontal" data-sizes="17,64,19" data-pixel-sizes="260,0,300"'),
   'outer workbench does not pin Explorer/Inspector to 260px/300px');
 assert(workbench.includes('data-storage-key="ascendport-mla-pto-main-v2"'),
@@ -95,6 +95,12 @@ assert(workbench.includes('id="modelvizOperatorContext"'), 'top-level operator c
 assert(workbench.includes('.workbench-operator-context {'), 'operator context menu style is missing');
 assert(workbench.includes('position: fixed;'), 'operator context menu is not viewport-fixed');
 assert(workbench.includes('background: var(--surface-1);'), 'operator context menu does not use a solid elevated gray surface');
+assert(workbench.includes('.workbench-operator-context .compatibility-warning span'),
+  'operator context menu does not expose source-incompatibility styling');
+assert(workbench.includes('const compatibility = payload?.compatibility;'),
+  'operator context menu ignores the source-incompatibility payload');
+assert(workbench.includes('Incompatible source primitive'),
+  'operator context menu does not name the incompatible source primitive');
 assert(workbench.includes('pointer-events: none;'), 'operator context menu blocks graph node selection beneath it');
 assert(workbench.includes('backdrop-filter: none;'), 'operator context menu still uses backdrop blur');
 assert(workbench.includes("event.data?.type === 'pto-mla-modelviz-anchor'"), 'workbench anchor bridge is missing');
@@ -139,7 +145,7 @@ assert(legacy.includes("if(s.n==='S6'){ accFixed=false; setAccProblem(); openAcc
   'S6 completion no longer owns the accuracy-tab unlock');
 assert(modelviz.includes("html[data-embed] .mla-viz__title"), 'modelviz embed presentation is missing');
 assert(modelviz.includes("type: 'pto-mla-modelviz-ready'"), 'modelviz ready message is missing');
-assert(modelviz.includes("MODEL_VIZ_UI_VERSION = 'stable-pane-fit-v13'"), 'modelviz UI version is missing');
+assert(modelviz.includes("MODEL_VIZ_UI_VERSION = 'source-compatibility-v14'"), 'modelviz UI version is missing');
 assert(modelviz.includes('minReadableZoom: 0.44'), 'modelviz no longer preserves the approved 44% readable Fit');
 assert(!modelviz.includes('minReadableZoom: 0.58'), 'modelviz still expands to the regressed 58% readable Fit');
 assert(modelviz.includes('.mla-viz__main { display: grid; grid-template-columns: minmax(0, 1fr);'),
@@ -148,6 +154,17 @@ assert(!modelviz.includes('Operator Association'), 'redundant operator-associati
 assert(!modelviz.includes('class="mla-viz__inspector'), 'operator-association inspector DOM is still mounted');
 assert(!modelviz.includes('id="mappingList"'), 'operator-association mapping list is still mounted');
 assert(!modelviz.includes('function renderMappingList()'), 'removed mapping inspector renderer is still active');
+assert(modelviz.includes('function incompatibleMappingsForNode(node)'),
+  'modelviz does not recover incompatible source mappings from node mapping_ids');
+assert(modelviz.includes("mapping.relation === 'removed_with_replacement'"),
+  'modelviz source-incompatibility classification is not mapping-data driven');
+assert(modelviz.includes('function decorateCompatibilityGraph()'),
+  'modelviz does not decorate incompatible source nodes');
+assert(modelviz.includes('compatibility-node-badge'), 'source-incompatibility node badge is missing');
+assert(modelviz.includes("group.classList.add('is-source-incompatible')"),
+  'source-incompatibility border state is not applied to graph nodes');
+assert(modelviz.includes('compatibility: hostCompatibilityPayload(nodeById(state.activeNodeId))'),
+  'modelviz selection does not send source-incompatibility context to the workbench');
 assert(pinnedPattern.includes('renderController'), 'pinned Pages pattern is missing renderController');
 assert(pinnedPattern.includes('standardColormap'), 'pinned Pages pattern is missing the compatibility colormap');
 assert(modelviz.includes('function modelArchitectureColormapFor(pattern, graph)'),
@@ -186,6 +203,8 @@ const selectionEnd = modelviz.indexOf('async function loadArchitecture()', selec
 assert(selectionStart >= 0 && selectionEnd > selectionStart, 'node selection handler is missing');
 const selectionHandler = modelviz.slice(selectionStart, selectionEnd);
 assert(selectionHandler.includes('renderOperatorPopover()'), 'node selection does not open the operator hover panel');
+assert(selectionHandler.includes('preferredMappingForNode(node)'),
+  'node selection does not prioritize the incompatible mapping in the detail panel');
 assert(modelviz.includes("onSelect: ({ nodeId }) => handleNodeSelection(nodeId)"), 'renderer selection is not wired to the node handler');
 assert(workbench.includes("canonicalMlaSourceUrl = './mla-model-architecture/outputs/example_mla_decode.py'"),
   'workbench source editor is not bound to the extracted source of truth');

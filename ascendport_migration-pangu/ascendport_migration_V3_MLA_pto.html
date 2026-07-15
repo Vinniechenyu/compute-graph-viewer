@@ -670,6 +670,7 @@
       -webkit-backdrop-filter: none;
     }
     .workbench-operator-context code { color: var(--foreground); font: var(--text-mono); overflow-wrap: anywhere; }
+    .workbench-operator-context .compatibility-warning span { color: var(--danger); background: color-mix(in srgb, var(--danger) 16%, var(--surface-2)); }
     .graph-legend-overlay {
       position: absolute;
       top: 8px;
@@ -2438,7 +2439,7 @@
       let accuracyModelvizFrameObserver = null;
       let activeModelvizContext = null;
       let modelvizContextFrame = 0;
-      const modelvizUiVersion = 'stable-pane-fit-v13';
+      const modelvizUiVersion = 'source-compatibility-v14';
       const modelvizSource = `./mla-model-architecture/assets/modelviz.html?embed=workbench&ui=${modelvizUiVersion}`;
       const accuracyModelvizSource = `./mla-model-architecture/assets/modelviz.html?embed=accuracy&view=accuracy&ui=${modelvizUiVersion}`;
       const tone = {
@@ -2562,6 +2563,7 @@
       function modelvizContextHtml(payload) {
         const node = payload?.node;
         const mapping = payload?.mapping;
+        const compatibility = payload?.compatibility;
         const accuracy = payload?.accuracy;
         const provenance = node?.provenance;
         if (!node) return '';
@@ -2571,6 +2573,12 @@
           </div>
           <p>${escapeModelvizContext(node.kind)} · ${escapeModelvizContext(node.opType)}</p>
           ${provenance ? `<p>${escapeModelvizContext(provenance.fact)} · example_mla_decode.py:${escapeModelvizContext(provenance.line)}</p>` : ''}
+          ${compatibility ? `
+            <div class="pto-model-graphviz-hover-chips compatibility-warning">
+              <span>${escapeModelvizContext(compatibility.statusLabel)}</span>
+              <span>${escapeModelvizContext(compatibility.badge)}</span>
+            </div>
+            <p><b>Incompatible source primitive</b><br><code>${escapeModelvizContext((compatibility.sourcePrimitives || []).join(' · '))}</code></p>` : ''}
           ${accuracy ? `
             <div class="pto-model-graphviz-hover-chips">
               <span>${escapeModelvizContext(accuracy.statusLabel)}</span>

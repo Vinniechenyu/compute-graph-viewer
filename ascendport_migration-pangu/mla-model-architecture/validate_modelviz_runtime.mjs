@@ -20,7 +20,7 @@ const initializationMarker = '    const graphStage = document.getElementById(\'g
 const initializationIndex = scriptMatch[1].indexOf(initializationMarker);
 if (initializationIndex < 0) throw new Error('modelviz initialization marker was not found');
 const testableSource = scriptMatch[1].slice(0, initializationIndex)
-  + '\nreturn { state, nodeById, defaultCollapsedIds, buildVisibleGraph, aggregateAccuracyOverlay, applyAccuracyOverlay, preservedTransform, popoverPosition, sourceLinesForNode, modelArchitectureColormapFor };';
+  + '\nreturn { state, nodeById, defaultCollapsedIds, buildVisibleGraph, aggregateAccuracyOverlay, applyAccuracyOverlay, preservedTransform, popoverPosition, sourceLinesForNode, modelArchitectureColormapFor, mappingIdsForNode, incompatibleMappingsForNode, compatibilityForNode, preferredMappingForNode };';
 const api = new Function('window', 'document', testableSource)({}, {
   getElementById() { return { clientWidth: 1440, clientHeight: 960 }; },
 });
@@ -124,6 +124,26 @@ api.state.visibleGraph = defaultGraph;
 assertProjection('default-folded', defaultGraph);
 if (defaultIds.length !== 4 || defaultGraph.nodes.length !== 15) {
   throw new Error(`default-folded count drift: ${defaultIds.length} folds, ${defaultGraph.nodes.length} nodes`);
+}
+const defaultCompatibility = defaultGraph.nodes
+  .map((node) => [node.id, api.compatibilityForNode(node)])
+  .filter(([, compatibility]) => compatibility);
+if (defaultCompatibility.length !== 3) {
+  throw new Error(`default incompatibility overlay drift: expected 3 visible nodes, got ${defaultCompatibility.length}`);
+}
+for (const nodeId of ['kernel_dispatch', 'score_compute_group', 'value_accumulation_group']) {
+  if (!defaultCompatibility.some(([id]) => id === nodeId)) {
+    throw new Error(`source incompatibility badge is missing from ${nodeId}`);
+  }
+}
+if (api.compatibilityForNode(defaultGraph.nodes.find((node) => node.id === 'online_softmax_group'))) {
+  throw new Error('compatible Online Softmax is incorrectly marked source-incompatible');
+}
+if (api.preferredMappingForNode(api.nodeById('kernel_dispatch'))?.id !== 'map_swizzle') {
+  throw new Error('Kernel Dispatch selection does not prioritize the incompatible T.use_swizzle mapping');
+}
+if (api.preferredMappingForNode(api.nodeById('qk_gemm'))?.id !== 'map_warp_policy') {
+  throw new Error('score GEMM selection does not prioritize the incompatible GemmWarpPolicy mapping');
 }
 const foldedModule = api.nodeById('online_softmax_group');
 if (!foldedModule || !foldedModule.collapsed || foldedModule.kind !== 'module') {
@@ -263,6 +283,13 @@ assertProjection('expanded', expandedGraph);
 if (expandedGraph.nodes.length !== 29 || expandedGraph.clusters.length !== 8) {
   throw new Error(`expanded count drift: ${expandedGraph.nodes.length} nodes, ${expandedGraph.clusters.length} clusters`);
 }
+const expandedCompatibilityIds = expandedGraph.nodes
+  .filter((node) => api.compatibilityForNode(node))
+  .map((node) => node.id)
+  .sort();
+if (JSON.stringify(expandedCompatibilityIds) !== JSON.stringify(['kernel_dispatch', 'pe_gemm', 'pv_gemm', 'qk_gemm'])) {
+  throw new Error(`expanded incompatibility overlay drift: ${expandedCompatibilityIds.join(', ')}`);
+}
 const beforeTransform = { zoom: 0.72, tx: 48, ty: 36 };
 const afterTransform = api.preservedTransform(defaultGraph, expandedGraph, beforeTransform, 'online_softmax_group');
 const beforeAnchor = defaultGraph.nodes.find((node) => node.id === 'online_softmax_group');
@@ -315,6 +342,9 @@ assertProjection('root-folded', rootFolded);
 if (rootFolded.nodes.length !== 1 || rootFolded.nodes[0].id !== 'mla_decode_group') {
   throw new Error('root collapse did not produce exactly one representative node');
 }
+if (api.compatibilityForNode(rootFolded.nodes[0])?.mappings?.length !== 2) {
+  throw new Error('root-folded MLA module does not aggregate both incompatible source mappings');
+}
 
 for (const [id, expected] of [['defaultSchemaJson', schema], ['defaultGraphJson', graph], ['defaultMappingJson', mapping]]) {
   const match = html.match(new RegExp(`<script type="application/json" id="${id}">([\\s\\S]*?)<\\/script>`));
@@ -332,6 +362,7 @@ console.log(JSON.stringify({
   dispatchFanout: 'shared bottom-center trunk',
   inputRouting: 'Q/KV pair fan-in + shared Dispatch-to-stage trunks',
   mappingFocus: 'score_sum visible',
+  sourceCompatibility: '3 folded / 4 expanded nodes with incompatible mapping priority',
   accuracyOverlay: 'pass/fail/fixed node badges + folded parent aggregation',
   operatorPopover: 'lower-right anchored with viewport-edge horizontal/vertical fallback',
   mappings: mapping.mappings.length,
