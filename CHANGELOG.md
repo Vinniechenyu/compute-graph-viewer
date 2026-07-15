@@ -5,6 +5,71 @@
 
 ---
 
+## 2026-07-15 — openPangu PP 边界增加双向通信桥
+- **侧视 PP Send/Recv 语义**(`pangu-moe-trainviz/op-rank-time-openpangu-flash-events.html`):三个 PP stage 分割点常驻紧凑黄色 `===` 桥，并稳定排在 PP 标签下方；hover、键盘聚焦或选中后展开为 `F ACT ===▶` 与 `◀=== dH B`，明确区分前向 activation handoff 和反向 dHidden return。通信桥复用原 Layer-gap 数据键、Tooltip、去色聚焦与 Swimlane 下钻，PP 竖线仍只表示模型切分位置；侧视投影使用独立的 80% 默认 Fit 比例，不再继承正视/轴测的 50%。
+- **补充通信数值与命中优先级**:桥默认直接显示最大 `Exposed µs`，展开后分别显示 Forward activation / Backward dHidden 的 Payload 与 Exposed，Tooltip 展示两相独立的 Active、Wait、Exposed，并注明 Send/Recv 两端观测不可相加；删除侧视旧 EP token-flow 紫线及 hitbox，桥 hover 会优先截断底层 3D raycast，避免不可见 EP 对象覆盖 PP Tooltip。
+
+## 2026-07-15 — AscendPort 恢复源端不兼容算子标识
+- **由算子映射恢复风险节点**(`ascendport_migration_V3_MLA_pto.html` + `mla-model-architecture/assets/modelviz.html`):删除常驻 Operator Association 面板后，图节点继续从 18 条算子关联映射中聚合 `removed_with_replacement` / `planned_not_emitted` 风险；默认二级折叠态在 Kernel Dispatch、QK + PE Score Compute、Probability · Value 上显示 danger 加粗边框与“不兼容” badge，展开后精确落到 `T.use_swizzle(10)` 以及 3 个 `T.GemmWarpPolicy.FullCol` 算子。点击风险节点时优先展示不兼容映射、源端原语和替换状态，同时保留原有源码行高亮联动；S6 精度边框可独立覆盖算子结果颜色，不会抹掉兼容性 badge。运行时回归覆盖默认 3 个、展开 4 个风险节点以及 root 折叠聚合。
+
+## 2026-07-14 — Pangu 训练时空透视卡片补充版本入口
+- **首页版本按钮**(`launch.html`):把原 `Light / Dark` 两个主题入口合并为 `V1`，保留页面内主题切换；新增 `V4`，指向带并行事件标识与通信泳道缩放的 `op-rank-time-openpangu-flash-events.html`，原 `WZH-Temp` 入口保持不变。
+
+## 2026-07-14 — AscendPort example_mla_decode.py 架构与算子关联映射独立预览
+- **纠正事实源并可复现提取**(`ascendport_migration-pangu/mla-model-architecture/`):提取脚本直接读取项目自带 `ascendport_migration_MLA_A3_updated.zip` 中 `_legacy.js` 的 `const CUDA` payload，恢复并校验 TileLang `example_mla_decode.py`，不再误用外部 DeepSeek `model.py`，也不受工作区顶层旧 FlashAttention V2 payload 污染；输出源码 SHA-256 与可查看的 source mirror。
+- **重建算子架构**(`outputs/model_architecture.json` + `model_architecture_graph.json`):完整覆盖 `flashattn`、`main_split`、`main_no_split` 与二阶段 split combine，共 29 nodes / 42 tensor-state edges / 8 nested clusters；主链严格按 dispatch → staging → QK/PE → online softmax → P·V → normalize/store → output 自上而下排布，仅输入搬运与条件 split-KV 保留天然并行侧路；默认 `num_split=1` 与条件 split-KV 路径通过 branch/constraints 分离表达，形状、dtype 和约束只进入 edge tensor/attrs。
+- **新增算子关联映射**(`outputs/operator_mapping.json`):建立 18 条「TileLang 源原语 → Atlas A3 / Ascend 910C 目标 API」关系，每条记录关联 graph node、源码行、目标执行单元、映射类型及实现状态；明确 `exp2→Exp` 数值重写、warp/swizzle 删除替换、split-KV 二阶段待实现，并标出 S2 计划 P·V=`Mmad` 与 S6 原型 `Axpy` 的 codegen divergence。
+- **共享 pattern 联动预览**(`assets/modelviz.html`):继续通过 `PtoModelGraphvizPattern.renderController` 渲染；MLA Decode → major stage → operator sublayer 三层父子结构支持节点内“+”展开、父框右上角“−”折叠、全局“折叠至二级/展开全部”，折叠时会重投影边与可见节点并按可见子节点重算父框，映射聚焦会自动展开祖先；右侧使用 `panel-shell / toolbar-readout / btn` 与共享 tokens 展示可点击映射列表，图节点可反查源原语、目标 API、执行单元、状态、源码证据和 tensor 关系；canonical/layout、默认/全展开 sibling-overlap、折叠交互与内联脚本校验通过。
+- **按 openPangu 参考完成布局与交互收口**(`assets/modelviz.html` + `validate_modelviz_runtime.mjs`):图面改为 480px 宽的单一居中主脊，Q/KV staging 仅在入口处左右对称，`num_split=1` 默认 store 回归主线，条件 split-KV 与 workspace 固定在右侧 lane；折叠后按可见子树动态回流并重算 cluster，局部开合保持点击模块的屏幕锚点，缩放/Fit 与映射聚焦沿用共享控制样式；同步嵌入 schema/graph/mapping 作为 `file://` 回退。新增执行页面真实投影函数的运行时校验，覆盖默认二级折叠、全展开、父/root 折叠、零重叠、主线单调、Q/KV 对称、隐藏边端点、映射自动展开与锚点零漂移。
+- **修正 Kernel Dispatch fan-out 起点**(`extract_mla_architecture.py` + `assets/modelviz.html`):`e_dispatch_q / e_dispatch_kv` 显式使用同一个 bottom-center source port；运行时按当前折叠布局生成一段共享竖直 trunk，再以圆角正交路径分向 Q/KV staging，避免 renderer 因横向距离较大而自动吸附到算子左右边缘。运行时校验新增共享端口、同一 junction 与双分支断言。
+- **整理输入区线路走廊**(`extract_mla_architecture.py` + `assets/modelviz.html`):输入拓扑改为 Q tensors 左侧、Runtime Config → Kernel Dispatch 居中、KV tensors 右侧三走廊；Runtime Config 移至 Dispatch 正上方，四条 tensor edge 沿外侧竖直下降，越过 Dispatch 后再正交转入 Query/KV Stage 的独立外侧 top ports，避开控制主线和 dispatch fan-out。运行时验证新增中线对齐、外侧 corridor、目标端口和 bridge 区间断言。
+- **把 staging 入边改成真实 fan-in**(`assets/modelviz.html` + `validate_modelviz_runtime.mjs`):Query/Position Query 与 Latent KV/Position Key 分别先汇入组内 data merge，随后各组在 Input Staging 父框上方与对应 Dispatch 分支汇合；同一 staging 的三条入边共享最后一段竖直 trunk、top-center 端口和箭头位置，不再出现节点顶部三个独立入口。回归断言验证组内 shared waypoint suffix 与 Dispatch final junction 完全一致。
+- **替换 AscendPort 原工作台计算图**(`ascendport_migration_V3_MLA_pto.html` + `mla-model-architecture/assets/modelviz.html`):原“算子计算图”页签不再渲染旧 `GNODES/GEDGES` 图，而是同源嵌入由项目自带 `example_mla_decode.py` 提取的已确认 ModelViz；保留上下主线、父子折叠、fan-out/fan-in 路由和 18 条算子关联映射。iframe 与工作台保留 ready/focus 消息桥，旧节点入口会映射到对应 MLA canonical node。
+- **算子详情改为节点侧浮层**(`ascendport_migration_V3_MLA_pto.html` + `mla-model-architecture/assets/modelviz.html`):移除原工作台图底部的常驻详情栏；点击图节点或右侧映射后，详情改用共享 `pto-model-graphviz-hover` 样式锚定在目标算子右侧，空间不足时才翻到左侧，并在缩放、拖拽、Fit、折叠/展开和窗口尺寸变化后重新定位。浮层展示源码原语、Ascend target、执行单元、映射关系、实现状态与 `example_mla_decode.py` 行证据。
+- **修复嵌入页点击无反馈**(`ascendport_migration_V3_MLA_pto.html` + `mla-model-architecture/assets/modelviz.html`):iframe `src` 增加 `operator-popover-v2` UI 版本，child ready 消息同步携带 `uiVersion`；父页发现缓存的旧子页面时会追加唯一 `reload` 参数强制刷新，避免“旧 child 只发 selection、新 parent 已移除底栏”导致点击看似无响应。集成校验新增 versioned URL、ready 握手和 click → selection handler → popover 链路断言。
+- **浮层提升为跨 pane 上下文菜单**(`ascendport_migration_V3_MLA_pto.html` + `mla-model-architecture/assets/modelviz.html`):嵌入模式不再把详情卡挂在 iframe 内；child 发送选中节点的 viewport rect，工作台在顶层 `body` 渲染 fixed `pto-model-graphviz-hover`，默认锚在算子右下角，只有触及浏览器 viewport 才向左/向上翻转。菜单可越过计算图 pane 与 iframe 边界，不受其 `overflow:hidden` 截断；平移、缩放、Fit、折叠和 pane resize 会同步更新 anchor。
+- **补全折叠模块点击并改为实色菜单**(`ascendport_migration_V3_MLA_pto.html` + `mla-model-architecture/assets/modelviz.html`):选择查找从 canonical nodes 扩展到当前 visible graph，使 `QK + PE Score Compute / Online Softmax / Probability · Value` 等折叠模块代表节点也能触发详情；顶层详情层改为 `surface-1` 实色灰背景、标准 elevation shadow、无透明 blur，并设为纯展示点击穿透，避免遮在其他算子上方时吞掉后续点击。iframe UI 版本提升至 `operator-context-menu-v4` 强制刷新旧缓存。
+- **S6 精度报告复用架构图并叠加逐算子结果**(`ascendport_migration_V3_MLA_pto.html` + `_legacy.js` + `mla-model-architecture/assets/modelviz.html`):精度页签新增同源 `example_mla_decode.py` ModelViz，不复制第二套架构数据；5 条校验结果显式映射到 8 个 canonical operator node，异常/通过/已修复分别以 danger/success/primary 加粗原节点边框和节点内 badge 表达，折叠父节点汇总子算子状态。应用 FP32 修复后通过消息桥原位切换为复测结果，图的展开与视口状态不随报告刷新丢失；点击任一精度节点仍使用顶层右下角上下文菜单，并补充 S6 metric。
+- **修正 S6 图表同屏与原计算图入口**(`ascendport_migration_V3_MLA_pto.html` + `_legacy.js`):精度页从“架构图在上、长报告在下且共用纵向滚动”改为宽屏左右双栏、窄屏上下分区，架构图始终占据独立 pane，只有右侧/下方报告区域滚动，不会再因报告滚动把图移出视口；S4 曾移除的原“计算图”页签在进入 S6 时显式恢复，并固定在横向滚动页签条左侧，始终可见且可随时切回原计算图。
+- **收紧 S6 精度页信息密度**(`ascendport_migration_V3_MLA_pto.html`):删除计算图区域内重复的“MLA 算子架构 · 精度叠加”标题、说明和三状态图例整栏，让 iframe 直接占满图 pane；KPI、逐算子表格、异常/修复说明卡统一使用更紧凑的 token spacing 与工具表格行高，窄面板把更多高度分配给架构图，报告继续独立滚动。
+- **恢复精度图默认 Fit 与原生交互**(`mla-model-architecture/assets/modelviz.html`):精度消息不再通过 `renderGraph({preserveTransform:true})` 销毁并重建 controller，而是在现有 visible graph / SVG 上原位清理并更新状态边框和 badge；因此拖拽、缩放、折叠、选中状态及 renderer 的 ResizeObserver 行为保持原样。精度 iframe 首次拿到叠加数据、pane 尺寸稳定后仅执行一次 Fit，后续修复复测只换状态装饰，不重置用户视口。
+- **恢复精度 Tab 的 S6 执行门禁**(`ascendport_migration_V3_MLA_pto_legacy.js`):删除为调试预览加入的 `?analysis=accuracy` 启动旁路，页面初始化重新严格只解锁“计算图”；“精度”唯一解锁点是 S6 执行完成后的 `openAccPanel()`，并给 legacy 脚本增加 `workflow-gate-v9` 缓存版本，避免旧旁路继续命中浏览器缓存。
+- **保持计算图入口并恢复源码联动**(`ascendport_migration_V3_MLA_pto.html` + `_legacy.js` + `mla-model-architecture/assets/modelviz.html`):移除 S4 对已解锁“计算图/生成代码”Tab 的删除操作，后续阶段只增量解锁新视图，迁移完成后仍可切回原计算图；ModelViz selection 现在携带 canonical provenance 行号，折叠父节点会汇总所有子算子的离散源码行。工作台按需加载提取产物 `outputs/example_mla_decode.py`、切回对应源码页签并精确高亮/滚动，详情浮层与源码定位可同时触发；UI 缓存版本提升为 `source-link-v10`，集成断言覆盖 Tab 单调解锁与 `selection → source` 消息链。
+- **修复 GitHub Pages 的 pattern API 版本不匹配**(`mla-model-architecture/assets/modelviz.html` + validators):Pages 按主仓库 gitlink 检出 design-system 子模块 `6941fa7`，其 renderer 有 `renderController/standardColormap` 但尚无本地工作区新版 `modelArchitectureColormap()`，导致线上计算图在初始化时抛错。ModelViz 现对新版 API 做能力检测，可用时保持模型专用配色，否则退回锁定 pattern 自带标准 colormap，布局/折叠/交互不变；UI 版本提升为 `pages-compat-v11`。运行时校验覆盖新旧 API 两条分支，工作台集成校验直接核对 Pages 锁定 pattern 的兼容面。
+- **更新 launch-v2 的 AscendPort 默认入口**(`launch-v2.html` + workbench validator):卡片主体和“当前版”由旧目录 `ascendport_migration/` 改为本轮持续维护的 `ascendport_migration-pangu/ascendport_migration_V3_MLA_pto.html`；原页面保留为明确的“旧版”入口。集成校验新增 launch 卡片解析、默认目标与当前版一致性、Pages artifact 目标文件存在性断言。
+- **精简计算图侧栏并统一七阶段导航**(`ascendport_migration_V3_MLA_pto.html` + `_legacy.js` + `mla-model-architecture/assets/modelviz.html`):删除占用画布宽度、且与节点右下角详情菜单重复的常驻 Operator Association 面板，保留 18 条映射数据用于节点浮层与源码联动；迁移标题改为“七阶段流水”，进度栏按 `STEPS.length` 动态生成 7 列，并在 S1–S7 下分别显示解析算子、算子映射、代码生成、内存层次映射、分块与流水编排、精度对齐、性能剖析与调优，launch 卡片说明同步为 S1–S7。
+- **恢复工作台默认分栏与计算图比例**(`ascendport_migration_V3_MLA_pto.html` + `mla-model-architecture/assets/modelviz.html`):外层主分栏由随窗口增长的 `17/64/19%` 默认比例改为 Explorer `260px`、Inspector `300px` 固定侧栏与中央弹性编辑区，并升级 storage key，避免旧拖拽比例继续覆盖新默认值；ModelViz readable Fit 从 `58%` 恢复为经用户确认的 `44%`，宽画布不再因删除映射面板而自动放大，窄窗口仍可按可用宽度继续缩小。
+## 2026-07-14 — training-run-twin 整网图问题徽标补全标题(与所属节点同宽两行标签,不遮挡)
+- **问题**:`applyDefaultDiagnosisMarkers`/`drawBadge` 原来只在节点上方画一个 ~57 local-unit 的小红胶囊,固定显示「问题N」,完整标题只能靠 hover 提示查看,图上看不出每个问题具体是什么。
+- **改法**:徽标改为「与所属 anchor 节点同宽」的两行标签条 — 上排「问题N」(14px 粗体) + 下排问题标题(11.5px,来自 `diagnosisMarkers[].label`,超出可用宽度时逐字裁剪加省略号)。宽度严格等于 `dims.w`(节点本体宽度)、左右边缘与节点对齐,不会侵入相邻节点/连线的空间;完整标题超长时仍靠 hover 提示补全。six 个锚点节点局部宽度均为 340~480 local units,实测 6 条标题(10~19 字)均能整行显示、无需截断。
+- **共锚点堆叠**:`query_tensor`(问题二+三)、`router_gate`(问题一+六)各挂 2 个案例,复用原有「与已放置徽标重叠则整体上移一层」避让逻辑纵向堆叠,互不遮挡,只轻微掠过中间的残差相加「+」圆点(非文字,不影响可读性)。
+- 验证:Edge headless 打开 wzh_index,`Fit`+放大后逐个截图 6 处徽标(problem 1/2/3/4/6 已核实),标题完整可读,未发现与相邻节点文字重叠。
+
+## 2026-07-14 — training-run-twin 问题二定位链 HiF8 工作台图表栏重排(窄栏换行) + 诊断时间线标签防重叠
+- **图表 grid 单列自适应**:HiF8 case7 工作台原为整宽双列(`grid-template-columns:1.55fr/1.6fr 1fr`),嵌进 ~450px 的问题二定位链中栏后多列 grid 挤爆并溢出容器(图表压叠、文字截断,实测张量分布行 180+389px 超出 450px)。新增 `#locateChainContent .hif8c7 .h8-grid{grid-template-columns:1fr!important}` 让所有图表 grid 换行成单列铺满整栏;KPI 行由固定 5 列改 `repeat(auto-fit,minmax(132px,1fr))` 自适应换行(3+2)。仅作用于本页嵌入态,不影响独立整宽工作台 `hif8-precision-workbench-V3.html`(其有自带内联 `renderTimeline`,且不加载 `hif8-case7.js`)。
+- **诊断事件时间线防重叠**:`hif8-case7.js` 的 `renderTimeline` 原将 7 条事件标签平铺在同一水平线,step 52/63/66/78 密集处文字必然重叠。改为「贪心分行 + 引导线」:每条标签落到从坐标轴上探、不与同行既有标签相撞的最低一行,canvas 高度按所需行数动态计算,右溢出时向左夹紧。
+- **可疑算子清单重排**:根因分析节的 `.h8-suspect` 原为 `rank + 信息 + 120px 进度条 + nowrap 处置药丸` 四段挤一行,窄栏里信息被压到 ~90px、处置文字截断,很粗糙。改为「rank 在左 + 主栏竖排」卡片:算子名行(标签 + loss 贡献右对齐红字) → 满宽渐变进度条 → SQNR/溢出指标行 → 处置建议 chip(按内容宽、可换行)。数据不变仅重排。
+- 验证:Edge headless 打开 wzh_index → 点问题二定位链,逐屏截图确认概览/张量分布/量化误差/误差传播/根因分析各节均单列铺满、数据不截断,时间线 7 条标签分行无重叠,可疑算子 4 张卡片竖排清晰。
+
+## 2026-07-14 — training-run-twin 整网图溢出率角标描边着色修复 + 去掉命中节点涟漪
+- **角标描边灰色修复**:右上角溢出率药丸的描边此前被 `model-graphviz-embed/pattern.css` 的 `:root[data-theme='light'] .pto-model-architecture-stage .pto-model-graphviz-node rect`(灰色软描边,specificity 更高)覆盖成灰色。改用 `#graphStage .c7over-badge.c7over-crit/ok > rect { stroke … !important }`(红 `#dc2626`/绿 `#16a34a`,深色 `#ff4b7b`/`#4ade80`)并 `filter:none` 去掉引擎阴影,角标描边恢复与文字同色。
+- **去掉涟漪**:`markNodeActive` 不再克隆 `.pto-diagnosis-pulse-ring` 脉冲环,命中节点只保留静态红色描边;删除对应 `@keyframes pto-diagnosis-pulse` 与 `.pto-diagnosis-pulse-ring` 样式。
+- 验证:Edge headless 读 `getComputedStyle` — crit 角标 stroke=rgb(220,38,38)、ok=rgb(22,163,74)、pulseRings=0、badges=16。
+
+## 2026-07-14 — training-run-twin 问题二整网图溢出率:命中算子节点本体也加对应颜色描边(与右上角徽标同色)
+- 参考 precision-debugger 的 `prec-crit`/`prec-high`(节点 + 右上角角标同色描边):`refreshHif8GraphBadges` 给命中算子节点组加 `c7over-node-crit`/`c7over-node-ok` 类,`wzh_index.html` 补 `#graphStage .c7over-node-* > rect` 描边(红 `#dc2626`/绿 `#16a34a`,深色主题用 `#ff4b7b`/`#4ade80`),`> rect` 仅命中节点本体不波及徽标 rect;复位与逐步重画时一并清除节点类。整网图重建后由 `opv-graph-rendered` 一并重新注入。
+
+## 2026-07-14 — training-run-twin 切换「算子染色」开关后整网图问题标记/溢出率徽标不再消失:opv-modelviz 重建 SVG 后广播 opv-graph-rendered,twin 侧监听并重新注入诊断标记与溢出率徽标
+
+## 2026-07-14 — training-run-twin 问题二整网图区改为「整网图 | 表格」双视图,复用默认 L5 整网图并在算子节点右上角标注溢出率(红/绿 2 档)
+- 右列侧栏自上而下 = 训练步回放 scrubber + 白底「整网图 | 表格」切换栏 + 整网图槽 + 表格槽,默认整网图。整网图槽复用默认页面的 L5 整网图卡(.twin-graph-card 原样搬入),表格槽放「层/算子级量化误差指标」表。
+- `js/hif8-case7.js` 导出 `overflowMap()`(把每层当前步溢出率按算子名映射到整网图节点 id,同名算子跨块取最差)与 `onStep()` 回调;去掉上一版内嵌 DOM 整网图。
+- `js/training-run-twin.js` `applyHif8SidePanel` 重构 + 新增 `refreshHif8GraphBadges`/`scheduleHif8GraphBadges`:在 `#graphStage` 命中算子节点右上角注入溢出率药丸徽标(参考 precision-debugger `.prec-cosbadge`),>1% 红、≤1% 绿,随训练步回放实时刷新;复位时整网图卡搬回原网格并清徽标。
+- `wzh_index.html` 补 `.hif8-view-bar`/`.hif8-slot`/`.c7over-*` 样式,`is-hif8-side-table` 只隐藏留在网格里的原位整网图卡。
+
+## 2026-07-14 — training-run-twin 问题详情页「infra层」集群图补悬浮气泡 + 问题 rank「空等」红字
+- **infra层集群图悬浮气泡**(`js/training-run-twin.js` + `css/training-run-twin.css`):问题详情页定位链「infra层」的集群图(`#locateInfraHeat`)此前只镜像监控栏 `#heat` 的 util 着色,悬浮无内容。现 `syncLocateInfraHeat()` 一并镜像每个 cell 的 `data-tip`(node/rank/util/温度/HBM/DP·Stage·EP),完全对齐监控栏的 rank 悬浮内容;并给命中问题的 hot/warm rank 追加 `data-tip-warn`,气泡末行以 danger 红字展示「空等」问题描述(死锁/超时/尾延迟,见 `INFRA_HEAT_MAP`)。因 CSS `attr()` 无法给单行上色,气泡改由 JS 挂到 body(跟随光标、不被 overflow 截断),并关掉 `.locate-infra-heat` 的纯 CSS `::after` tooltip 以免双气泡。
+
 ## 2026-07-14 — training-run-twin 监控栏改为占整面板 40% + 顶栏 step 合并为「当前/总」
 - **监控栏宽度基准**(`wzh_index.html`):网格列由 `1fr minmax(420px, 0.4fr)`(相对整网图列 40%)改为 `1fr minmax(420px, 40%)`,百分比相对 grid 容器=整个大面板,即分辨率足够时监控栏占整面板宽度的 40%,整网图占 60%;仍保留 420px 最小宽度。
 - **顶栏进度 step**(`wzh_index.html` + `css/training-run-twin.css`):把进度条左侧的当前 step 移到进度条之后,与总 step 合并为「48,230/12000」紧凑组(新增 `.twin-progress-steps` 内联组避免受容器 `gap:10px` 影响,`/` 用 muted 等宽字体)。两个数字沿用原 `.twin-progress-step` / `--total` 样式,未改动。

@@ -854,7 +854,7 @@ function openCompare(diffKey){
   unlockAnalysisView('generated');
   setAnalysisView('generated');
   renderTabs(); renderTree();
-  const f=document.getElementById('etbFile'); if(f) f.textContent='flash_attention_v2.py ↔ flash_mla_decode.cpp';
+  const f=document.getElementById('etbFile'); if(f) f.textContent='example_mla_decode.py ↔ flash_mla_decode.cpp';
   tagLinkGroups(diffKey);                          // 建立相同计算过程的联动呼应
 }
 function closeCompare(){
@@ -1171,13 +1171,32 @@ function activatePanelTab(p){
 // 逐算子对齐 CUDA 黄金基准。fixed 表示已应用修复后的复测结果。
 let accFixed=false;
 const ACC_OPS=[
-  {op:'DataCopy (GM→L1/UB)',   kind:'搬运', err:'0',      pass:true},
-  {op:'Mmad · QKᵀ+PEᵀ',        kind:'矩阵单元', err:'2.4e-4', pass:true},
-  {op:'ReduceMax · 在线 max',   kind:'向量单元',err:'0',     pass:true},
+  {op:'DataCopy (GM→L1/UB)',   kind:'搬运', err:'0',      pass:true, nodeIds:['q_stage','kv_stage']},
+  {op:'Mmad · QKᵀ+PEᵀ',        kind:'矩阵单元', err:'2.4e-4', pass:true, nodeIds:['qk_gemm','pe_gemm']},
+  {op:'ReduceMax · 在线 max',   kind:'向量单元',err:'0',     pass:true, nodeIds:['score_block_max','running_max_merge']},
   {op:'Exp · 在线 Softmax',     kind:'向量单元',err:'3.1e-2',pass:false,   // ← 异常算子
-    fixedErr:'8.0e-4', anomaly:true},
-  {op:'Mmad · P·V 累加',        kind:'矩阵单元',err:'—',     pass:true, note:'余弦一致 1.0000 (2048/2048)'},
+    fixedErr:'8.0e-4', anomaly:true, nodeIds:['score_exponential']},
+  {op:'Mmad · P·V 累加',        kind:'矩阵单元',err:'—',     pass:true, note:'余弦一致 1.0000 (2048/2048)', nodeIds:['pv_gemm']},
 ];
+function getAccuracyModelvizOverlay(){
+  return {
+    fixed:accFixed,
+    threshold:'rtol 1e-3',
+    items:ACC_OPS.flatMap(o=>(o.nodeIds||[]).map(nodeId=>{
+      const status=o.anomaly?(accFixed?'fixed':'fail'):'pass';
+      const error=o.anomaly&&accFixed?o.fixedErr:o.err;
+      return {
+        nodeId,
+        status,
+        statusLabel:status==='fixed'?'已修复':(status==='fail'?'异常':'通过'),
+        error,
+        metric:o.note||`最大绝对误差 ${error}`,
+        badge:o.note?'通过 · cos 1.0000':`${status==='fixed'?'已修复':(status==='fail'?'异常':'通过')} · ${error}`,
+        sourceOp:o.op,
+      };
+    })),
+  };
+}
 function accStats(){
   const anomaly = ACC_OPS.find(o=>o.anomaly);
   const maxErr = accFixed ? '8.0e-4' : '3.1e-2';
@@ -1187,7 +1206,7 @@ function accStats(){
 }
 function renderAccReport(){
   const st=accStats();
-  const pane=document.getElementById('accpane');
+  const pane=document.getElementById('accuracyReportContent');
   const rows=ACC_OPS.map(o=>{
     const ok = o.pass || accFixed;
     const err = (o.anomaly && accFixed) ? o.fixedErr : o.err;
@@ -1234,6 +1253,9 @@ function renderAccReport(){
     </table>
     ${anomalyBlock}`;
 
+  window.mountAccuracyModelviz?.();
+  window.updateAccuracyModelviz?.();
+
   const ap=document.getElementById('accApply');
   if(ap) ap.onclick=()=>{
     accFixed=true; setProblems(0);
@@ -1250,9 +1272,12 @@ function openAccPanel(){
     accCnt.style.background = accFixed?'#48d59722':'#ff547033';
     accCnt.style.color = accFixed?'var(--ok)':'#ff8ba0';
   }
+  unlockAnalysisView('graph');
   unlockAnalysisView('accuracy');
   setAnalysisView('accuracy');
   renderAccReport();
+  const report=document.getElementById('accuracyReportContent');
+  if(report) report.scrollTop=0;
 }
 
 /* ============================ S7 性能报告 ============================ */
@@ -2400,22 +2425,24 @@ function syncParseBtn(){const open=currentAnalysisView()==='graph'&&document.get
 function openGraph(){closeCompare();closeTiling();closePipe();setAnalysisView('graph');renderGraph(true);}
 function closeGraph(){if(currentAnalysisView()==='graph') closeAnalysisView();else syncParseBtn();}
 
-// 源码高亮联动函数
-function highlightCodeLines(startLine, endLine){
+// 架构图可携带离散源码行（尤其是折叠父节点）。精确高亮这些行，
+// 避免把不相关的中间源码也涂亮。
+function highlightCodeLineSet(lineNumbers){
   // 清除之前的高亮
   document.querySelectorAll('.ln.hl-node').forEach(el => el.classList.remove('hl-node'));
 
-  // 添加新的高亮
   const codelines = document.getElementById('codelines');
   if(!codelines) return;
 
   const lines = codelines.querySelectorAll('.ln');
-  for(let i = startLine - 1; i < endLine && i < lines.length; i++){
-    lines[i].classList.add('hl-node');
-  }
+  const selected=[...new Set((lineNumbers||[])
+    .map(Number)
+    .filter(line=>Number.isInteger(line)&&line>0&&line<=lines.length))]
+    .sort((a,b)=>a-b);
+  selected.forEach(line=>lines[line-1].classList.add('hl-node'));
 
   // 滚动到可视区域（用 rect 计算，兼容 sticky gutter 与内边距）
-  const targetLine = lines[startLine - 1];
+  const targetLine = lines[selected[0] - 1];
   if(targetLine){
     const codewrap = document.getElementById('codewrap');
     const wrapRect = codewrap.getBoundingClientRect();
@@ -2425,6 +2452,13 @@ function highlightCodeLines(startLine, endLine){
     const scrollTarget = lineOffsetInWrap - codewrap.clientHeight / 3; // 显示在上 1/3 位置
     codewrap.scrollTo({top: Math.max(0, scrollTarget), behavior: 'smooth'});
   }
+}
+
+// 旧计算图仍使用连续行范围，统一转给精确行高亮入口。
+function highlightCodeLines(startLine, endLine){
+  const selected=[];
+  for(let line=startLine; line<=endLine; line++) selected.push(line);
+  highlightCodeLineSet(selected);
 }
 
 document.getElementById('gclose').onclick=closeGraph;
@@ -2446,7 +2480,7 @@ function renderTree(){
   t.innerHTML=`
    <div class="node"><svg class="fic" viewBox="0 0 24 24" fill="none" stroke="var(--dim)" stroke-width="1.6"><path d="m6 9 6 6 6-6"/></svg><b style="font-weight:600;color:#cfd6ea">openPangu-2.0-flash.MLA</b></div>
    <div class="node ind"><svg class="fic" viewBox="0 0 24 24" fill="none" stroke="var(--dim)" stroke-width="1.5"><path d="m6 9 6 6 6-6"/></svg>ops/</div>
-   <div class="node ind2 ${activeTab==='cuda'?'sel':''}" data-open="cuda"><span class="dot-c" style="background:var(--cube)"></span>flash_attention_v2</div>
+   <div class="node ind2 ${activeTab==='cuda'?'sel':''}" data-open="cuda"><span class="dot-c" style="background:var(--cube)"></span>example_mla_decode.py</div>
    ${hasCpp?`<div class="node ind2 ${(activeTab!=='cuda'&&activeTab!=='tiling')?'sel':''}" data-open="cpp"><span class="dot-c" style="background:var(--acc)"></span>flash_mla_decode.cpp<span class="tag new">新</span></div>`:''}
    ${tilingReady?`<div class="node ind2 ${activeTab==='tiling'?'sel':''}" data-open="tiling"><span class="dot-c" style="background:var(--vec)"></span>tiling.h<span class="tag new">新</span></div>`:''}
    <div class="node ind2"><span class="dot-c" style="background:var(--dim2)"></span>mla_ref.py</div>
@@ -2464,7 +2498,7 @@ function codeKey(){ if(state.step>=6)return's6'; if(state.step>=4)return's4'; if
 function renderTabs(){
   const tabs=document.getElementById('tabs');
   let html=`<div class="tab ${activeTab==='cuda'?'on':''}" data-t="cuda">
-     <span class="dot-c" style="background:var(--cube)"></span>flash_attention_v2.py<span class="x">×</span></div>`;
+     <span class="dot-c" style="background:var(--cube)"></span>example_mla_decode.py<span class="x">×</span></div>`;
   if(hasCpp) html+=`<div class="tab ${(activeTab!=='cuda'&&activeTab!=='tiling')?'on':''}" data-t="cpp">
      <span class="dot-c" style="background:var(--acc)"></span>flash_mla_decode.cpp<span class="x">×</span></div>`;
   if(tilingReady) html+=`<div class="tab ${activeTab==='tiling'?'on':''}" data-t="tiling">
@@ -2479,7 +2513,7 @@ function renderTabs(){
 }
 function switchTab(key){ closeCompare(); closeTiling(); closePipe(); activeTab = (key==='cuda')?'cuda':key; renderCode(activeTab==='cuda'?'cuda':key); renderTabs(); renderTree();
   document.getElementById('leftPaneH').style.display='none';
-  const f=document.getElementById('etbFile'); if(f) f.textContent=(activeTab==='cuda')?'flash_attention_v2.py':'flash_mla_decode.cpp'; }
+  const f=document.getElementById('etbFile'); if(f) f.textContent=(activeTab==='cuda')?'example_mla_decode.py':'flash_mla_decode.cpp'; }
 // 打开 tiling.h 文件 + 右侧 Tiling 可视化
 function openTilingFile(){
   closeCompare(); closeGraph(); closePipe();
@@ -2517,16 +2551,16 @@ function flashCodeLines(a,b){
 /* ============================ 步骤定义 ============================ */
 const STEPS=[
  {n:'S1',t:'解析算子',sub:'源码语法树 → 计算图',
-  body:`扫描 <code>flash_attention_v2.py</code> 的 <code>_flash_attention_v2_forward_kernel</code>,抽取算子结构并生成计算图。识别为<b>「Flash Attention v2」融合注意力算子</b>:Q·Kᵀ GEMM → 因果 Mask → 在线 Softmax → P·V 累加 → 归一化,沿 KV 序列逐块流式处理并维护 running max/sum,末尾保存 L/M 统计供反向传播。`,
-  risk:{h:'检测到源端专属结构',p:'<code>tl.program_id</code> 的 SIMT 网格映射、<code>tl.dot</code> 的 warp 级张量核 (MMA)、指针算术 + mask 的 HBM 分块寻址 —— 均依赖 GPU 线程/warp 硬件模型,昇腾达芬奇架构<b>无直接对应物</b>,须在 S2 决策改写。'},
-  log:[['','ascendport migrate ./ops/flash_attention_v2.py','p'],
-       ['解析 Triton / Python translation unit … 362 行','d'],
-       ['✓ 识别 kernel: _flash_attention_v2_forward_kernel (+ backward)','g'],
-       ['  ├─ 融合级别: Q·Kᵀ → Causal Mask → 在线 Softmax → P·V (fused)','d'],
-       ['  ├─ 精度: FP16 输入 · FP32 累加 (acc_o/m_i/l_i)','d'],
-       ['  └─ 并行粒度: 1 program = 1 (行块 BLOCK_M, batch)','d'],
-       ['构建数据流图 … 15 节点 / 18 边','b'],
-       ['⚠ 检测 SIMT 专属原语 ×2: program_id 网格, warp 级 tl.dot','r'],
+  body:`扫描项目自带 <code>example_mla_decode.py</code> 的 <code>flashattn</code>,抽取完整 MLA Decode 算子结构并生成计算图。主线为 Q·KVᵀ + QPE·KPEᵀ → 在线 Softmax → P·V → 归一化,同时保留 <code>num_split &gt; 1</code> 的 LSE 与 partial output 二阶段合并分支。`,
+  risk:{h:'检测到源端专属结构',p:'<code>T.Kernel</code> 调度、<code>T.use_swizzle</code> 与 <code>T.GemmWarpPolicy</code> 依赖 GPU 的 program / warp 模型；共享内存与 fragment 缓冲也须映射到达芬奇显式存储层级,在 S2 决策改写。'},
+  log:[['','ascendport migrate ./ops/example_mla_decode.py','p'],
+       ['解析 TileLang / Python translation unit … 271 行','d'],
+       ['✓ 识别 kernel: flashattn / main_split / main_no_split','g'],
+       ['  ├─ 融合级别: Q·KVᵀ + QPE·KPEᵀ → 在线 Softmax → P·V','d'],
+       ['  ├─ 精度: FP16 输入 · FP32 累加 (acc_s/acc_o/logsum)','d'],
+       ['  └─ 条件路径: num_split=1 默认主线 + split-KV combine','d'],
+       ['构建数据流图 … 29 节点 / 42 tensor-state 边','b'],
+       ['⚠ 检测 GPU 专属调度: use_swizzle / GemmWarpPolicy','r'],
        ['✓ 计算图已生成 → 右侧画布','a']],
   run(){ hasCpp=false; graphMapped=false; renderTree(); renderTabs(); switchTab('cuda'); openGraph(); }},
 
@@ -2622,9 +2656,13 @@ const STEPS=[
 const state={step:1, choices:{}, viewStep:0}; // 初始 step=1：S1 已完成，按钮执行 S2
 function renderProg(){
   const p=document.getElementById('prog'), l=document.getElementById('plabels');
+  const stageNames=['零','一','二','三','四','五','六','七','八','九'];
+  const workflowTitle=document.getElementById('workflowTitle');
+  if(workflowTitle) workflowTitle.textContent=`源端到昇腾 · ${stageNames[STEPS.length] || STEPS.length}阶段流水`;
+  l.style.gridTemplateColumns=`repeat(${STEPS.length}, minmax(0, 1fr))`;
   const viewIndex = Math.max(0, Math.min(STEPS.length-1, Number.isFinite(state.viewStep)?state.viewStep:Math.max(0,state.step-1)));
   p.innerHTML=STEPS.map((s,i)=>`<button class="pstep ${i<state.step?'done':''} ${i===viewIndex?'view':''}" type="button" data-step-index="${i}" title="${s.n} · ${s.t}｜${s.sub}" ${i<state.step?'':'disabled'} aria-label="查看 ${s.n} ${s.t}"></button>`).join('');
-  l.innerHTML=STEPS.map((s,i)=>`<button class="plabel ${i===viewIndex?'view':''}" type="button" data-step-index="${i}" title="${s.n} · ${s.t}" ${i<state.step?'':'disabled'}>${s.n}</button>`).join('');
+  l.innerHTML=STEPS.map((s,i)=>`<button class="plabel ${i===viewIndex?'view':''}" type="button" data-step-index="${i}" title="${s.n} · ${s.t}" ${i<state.step?'':'disabled'}><span class="plabel-num">${s.n}</span><span class="plabel-name">${s.t}</span></button>`).join('');
   [...p.querySelectorAll('[data-step-index]'), ...l.querySelectorAll('[data-step-index]')].forEach(el=>{if(el.disabled)return; el.onclick=()=>{
     state.viewStep=Number(el.dataset.stepIndex);
     renderProg();
@@ -2838,7 +2876,6 @@ function runStep(){
       activeTab='cpp'; renderCode('s4'); renderTabs(); renderTree();
       document.getElementById('leftPaneH').style.display='none';
       const f=document.getElementById('etbFile'); if(f) f.textContent='flash_mla_decode.cpp';
-      unlockedAnalysisViews.delete('graph'); unlockedAnalysisViews.delete('generated');
       openFlowPanel(false); // 不自动播放动画
       // 点击绿色高亮代码行 → 跳转到对应含义的数据流步骤（不循环播放）
       document.querySelectorAll('#codelines .ln.hl-new').forEach(el=>{
@@ -2885,7 +2922,8 @@ function reset(){
   closeAnalysisView(); stopFlow();
   resetAnalysisUnlocks();
   document.getElementById('flowpane').innerHTML='';
-  document.getElementById('accpane').innerHTML='';
+  document.getElementById('accuracyReportContent').innerHTML='';
+  window.updateAccuracyModelviz?.();
   document.getElementById('perfpane').innerHTML='';
   document.getElementById('apipane').innerHTML=''; lastApiNode=null;
   initProblems(); setProblems(3); setAicore('—');
