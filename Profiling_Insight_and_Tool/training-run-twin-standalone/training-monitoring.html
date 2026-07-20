@@ -11,9 +11,12 @@
       if (theme === "dark" || theme === "light") {
         document.documentElement.dataset.theme = theme;
       }
-      // 内嵌模式(?embed=hardware):外部页面只取「算力占用 · 基础设施层」卡片,见 training-run-twin.css 对应规则
-      if (params.get("embed") === "hardware") {
-        document.documentElement.dataset.embed = "hardware";
+      // 内嵌模式:?embed=hardware 只取「算力占用 · 基础设施层」卡片;?embed=locate-sidebar 只取
+      // 「训练监控」侧栏(定位链面板,配合 ?diagnosis=<key> 深链使用,见 training-run-twin-v2.html
+      // 的「详情与修复建议」抽屉)。见 training-run-twin.css 对应规则。
+      const embed = params.get("embed");
+      if (embed === "hardware" || embed === "locate-sidebar") {
+        document.documentElement.dataset.embed = embed;
       }
     })();
   </script>

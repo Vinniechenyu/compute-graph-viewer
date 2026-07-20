@@ -1,6 +1,6 @@
 # openPangu-2.0-Flash 架构参考（Sparse MLA + DSA/SWA + 256-Expert MoE）
 
-v 20260717 · 型号：**openPangu-2.0-Flash**（华为 ascend-tribe 开源）
+v 20260720 · 型号：**openPangu-2.0-Flash**（华为 ascend-tribe 开源）
 
 > **数据来源（source-verified）**：本文规格全部取自仓库内经源码/config 校验的 canonical schema
 > `model-architecture/openpangu-2.0-flash/outputs/model_architecture.json`

@@ -333,6 +333,26 @@ html[data-theme="light"] .train-twin-page .twin-status,
 .twin-progress-marker.is-p1 { background: #ea580c; }
 .twin-progress-marker:hover { transform: translateX(-50%) scaleX(2); }
 
+/* 进度条内 checkpoint 标注:绿色菱形,略低于问题标记 */
+.twin-progress-checkpoint {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  width: 8px;
+  height: 8px;
+  margin-top: -3px;
+  background: #10b981;
+  border: 1.5px solid var(--surface-1);
+  transform: translateX(-50%) rotate(45deg);
+  border-radius: 1.5px;
+  z-index: 2;
+  cursor: default;
+}
+.twin-progress-checkpoint:not(.is-reached) {
+  background: var(--foreground-muted);
+  opacity: 0.45;
+}
+
 /* 悬浮撑大:百分比 + epoch 从右侧滑入(收起时用负 margin 抵消 flex gap,不占位) */
 .twin-progress-detail {
   display: flex;
@@ -783,15 +803,18 @@ html[data-theme="light"] .train-twin-page .twin-status,
   gap: var(--space-2);
 }
 
+/* 高度与左侧精度栏单行图表卡对齐：精度栏 (640px - 3*space-2 gap) / 4 行 = 154px，
+   让 infra 的 MFU / 显存利用率图表和精度栏单张图表看起来同一网格尺寸。 */
 .twin-infra-charts {
   flex: none;
+  height: 154px;
   min-height: 0;
   margin-bottom: var(--space-2);
 }
 
 .twin-infra-charts .twin-accuracy-cards {
   grid-template-rows: 1fr;
-  min-height: 140px;
+  height: 100%;
 }
 
 .twin-infra-charts .twin-accuracy-metric-card__chart {
@@ -1428,6 +1451,28 @@ html[data-embed="hardware"] .twin-hardware-kpis {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+/* 内嵌模式（?embed=locate-sidebar）：training-monitoring-v2.html 的「详情与修复建议」抽屉用 iframe
+   内嵌本页，只要「训练监控」侧栏(.twin-monitor-sidebar，配合 ?diagnosis=<key> 深链此时展示的就是
+   定位链面板)，隐藏顶栏/rail/问题诊断列/整网图列/Timeline dock，脱离布局流铺满 viewport */
+html[data-embed="locate-sidebar"] .pto-ide-frame__topbar,
+html[data-embed="locate-sidebar"] .pto-ide-frame__activity-rail,
+html[data-embed="locate-sidebar"] #analysisLogPane,
+html[data-embed="locate-sidebar"] #explorerPane,
+html[data-embed="locate-sidebar"] .twin-graph-card,
+html[data-embed="locate-sidebar"] .twin-pane-header,
+html[data-embed="locate-sidebar"] #bottomDock,
+html[data-embed="locate-sidebar"] .pto-workbench-shell__split-gutter {
+  display: none !important;
+}
+
+html[data-embed="locate-sidebar"] .twin-monitor-sidebar {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  width: 100vw;
+  height: 100vh;
+}
+
 /* ── 模型层展开图(复用 ep-expert-parallel-2d.html 上方「层视图」的视觉,按 DeepSeek-V3.2 架构校准) ──
    非嵌入:不用 iframe,直接在定位链「模型层」内容区里用同款配色/几何画一份 DeepSeek MoE 层展开图。
    js/training-run-twin.js 的 renderTwinLayerViews() 负责生成 SVG。 */
@@ -1464,8 +1509,12 @@ html[data-embed="hardware"] .twin-hardware-kpis {
    ① dispatch:8 个专家互相收发 token → 每个被输入的 rank「变红」(recv 到数据);
    ② combine:7 个专家完成输出 → 恢复原色,而 rank 23 send=0 无法输出 → 保持红色(死锁)。
    蓝色 mesh 连线的描边生长与红色节点态由 js/training-run-twin.js 的 startLayerA2A() 用 rAF 逐帧驱动;
-   这里只定义初始态与配色。lv-a2a-node 是盖在参与 rank(卡)上的红色状态层,lv-a2a-ring 是标出 8 个参与者的高亮环。 */
-.twin-layerview .lv-a2a-mesh {
+   这里只定义初始态与配色。lv-a2a-node 是盖在参与 rank(卡)上的红色状态层,lv-a2a-ring 是标出 8 个参与者的高亮环。
+   .pto-node-expand-card 是整网图面板里 routed_expert_bank 节点原地撑开的卡片(见 buildExpertBankExpandMarkup()/
+   showRoutedExpertBankExpand()),和 .twin-layerview(定位链「模型层展开图」)共用同一套 mesh 视觉与同一个
+   startLayerA2A() 驱动器,故选择器一并覆盖。 */
+.twin-layerview .lv-a2a-mesh,
+.pto-node-expand-card .lv-a2a-mesh {
   fill: none;
   stroke: #4f6df6;
   stroke-linecap: round;
@@ -1473,13 +1522,18 @@ html[data-embed="hardware"] .twin-hardware-kpis {
   stroke-dashoffset: var(--lv-dash);
   opacity: 0;
 }
-.twin-layerview .lv-a2a-ring { fill: none; stroke: #4f6df6; stroke-width: 1.4; opacity: 0.55; }
-.twin-layerview .lv-a2a-node { fill: #dc2626; opacity: 0; }
-.twin-layerview .lv-a2a-label { transition: opacity 0.2s ease; }
+.twin-layerview .lv-a2a-ring,
+.pto-node-expand-card .lv-a2a-ring { fill: none; stroke: #4f6df6; stroke-width: 1.4; opacity: 0.55; }
+.twin-layerview .lv-a2a-node,
+.pto-node-expand-card .lv-a2a-node { fill: #dc2626; opacity: 0; }
+.twin-layerview .lv-a2a-label,
+.pto-node-expand-card .lv-a2a-label { transition: opacity 0.2s ease; }
 /* 尊重「减少动态效果」偏好:不做动画,静态展示 mesh 淡蓝 + 仅 rank 23 保持红(终态) */
 @media (prefers-reduced-motion: reduce) {
-  .twin-layerview .lv-a2a-mesh { stroke-dashoffset: 0; opacity: 0.25; }
-  .twin-layerview .lv-a2a-node[data-hot="1"] { opacity: 0.8; }
+  .twin-layerview .lv-a2a-mesh,
+  .pto-node-expand-card .lv-a2a-mesh { stroke-dashoffset: 0; opacity: 0.25; }
+  .twin-layerview .lv-a2a-node[data-hot="1"],
+  .pto-node-expand-card .lv-a2a-node[data-hot="1"] { opacity: 0.8; }
 }
 
 /* 模型层展开图右上角「最大化」按钮 + 全屏态。逻辑见 js/training-run-twin.js 的 setLayerMax()。
