@@ -115,29 +115,56 @@
       line-height: 1.5;
       letter-spacing: 0.04em;
     }
-    /* 点击右侧诊断卡片后,在架构图上方提示概念对应的层/分支;图为通用层模板,不代表真实的第 N 层实例 */
+    /* 点击右侧诊断卡片后,在架构图上方提示概念对应的层/分支;图为通用层模板,不代表真实的第 N 层实例。
+       填色复用顶栏进度条面板「问题1」条目(.wzh-tm-issue.is-p0)同一套中性描边 + 顶部柔和
+       inset 光晕,保持"问题一"红色语义在两处一致;最右侧「关闭」按钮取代原进度条面板里的
+       「返回」,点击即退出时光机回放并收起本卡(见 training-run-twin.js exitTimeMachine())。 */
     .twin-diagnosis-locator {
       display: flex;
-      align-items: baseline;
-      gap: var(--space-2);
-      margin-bottom: var(--space-2);
-      padding: 6px 10px;
+      align-items: flex-start;
+      gap: var(--space-3);
+      padding: 10px 12px;
+      margin: 8px 8px 0;
       border-radius: var(--radius-md);
-      border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--border-subtle));
-      background: color-mix(in srgb, var(--danger) 10%, transparent);
-      font-size: 12px;
+      border: 1px solid var(--border-subtle);
+      background: color-mix(in srgb, #dc2626 3.5%, var(--surface-1));
+      box-shadow: inset 0 14px 28px -26px color-mix(in srgb, #dc2626 42%, transparent);
+      flex-shrink: 0;
+    }
+    .twin-diagnosis-locator { display: none; }
+    .twin-diagnosis-locator.is-visible { display: flex; }
+    .twin-diagnosis-locator-body {
+      flex: 1 1 auto; min-width: 0;
+      display: flex; flex-direction: column; gap: 5px;
+    }
+    .twin-diagnosis-locator-title {
+      flex: none; font-size: 12px; font-weight: var(--font-weight-semibold);
+      color: var(--foreground); line-height: 1.3;
+    }
+    .twin-diagnosis-locator-tags {
+      display: flex; align-items: center; gap: 5px; flex-wrap: wrap;
+    }
+    .twin-diagnosis-locator-tag {
+      display: inline-flex; align-items: center; padding: 1px 6px;
+      border-radius: var(--radius-pill); font-size: 10px; font-weight: var(--font-weight-medium);
       line-height: 1.5;
-    }
-    .twin-diagnosis-locator[hidden] {
-      display: none;
-    }
-    .twin-diagnosis-locator strong {
-      flex: none;
-      color: var(--danger);
-      font-weight: var(--font-weight-semibold);
-    }
-    .twin-diagnosis-locator span {
+      background: color-mix(in srgb, var(--foreground-secondary) 18%, transparent);
       color: var(--foreground-secondary);
+    }
+    .twin-diagnosis-locator-severity {
+      display: inline-flex; align-items: center; padding: 1px 6px;
+      border-radius: var(--radius-pill); color: var(--surface-1);
+      font-size: 10px; font-weight: var(--font-weight-semibold); line-height: 1.5;
+    }
+    .twin-diagnosis-locator-severity.is-p0 { background: #dc2626; }
+    .twin-diagnosis-locator-severity.is-p1 { background: #ea580c; }
+    .twin-diagnosis-locator-desc {
+      display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+      overflow: hidden; font-size: 11px; line-height: 1.45;
+      color: var(--foreground-secondary);
+    }
+    .twin-diagnosis-locator-actions {
+      flex: none; display: flex; align-items: center; gap: var(--space-2); flex-shrink: 0;
     }
     /* 进度条问题点标注(带白边纵向线)+ 顶栏进度条默认极简/悬浮撑大样式,统一在
        css/training-run-twin.css 的 .twin-progress-status 一节维护 */
@@ -662,12 +689,14 @@
       display: flex;
     }
 
-    /* ══ 容器2 布局 · 三列(训练监控 | 时光机+整网图 | infra)，底部 Timeline 由外层竖直分栏提供 ══
+    /* ══ 容器2 布局 · 三列(训练监控 | 整网图 | infra)，底部 Timeline 由外层竖直分栏提供 ══
+       训练进度已迁回顶栏缩略部件(.wzh-tm-widget)，中列不再需要单独一行给「时光机」卡，
+       故只留单行，三列都占满整行高度。
        twin-center-scroll = CSS grid；子项用 grid-column/grid-row 显式定位，与 DOM 顺序无关。 */
     .twin-center-scroll {
       display: grid;
       grid-template-columns: minmax(280px, 27%) minmax(0, 1fr) minmax(280px, 27%);
-      grid-template-rows: auto minmax(0, 1fr);
+      grid-template-rows: minmax(0, 1fr);
       gap: var(--space-3);
       overflow: hidden;
       padding: 0 8px 0 0;   /* 上0 右8 下0 左0 */
@@ -688,24 +717,19 @@
     .twin-center-scroll.is-left-collapsed.is-right-collapsed {
       grid-template-columns: 0 minmax(0, 1fr) 0;
     }
-    /* 左列：训练监控(跨两行) */
+    /* 左列：训练监控 */
     .twin-center-scroll > .twin-monitor-sidebar {
       grid-column: 1;
-      grid-row: 1 / span 2;
+      grid-row: 1;
       min-width: 0;
       min-height: 0;
       border: 1px solid var(--border-subtle);
       border-radius: var(--radius-lg, 12px);
     }
-    /* 中列上：时光机(自动高) */
-    .twin-center-scroll > .wzh-timemachine-card {
-      grid-column: 2;
-      grid-row: 1;
-    }
-    /* 中列下：整网图(填充剩余高度) */
+    /* 中列：整网图(填充整列高度) */
     .twin-center-scroll > .twin-graph-card {
       grid-column: 2;
-      grid-row: 2;
+      grid-row: 1;
       min-width: 0;
       min-height: 0;
       margin: 0;
@@ -715,16 +739,17 @@
       border: 1px solid var(--border-subtle);
       border-radius: var(--radius-lg, 12px);
       overflow: hidden;
-      background: var(--surface-1) !important;   /* 压过上方「整网图区透明」规则，恢复卡片底 */
+      background: var(--surface-1) !important;
     }
     .twin-center-scroll > .twin-graph-card > .twin-architecture-stage {
       flex: 1 1 auto;
       min-height: 0;
+      overflow: hidden;
     }
-    /* 右列：infra(跨两行) */
+    /* 右列：infra */
     .twin-center-scroll > .wzh-col-infra {
       grid-column: 3;
-      grid-row: 1 / span 2;
+      grid-row: 1;
     }
 
     /* twin-center-pane: 覆盖 .pto-ide-frame__pane 的 flex:0 0 auto，撑满父面板 */
@@ -842,7 +867,7 @@
     .wzh-router-caption { margin-top: var(--space-2); color: var(--foreground-muted); font-size: 12px; line-height: 1.45; }
 
     /* ── 分布式通信 · EP All-to-All 卡（infra栏）：按 openPangu-2.0-Flash 真实并行策略
-       （DP4×PP8×EP64，无 TP/CP，见 infra 栏标题旁「?」）重构 —— 原型移植版画的是「TP mesh」，
+       （DP8×PP4×EP64，无 TP/CP，见 infra 栏标题旁「?」）重构 —— 原型移植版画的是「TP mesh」，
        与本模型「无 TP」矛盾，现改画 EP 域的 all-to-all 拓扑：64 个 EP rank 中取 32 个
        （4 节点×8 GPU）代表性切片，对齐本页「问题一」定位链事故（layer 38 router 倾斜，
        EP rank 23 = node2 GPU7 收发不对称 send=0MB/recv≈151MB，其余 31 rank send≈recv≈19MB）。 */
@@ -956,37 +981,70 @@
     }
     .wzh-graph-title { position: relative; z-index: 2; }
 
-    /* 时光机卡 */
-    .wzh-timemachine-card {
+    /* ══ 训练进度 · 顶栏缩略部件(参照 training-monitoring.html 顶栏进度条) ══
+       默认即显示轨道 + step 计数 + 已训练时长,不再靠悬浮展开出问题列表面板——
+       之前悬浮会让部件变宽(min-width 跳变),导致轨道上的问题标记点跟着挪位、鼠标点不中；
+       问题详情改由点击进度轴问题点后、整网图上方浮现的「问题定位」卡片承接(#diagnosisLocator，
+       卡片上的「详情与修复建议」按钮打开定位链抽屉)。
+       progressTrack/Fill/Live/Thumb/Step/Elapsed 等既有 ID 不变，renderProgress()/
+       renderDiagnosisMarkers() 无需改动。 */
+    .wzh-tm-widget {
+      position: relative;
+      flex: 0 0 auto;
       display: flex;
-      flex-direction: column;
-      gap: 6px;
-      padding-bottom: var(--space-3);
-      border: 1px solid var(--border-subtle);
+      align-items: center;
+      padding: 5px 10px;
+      border: 1px solid transparent;
       border-radius: var(--radius-lg, 12px);
+      background: transparent;
+      color: var(--foreground);
+      cursor: default;
+      transition: background 180ms ease, border-color 180ms ease;
+    }
+    .wzh-tm-widget:hover,
+    .wzh-tm-widget:focus-within {
       background: var(--surface-1);
+      border-color: var(--border-subtle);
     }
-    /* 标题行：左「时光机 / xxStep」、右「返回」按钮(仅回放态显示) */
-    .wzh-tm-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: var(--space-2);
-      padding-right: var(--space-3);
-    }
-    .wzh-tm-back { flex: 0 0 auto; }
-    .wzh-timemachine-card.is-replay { border-color: var(--border-strong, var(--border-subtle)); }
+    .wzh-tm-widget.is-replay { border-color: var(--border-strong, var(--border-subtle)); }
 
-    .wzh-tm-row {
+    /* 缩略态：轨道在左、step 计数居中、已训练时长常显在右，宽度恒定不随悬浮变化 */
+    .wzh-tm-compact {
       display: flex;
       align-items: center;
-      gap: var(--space-3);
-      padding: 0 var(--space-3);
+      gap: 8px;
     }
+    .wzh-tm-compact-steps {
+      flex: none;
+      font: 500 11px/1 var(--font-mono, ui-monospace, monospace);
+      color: var(--foreground);
+      white-space: nowrap;
+    }
+    .wzh-tm-compact-steps .wzh-tm-total { color: var(--foreground-muted); }
+    .wzh-tm-compact-steps .wzh-tm-sep { margin: 0 1px; color: var(--foreground-muted); }
+
+    .wzh-tm-compact-elapsed {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      flex: none;
+      white-space: nowrap;
+      font: 500 11px/1 var(--font-mono, ui-monospace, monospace);
+      color: var(--foreground-secondary);
+    }
+    .wzh-tm-compact-elapsed strong { color: var(--foreground); font-weight: var(--font-weight-semibold, 600); }
+    .wzh-tm-compact-divider {
+      flex: none;
+      width: 1px;
+      height: 11px;
+      background: var(--border-subtle);
+    }
+
     .wzh-tm-track {
       position: relative;
-      flex: 1 1 auto;
-      height: 8px;
+      flex: none;
+      width: 138px;
+      height: 5px;
       min-width: 0;
       border-radius: var(--radius-pill, 999px);
       background: color-mix(in srgb, var(--foreground) 10%, transparent);
@@ -1019,7 +1077,7 @@
       transform: translateX(-100%);
       animation: wzh-tm-flow 1.8s linear infinite;
     }
-    .wzh-timemachine-card:not(.is-replay) .wzh-tm-fill::after { opacity: 0.9; }
+    .wzh-tm-widget:not(.is-replay) .wzh-tm-fill::after { opacity: 0.9; }
     @keyframes wzh-tm-flow {
       0% { transform: translateX(-100%); }
       100% { transform: translateX(325%); }
@@ -1033,8 +1091,8 @@
       top: 50%;
       left: 0;
       z-index: 3;
-      width: 14px;
-      height: 14px;
+      width: 11px;
+      height: 11px;
       margin: 0;
       transform: translate(-50%, -50%);
       border-radius: 50%;
@@ -1060,7 +1118,7 @@
       background: color-mix(in srgb, var(--highlight-copy-blue-500, #3b6fe0) 22%, transparent);
       pointer-events: none;
     }
-    .wzh-timemachine-card .twin-progress-marker {
+    .wzh-tm-track .twin-progress-marker {
       position: absolute;
       top: -3px;
       bottom: -3px;
@@ -1068,22 +1126,36 @@
       transform: translateX(-50%);
       border-radius: 2px;
       box-shadow: 0 0 0 1.5px var(--surface-1);
+      cursor: pointer;
+      z-index: 3;
+      transition: transform 120ms ease, width 120ms ease;
     }
-    .wzh-tm-readout {
-      flex: 0 0 auto;
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      font: 500 12px/1 var(--font-mono, ui-monospace, monospace);
-      color: var(--foreground-secondary);
-      white-space: nowrap;
+    .wzh-tm-track .twin-progress-marker::after {
+      content: "";
+      position: absolute;
+      top: -6px; bottom: -6px;
+      left: -6px; right: -6px;
     }
-    .wzh-tm-step { color: var(--foreground); font-weight: 600; }
-    .wzh-tm-total { color: var(--foreground-muted); font-weight: 400; }
-    .wzh-tm-sep { color: var(--foreground-muted); }
-    .wzh-tm-unit { color: var(--foreground-muted); margin-left: -4px; }
-    .wzh-tm-dot { width: 3px; height: 3px; border-radius: 50%; background: var(--foreground-muted); }
-    .wzh-tm-elapsed strong { color: var(--foreground); font-weight: var(--font-weight-semibold, 600); }
+    .wzh-tm-track .twin-progress-marker:hover {
+      transform: translateX(-50%) scaleY(1.4);
+      width: 4px;
+    }
+    .wzh-tm-track .twin-progress-checkpoint {
+      position: absolute;
+      top: 1px; bottom: 1px;
+      width: 8px; height: 8px;
+      margin-top: -3px;
+      background: #10b981;
+      border: 1.5px solid var(--surface-1);
+      transform: translateX(-50%) rotate(45deg);
+      border-radius: 1.5px;
+      z-index: 2;
+      cursor: default;
+    }
+    .wzh-tm-track .twin-progress-checkpoint:not(.is-reached) {
+      background: var(--foreground-muted);
+      opacity: 0.45;
+    }
 
     /* infra 右列独立卡 */
     .wzh-col-infra {
@@ -1498,7 +1570,7 @@
     /* 当前卡的顶部信息提亮，露出时更醒目 */
     .twin-live-card.is-active .tlc-type { color: var(--foreground); }
 
-    /* ── 实时监控下隐藏问题诊断标注（问题徽标 + 常态红描边），保持画面干净 ── */
+    /* ── 实时监控下隐藏问题诊断标注（问题徽标 + 常态红描边），但保留问题卡片不受影响 ── */
     .twin-graph-card { --live-accent: var(--highlight-copy-blue-500, #3b6fe0); }
     .twin-graph-card.twin-live-on .pto-problem-badge { display: none !important; }
     .twin-graph-card.twin-live-on .pto-model-graphviz-node.pto-diagnosis-active rect:not(.pto-diagnosis-pulse-ring) {
@@ -1513,6 +1585,7 @@
       stroke: var(--border-subtle);
       stroke-width: 1.5px;
     }
+    /* 问题定位卡片在实时监控视图下不额外隐藏：显隐统一由 hidden 属性控制 */
     /* ── 实时监控：整网图按当前层类型色描边高亮（放在抑制规则之后，优先级取胜） ── */
     .twin-graph-card.twin-live-on .pto-model-graphviz-node.pto-live-active rect:not(.pto-diagnosis-pulse-ring) {
       stroke: var(--live-accent);
@@ -1530,6 +1603,77 @@
       fill: var(--foreground-muted);
       fill-opacity: 1;
       transition: fill 200ms ease;
+    }
+
+    /* ── 问题一「详情与修复建议」抽屉:从右侧滑出,iframe 内嵌 training-monitoring.html 的
+       训练监控侧栏(?embed=locate-sidebar + ?diagnosis=moe-a2a 深链,加载后自动展开该问题的
+       定位链面板)── */
+    .wzh-locate-drawer-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 2000;
+      background: rgba(0, 0, 0, .48);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity var(--duration-base, 180ms) var(--easing-default, ease);
+    }
+    .wzh-locate-drawer-overlay.is-open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .wzh-locate-drawer {
+      position: absolute;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: 800px;
+      display: flex;
+      flex-direction: column;
+      background: var(--surface-1);
+      border-left: 1px solid var(--border-default);
+      box-shadow: var(--shadow-lg);
+      transform: translateX(100%);
+      transition: transform var(--duration-base, 220ms) var(--easing-default, ease);
+    }
+    .wzh-locate-drawer-overlay.is-open .wzh-locate-drawer {
+      transform: translateX(0);
+    }
+    .wzh-locate-drawer-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-3, 12px);
+      flex: 0 0 auto;
+      padding: var(--space-4, 16px) var(--space-5, 20px);
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .wzh-locate-drawer-kicker {
+      font: 500 11px/1.4 var(--font-sans);
+      letter-spacing: .02em;
+      color: var(--foreground-secondary);
+      text-transform: uppercase;
+    }
+    .wzh-locate-drawer-title {
+      margin-top: 2px;
+      font: 600 15px/1.4 var(--font-display, var(--font-sans));
+      color: var(--foreground);
+    }
+    .wzh-locate-drawer-actions {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2, 8px);
+      flex: 0 0 auto;
+    }
+    .wzh-locate-drawer-body {
+      flex: 1 1 auto;
+      min-height: 0;
+      background: var(--surface-2);
+    }
+    .wzh-locate-drawer-body iframe {
+      width: 100%;
+      height: 100%;
+      border: 0;
+      display: block;
     }
   </style>
 </head>
@@ -1550,8 +1694,29 @@
       </div>
       <div class="pto-ide-frame__topbar-center"></div>
       <div class="pto-ide-frame__topbar-right">
-        <!-- 训练进度条(progressTrack/Fill/Step/Pct/Epoch 等 ID)已迁移到中央列的「时光机」卡，
-             renderProgress()/renderDiagnosisMarkers() 引用不变；顶栏仅保留主题切换 + Timeline 开关。 -->
+        <!-- 训练进度:缩略显示形式(参照 training-monitoring.html 顶栏进度条),默认即显示训练时长,
+             不再靠悬浮展开——避免悬浮时部件变宽导致问题标记点跟着挪位、点不中。
+             progressTrack/Fill/Live/Thumb/Step/Elapsed 等 ID 与 renderProgress()/
+             renderDiagnosisMarkers() 的引用保持不变;.wzh-timemachine-card 类名保留供
+             training-run-twin.js 的 isWzhTwinPage()/is-replay 判定继续生效。 -->
+        <div class="wzh-timemachine-card wzh-tm-widget" id="progressTopbar" title="训练进度">
+          <div class="wzh-tm-compact">
+            <div class="wzh-tm-track" id="progressTrack">
+              <div class="wzh-tm-live" id="progressLive"></div>
+              <div class="wzh-tm-fill" id="progressFill"></div>
+              <!-- 问题点标注由 renderDiagnosisMarkers() 注入到本轨 -->
+              <div class="wzh-tm-thumb" id="progressThumb" role="slider" tabindex="0"
+                   aria-label="时光机回放进度" aria-valuemin="0" aria-valuenow="0" aria-valuemax="0"></div>
+            </div>
+            <span class="wzh-tm-compact-steps">
+              <span id="progressStepCurrent">--</span><span class="wzh-tm-sep" aria-hidden="true">/</span><span class="wzh-tm-total" id="progressStepTotal">--</span>
+            </span>
+            <span class="wzh-tm-compact-elapsed">
+              <span class="wzh-tm-compact-divider"></span>
+              <strong id="progressElapsed">--</strong>
+            </span>
+          </div>
+        </div>
         <div class="pto-ide-frame__window-actions" data-ide-slot="window-controls" aria-label="Window controls">
           <!-- 主题切换:单一图标按钮(月亮/太阳互换),参照 pangu-moe-trainviz/op-rank-time.html 的 .opv-theme-toggle,
                避免和整网图组件内部的 opvTopThemeToggle/floatingThemeToggle 文字按钮重复出现两套主题开关 -->
@@ -1632,38 +1797,23 @@
                     </header>
 
                     <div class="pto-ide-frame__pane-body twin-center-scroll">
-                      <!-- 中央列 · 时光机卡(容器2 布局)：原顶栏进度条迁移至此，progressTrack/Fill/Step ID 不变；
-                           Pct/Epoch 展示已去掉(旧版 training-monitoring.html 仍保留对应节点，training-run-twin.js 里用 setText 兼容两边)，
-                           新增 progressElapsed(已训练时长，按 state.step × 目标步耗时估算，见 TIME_MACHINE_STEP_SECONDS) -->
-                      <section class="wzh-timemachine-card" aria-label="训练进度">
-                        <div class="wzh-tm-head">
-                          <div class="wzh-card-title" id="timeMachineTitle">训练进度</div>
-                          <button class="btn btn-ghost btn-sm wzh-tm-back" type="button" id="timeMachineBack" hidden title="回到最新 step">返回</button>
-                        </div>
-                        <div class="wzh-tm-row">
-                          <div class="wzh-tm-track" id="progressTrack">
-                            <!-- 已执行区间残影：回放时露出「拖块 ~ 最新 step」的可回拖范围 -->
-                            <div class="wzh-tm-live" id="progressLive"></div>
-                            <div class="wzh-tm-fill" id="progressFill"></div>
-                            <!-- 问题点标注由 renderDiagnosisMarkers() 注入到本轨 -->
-                            <!-- 回放拖块：只能在已执行(≤ 最新 step)区间内往回拖，见 training-run-twin.js 时光机回放 -->
-                            <div class="wzh-tm-thumb" id="progressThumb" role="slider" tabindex="0"
-                                 aria-label="时光机回放进度" aria-valuemin="0" aria-valuenow="0" aria-valuemax="0"></div>
-                          </div>
-                          <div class="wzh-tm-readout">
-                            <span class="wzh-tm-step" id="progressStepCurrent">--</span>
-                            <span class="wzh-tm-sep" aria-hidden="true">/</span>
-                            <span class="wzh-tm-step wzh-tm-total" id="progressStepTotal">--</span>
-                            <span class="wzh-tm-unit">step</span>
-                            <span class="wzh-tm-dot" aria-hidden="true"></span>
-                            <span class="wzh-tm-elapsed"><strong id="progressElapsed">--</strong></span>
-                          </div>
-                        </div>
-                      </section>
+                      <!-- 训练进度已迁回顶栏缩略部件(.wzh-tm-widget，见 topbar-right)，
+                           中央列不再单独占一行，整网图卡填满整列高度。 -->
                       <section class="twin-graph-card" aria-label="模型架构图">
-          <div class="twin-diagnosis-locator" id="diagnosisLocator" hidden>
-            <strong id="diagnosisLocatorLayer">--</strong>
-            <span id="diagnosisLocatorNote">--</span>
+          <div class="twin-diagnosis-locator" id="diagnosisLocator">
+            <div class="twin-diagnosis-locator-body">
+              <strong class="twin-diagnosis-locator-title" id="diagnosisLocatorTitle">--</strong>
+              <div class="twin-diagnosis-locator-tags">
+                <span class="twin-diagnosis-locator-tag" id="diagnosisLocatorLayerTag">--</span>
+                <span class="twin-diagnosis-locator-tag" id="diagnosisLocatorCategoryTag">--</span>
+                <span class="twin-diagnosis-locator-severity" id="diagnosisLocatorSeverityTag">--</span>
+              </div>
+              <span class="twin-diagnosis-locator-desc" id="diagnosisLocatorDesc">--</span>
+            </div>
+            <div class="twin-diagnosis-locator-actions">
+              <button class="btn btn-ghost btn-sm" type="button" id="diagnosisLocatorDrawerBtn" style="font-size:11px">详情与修复建议</button>
+              <button class="btn btn-ghost btn-sm" type="button" id="diagnosisLocatorClose" title="关闭并回到最新 step" style="font-size:11px">关闭</button>
+            </div>
           </div>
           <div class="twin-architecture-stage">
             <!-- 整网图「直接集成」pto-design-system 的 openPangu-2.0-Flash model-graphviz 组件(非 iframe):
@@ -1806,7 +1956,7 @@ SWA = Sliding Window Attention(滑动窗口注意力)：
                                 <div class="wzh-card-title-row">
                                   <h2>集群监控</h2>
                                   <span class="wzh-help" tabindex="0" data-tooltip="NPU 总数：2048（910B · 256 节点×8）
-并行策略：DP4×PP8×EP64（ZeRO-1 · 无 TP/CP）
+并行策略：DP8×PP4×EP64（ZeRO-1 · 无 TP/CP）
 层数：46（2 Dense L0-1 + 44 MoE L2-45）
 MoE：256+1（top-8 路由 · EP 切分）">?</span>
                                 </div>
@@ -1826,7 +1976,7 @@ MoE：256+1（top-8 路由 · EP 切分）">?</span>
                           <!-- W_gate (Router)·专家负载分布 + 分布式通信·EP All-to-All：从训练监控列移入，
                                与本卡合并为并列页签(问题一根因链路：router 倾斜 → EP rank 23 all-to-all 死锁)。
                                64 个 EP rank 取 32 个代表性切片（4 节点×8 GPU），按 openPangu-2.0-Flash 真实
-                               并行策略（DP4×PP8×EP64，无 TP/CP，见 infra 栏标题旁「?」）重构。 -->
+                               并行策略（DP8×PP4×EP64，无 TP/CP，见 infra 栏标题旁「?」）重构。 -->
                           <div class="twin-card-heading wzh-moe-heading">
                             <div class="wzh-card-title-row">
                               <h2>MoE监控</h2>
@@ -2036,6 +2186,62 @@ MoE：256+1（top-8 路由 · EP 切分）">?</span>
   </section>
 
   <div id="diagnosisTooltip" class="diagnosis-bubble" hidden></div>
+
+  <!-- 问题一「详情与修复建议」抽屉:整网图上方「问题定位」卡片(#diagnosisLocator)里的
+       「详情与修复建议」按钮打开,内容为 iframe 内嵌 training-monitoring.html 的训练监控侧栏
+       (?embed=locate-sidebar,只取 .twin-monitor-sidebar,隐藏顶栏/rail/问题诊断列/整网图/Timeline),
+       带 ?diagnosis=moe-a2a 深链(见该页 js 的 applyDeepLinkDiagnosis)自动展开该问题的定位链分步叙事
+       (本页看板未覆盖这套结构化步骤)。 -->
+  <div class="wzh-locate-drawer-overlay" id="problemOneLocateDrawerOverlay" hidden>
+    <aside class="wzh-locate-drawer" role="dialog" aria-modal="true" aria-label="问题一 · 详情与修复建议">
+      <header class="wzh-locate-drawer-head">
+        <div>
+          <div class="wzh-locate-drawer-kicker">问题一 · 详情与修复建议</div>
+          <div class="wzh-locate-drawer-title">MoE all-to-all 超时导致 loss NaN</div>
+        </div>
+        <div class="wzh-locate-drawer-actions">
+          <button class="btn btn-ghost btn-icon btn-sm" id="problemOneLocateDrawerClose" type="button" aria-label="关闭抽屉" title="关闭">✕</button>
+        </div>
+      </header>
+      <div class="wzh-locate-drawer-body">
+        <iframe id="problemOneLocateDrawerFrame" title="问题一 · 详情与修复建议" src="" loading="lazy"></iframe>
+      </div>
+    </aside>
+  </div>
+  <script>
+    // 问题一「详情与修复建议」抽屉:iframe 首次打开时才赋值 src(懒加载),?diagnosis=moe-a2a 让
+    // training-monitoring.html 加载后自动展开对应问题诊断卡片的定位链面板;?embed=locate-sidebar
+    // 让该页只渲染 .twin-monitor-sidebar(见 css/training-run-twin.css);主题跟随本页当前
+    // documentElement[data-theme] 透传给 ?theme=,与本页保持一致。
+    (function () {
+      function openDrawer() {
+        const overlay = document.getElementById("problemOneLocateDrawerOverlay");
+        const frame = document.getElementById("problemOneLocateDrawerFrame");
+        if (!overlay || !frame) return;
+        if (!frame.getAttribute("src")) {
+          const theme = document.documentElement.dataset.theme === "light" ? "light" : "dark";
+          frame.src = `./training-monitoring.html?diagnosis=moe-a2a&embed=locate-sidebar&theme=${theme}`;
+        }
+        overlay.hidden = false;
+        requestAnimationFrame(() => overlay.classList.add("is-open"));
+      }
+      function closeDrawer() {
+        const overlay = document.getElementById("problemOneLocateDrawerOverlay");
+        if (!overlay || overlay.hidden) return;
+        overlay.classList.remove("is-open");
+        setTimeout(() => { overlay.hidden = true; }, 220);
+      }
+      window.openProblemOneLocateDrawer = openDrawer;
+      document.getElementById("diagnosisLocatorDrawerBtn")?.addEventListener("click", openDrawer);
+      document.getElementById("problemOneLocateDrawerClose")?.addEventListener("click", closeDrawer);
+      document.getElementById("problemOneLocateDrawerOverlay")?.addEventListener("click", (event) => {
+        if (event.target.id === "problemOneLocateDrawerOverlay") closeDrawer();
+      });
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !document.getElementById("problemOneLocateDrawerOverlay")?.hidden) closeDrawer();
+      });
+    })();
+  </script>
   <script>
     // ── 算子染色切换 ──
     window._opColorMode = 'cat';
@@ -2434,6 +2640,9 @@ MoE：256+1（top-8 路由 · EP 切分）">?</span>
 
       window.setGraphViewMode = function (mode) {
         var live = mode === 'live';
+        // 保存问题卡片的可见状态，切换页签后恢复
+        var locator = document.getElementById('diagnosisLocator');
+        var locatorWasVisible = locator && locator.classList.contains('is-visible');
         document.querySelectorAll('#viewModeSeg .segbtn').forEach(function (b) {
           b.classList.toggle('on', b.dataset.v === mode);
         });
@@ -2443,7 +2652,7 @@ MoE：256+1（top-8 路由 · EP 切分）">?</span>
         if (live) {
           buildDeck();
           if (deck) deck.hidden = false;
-          requestAnimationFrame(positionDeck);   // deck 显示后按实际宽度铺开
+          requestAnimationFrame(positionDeck);
           startLive();
         } else {
           stopLive();
@@ -2451,8 +2660,11 @@ MoE：256+1（top-8 路由 · EP 切分）">?</span>
           if (deck) deck.hidden = true;
           if (typeof window.wzhSetMeshLiveActive === 'function') window.wzhSetMeshLiveActive(false);
         }
-        // 底部卡出现/收起改变了整网图可用高度，让 opv 组件重新 Fit
         window.dispatchEvent(new Event('resize'));
+        // resize 可能触发 DOM 重建，稍后恢复卡片可见状态
+        if (locatorWasVisible && locator) {
+          requestAnimationFrame(function () { locator.classList.add('is-visible'); });
+        }
       };
 
       // 预建卡片，避免首屏闪动
@@ -2496,8 +2708,9 @@ MoE：256+1（top-8 路由 · EP 切分）">?</span>
       btn.addEventListener('click', () => setVisible(dock.hidden));
       window.PtoTrainingTwinTimelineDock = { setVisible };
 
-      // 默认收起底栏 Timeline，用户需要时手动展开
-      setVisible(false);
+      // 屏幕高度足够(>800)时默认展开底栏 Timeline，否则收起以给上半区留空间；
+      // 用户始终可手动切换，这里只决定初始态。
+      setVisible(window.innerHeight > 800);
     })();
   </script>
   <script>

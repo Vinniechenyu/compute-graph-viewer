@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-theme="dark">
+<html lang="zh-CN" data-theme="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -11,12 +11,9 @@
       if (theme === "dark" || theme === "light") {
         document.documentElement.dataset.theme = theme;
       }
-      // 内嵌模式:?embed=hardware 只取「算力占用 · 基础设施层」卡片;?embed=locate-sidebar 只取
-      // 「训练监控」侧栏(定位链面板,配合 ?diagnosis=<key> 深链使用,见 training-run-twin-v2.html
-      // 的「详情与修复建议」抽屉)。见 training-run-twin.css 对应规则。
-      const embed = params.get("embed");
-      if (embed === "hardware" || embed === "locate-sidebar") {
-        document.documentElement.dataset.embed = embed;
+      // 内嵌模式(?embed=hardware):外部页面只取「算力占用 · 基础设施层」卡片,见 training-run-twin.css 对应规则
+      if (params.get("embed") === "hardware") {
+        document.documentElement.dataset.embed = "hardware";
       }
     })();
   </script>
@@ -181,9 +178,8 @@
     .twin-monitor-scroll .twin-monitor-card,
     .twin-monitor-scroll .twin-accuracy-card { padding: 0; }
 
-    /* 定位链返回按钮：默认显示 hover 态灰底；.btn-icon 的 width 取自 --button-height-md(36px),
-       与 .btn-sm 的 min-height(--button-height-sm, 30px) 不一致会拉成偏宽的圆角矩形,这里统一按 sm 高度收窄宽度做成正方形 */
-    #locateChainBack { background: var(--surface-2); width: var(--button-height-sm); min-width: var(--button-height-sm); }
+    /* 定位链返回按钮：默认显示 hover 态灰底 */
+    #locateChainBack { background: var(--surface-2); }
 
     /* 图表中 NaN / inf 红字 */
     .pto-tmchart__val--danger { fill: var(--danger, #dc2626); font-weight: 700; }
@@ -204,122 +200,127 @@
     .twin-locate-chain-view[hidden] {
       display: none;
     }
-    /* ══ 顶部定位链 · 速度刃进度轨（异形 / 速度感 / 力量感）══════════════════
-       每一层 = 一片前倾的「刀锋」分段（skewX 斜切 + 圆角），段间为斜向缝隙；
-       三态：已通过=定向渐变蓝刃 / 当前=最亮+外发光+略放大展开露出子标题 / 未到达=暗刃。 */
     .twin-locate-chain {
       position: sticky;
       top: 0;
       z-index: 5;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 0;
       margin: 0;
-      padding: 11px var(--space-3) 12px;
+      padding: 6px var(--space-3) 4px;
+      border-radius: 0;
       border: 0;
       border-bottom: 1px solid var(--border-subtle);
-      background:
-        linear-gradient(to bottom,
-          var(--surface-1),
-          color-mix(in srgb, var(--surface-2) 42%, var(--surface-1)));
-      box-shadow: 0 6px 16px -12px color-mix(in srgb, var(--foreground) 55%, transparent);
+      background: var(--surface-1);
+      box-shadow: none;
     }
-    .twin-locate-track {
-      position: relative;
-      display: flex;
-      align-items: stretch;
-      gap: 6px;
-      height: 38px;
-      margin: 0 3px;
-      padding: 0;
+    /* 选中态底色是独立图层,z-index 压在连线下方,避免盖住经过该节点的连线;
+       JS 在节点激活时把它挪到对应节点的位置和尺寸上 */
+    .twin-locate-highlight {
+      position: absolute;
+      z-index: -1;
+      border-radius: var(--radius-md);
+      background: var(--highlight-copy-blue-100, #dde8fd);
+      opacity: 0;
+      pointer-events: none;
+      transition: left 160ms ease, top 160ms ease, width 160ms ease, height 160ms ease, opacity 160ms ease;
     }
-    /* 单片刀锋：前倾（skewX）+ 圆角，锋利但不割手 */
-    .twin-locate-seg {
-      --skew: -14deg;
+    .twin-locate-highlight.is-visible {
+      opacity: 1;
+    }
+    /* 悬浮底色同样是独立图层,z-index 压在连线下方(挂载/定位方式与选中态底色一致),避免盖住经过该节点的连线 */
+    .twin-locate-hover {
+      position: absolute;
+      z-index: -1;
+      border-radius: var(--radius-md);
+      background: var(--surface-2);
+      opacity: 0;
+      pointer-events: none;
+      transition: left 120ms ease, top 120ms ease, width 120ms ease, height 120ms ease, opacity 120ms ease;
+    }
+    .twin-locate-hover.is-visible {
+      opacity: 1;
+    }
+    /* 连线改由 JS 量出每个圆点的真实坐标后用 SVG 一次性画出,避免 flex 间隔造成的断线/错位 */
+    .twin-locate-track-svg {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+    }
+    .twin-locate-line {
+      stroke: var(--border-strong);
+      stroke-width: 2;
+      fill: none;
+    }
+    .twin-locate-line.is-dashed {
+      stroke-dasharray: 4 4;
+    }
+    .twin-locate-line.is-current {
+      stroke: var(--highlight-copy-blue-500, #3b6fe0);
+    }
+    /* 「绕过通信调度层」等分叉旁路:从起点弧线下探,绕开中间被跳过的节点,回落到目标点 */
+    .twin-locate-bypass {
+      stroke: var(--foreground-secondary);
+      stroke-width: 1.5;
+      stroke-dasharray: 3 4;
+      fill: none;
+      opacity: 0.7;
+    }
+    .twin-locate-node {
       position: relative;
       z-index: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
       flex: 1 1 0;
       min-width: 0;
+      padding: 3px 4px;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+    }
+    .twin-locate-node-label {
+      font-size: 11px;
+      font-weight: var(--font-weight-semibold);
+      color: var(--foreground);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 100%;
+    }
+    .twin-locate-node-sub {
+      margin-top: 1px;
+      color: var(--foreground-secondary);
+      font-size: 9px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 100%;
+    }
+    .twin-locate-node-dot-row {
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 5px;
-      padding: 0 12px;
-      text-align: center;
-      cursor: pointer;
-      overflow: hidden;
-      border-radius: 7px;
-      transform: skewX(var(--skew));
-      color: var(--foreground-secondary);
-      background: color-mix(in srgb, var(--foreground) 7%, var(--surface-1));
-      transition: background 200ms ease, color 200ms ease,
-                  flex-grow 300ms cubic-bezier(.2,.7,.2,1);
+      width: 100%;
+      height: 12px;
+      margin-top: 2px;
     }
-    /* 内容回正（抵消父级 skew），文字保持直立 */
-    .twin-locate-seg > * { transform: skewX(calc(-1 * var(--skew))); }
-
-    /* 已通过：点亮蓝刃 + 沿切削方向的定向渐变（后暗前亮 = 冲刺方向） */
-    .twin-locate-seg.is-done {
-      color: #fff;
-      background: linear-gradient(105deg,
-        color-mix(in srgb, var(--highlight-copy-blue-500, #3b6fe0) 62%, black 14%),
-        var(--highlight-copy-blue-500, #3b6fe0));
+    .twin-locate-node-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      border: 2px solid var(--border-strong);
+      background: var(--surface-1);
+      transition: all 120ms ease;
     }
-    /* 当前：最亮 + 外发光 + 略微放大占位（展开露出子标题） */
-    .twin-locate-seg.is-active {
-      flex-grow: 1.5;
-      z-index: 3;
-      color: #fff;
-      overflow: visible;
-      flex-direction: column;
-      gap: 0;
-      background: linear-gradient(105deg,
-        var(--highlight-copy-blue-500, #3b6fe0),
-        color-mix(in srgb, var(--highlight-copy-blue-500, #3b6fe0) 55%, white));
-      filter: drop-shadow(0 0 7px color-mix(in srgb, var(--highlight-copy-blue-500, #3b6fe0) 32%, transparent));
+    .twin-locate-node.is-active .twin-locate-node-dot {
+      border-color: var(--highlight-copy-blue-500, #3b6fe0);
+      background: var(--highlight-copy-blue-500, #3b6fe0);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--highlight-copy-blue-500, #3b6fe0) 25%, transparent);
     }
-    /* 当前刀锋叠一层斜向速度条纹（motion streaks） */
-    .twin-locate-seg.is-active::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      border-radius: inherit;
-      background: repeating-linear-gradient(105deg,
-        transparent 0 7px,
-        rgba(255, 255, 255, 0.10) 7px 9px);
-      pointer-events: none;
-    }
-    .twin-locate-seg:not(.is-done):not(.is-active):hover {
-      background: color-mix(in srgb, var(--highlight-copy-blue-500, #3b6fe0) 16%, var(--surface-1));
-      color: var(--foreground);
-    }
-
-    /* 层号已去除；当前刀锋内「层名 + 子标题」同行展开 */
-    .twin-locate-seg-label {
-      position: relative;
-      z-index: 1;
-      max-width: 100%;
-      font: var(--font-weight-bold, 700) 11px/1.1 var(--font-sans);
-      letter-spacing: 0.01em;
-      color: inherit;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .twin-locate-seg:not(.is-done):not(.is-active) .twin-locate-seg-label {
-      font-weight: var(--font-weight-semibold, 600);
-      color: var(--foreground-secondary);
-    }
-    .twin-locate-seg-sub {
-      position: relative;
-      z-index: 1;
-      max-width: 100%;
-      font: 400 9.5px/1.1 var(--font-mono, ui-monospace, monospace);
-      letter-spacing: 0.03em;
-      opacity: 0.9;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    /* 子标题只在当前刀锋展开显示（其余保持紧凑，只留层名） */
-    .twin-locate-seg:not(.is-active) .twin-locate-seg-sub { display: none; }
     #locateChainContent {
       padding: var(--space-2) var(--space-3);
       display: flex;
@@ -327,7 +328,7 @@
       gap: var(--space-2);
     }
     .twin-locate-section {
-      scroll-margin-top: 70px;
+      scroll-margin-top: 60px;
     }
     .twin-locate-section-title {
       margin: 0 0 8px;
@@ -399,7 +400,7 @@
       width: 100%;
     }
 
-    /* ── 问题三 Canvas 图表卡片（复用定位链视觉体系）── */
+    /* ── 问题六 Canvas 图表卡片（复用定位链视觉体系）── */
     .locate-canvas-card {
       padding: var(--space-2);
       margin: 8px 0;
@@ -426,9 +427,9 @@
 
     .locate-code-block { border: 1px solid var(--border-subtle); border-radius: var(--radius-md); overflow: hidden; margin: 6px 0; }
     .locate-code-block__head { padding: 7px 12px; background: var(--surface-2); font-size: 11px; font-weight: var(--font-weight-semibold); }
-    .locate-code-block__body { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 10px; line-height: 1.7; padding: 7px 12px; background: var(--surface-1); overflow-x: auto; white-space: pre; }
+    .locate-code-block__body { font-family: "Cascadia Code", "Fira Code", monospace; font-size: 10px; line-height: 1.7; padding: 7px 12px; background: var(--surface-1); overflow-x: auto; white-space: pre; }
 
-    .locate-causal { margin: 8px 0; padding: 10px 12px; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--surface-2); font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 10px; line-height: 1.55; white-space: pre; overflow-x: auto; color: var(--foreground-secondary); }
+    .locate-causal { margin: 8px 0; padding: 10px 12px; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--surface-2); font-family: "Cascadia Code", "Fira Code", monospace; font-size: 10px; line-height: 1.55; white-space: pre; overflow-x: auto; color: var(--foreground-secondary); }
 
     /* 「Pangu 2.0 flash 整网图」标题：font 简写自带的 line-height 偏小(~15px)导致文字被 overflow:hidden 截断，
        放大 line-height 让字完整显示 */
@@ -508,7 +509,7 @@
       --h8-grad: #8b5cf6;                            /* backward pass */
       --h8-ok: #16a34a; --h8-warn: #ea580c; --h8-crit: var(--danger, #dc2626);
       --h8-sel: var(--highlight-copy-blue-100, #dde8fd);
-      --h8-mono: ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+      --h8-mono: 'Cascadia Code','Fira Code',ui-monospace,'SF Mono',Menlo,Consolas,monospace;
       color: var(--foreground); font-size: 13px; margin: 2px 0 4px;
     }
     .hif8c7 .mono { font-family:var(--h8-mono); }
@@ -803,58 +804,44 @@
       flex-direction: column;
     }
 
-    /* 「分析记录」侧栏面板:内容先留空,占位文案沿用次要文本色 */
-    .twin-pane-empty {
-      padding: var(--space-4, 16px);
-      color: var(--foreground-secondary);
-      font-size: 13px;
-    }
-
-    /* 问题诊断 / 训练监控 / 问题详情 / 底部 Timeline：滚动条默认隐藏，悬浮容器时才浮现（不占布局、无跳动） */
+    /* 问题诊断 / 训练监控 / 问题详情：滚动条默认隐藏，悬浮容器时才浮现（不占布局、无跳动） */
     .twin-pane-scroll,
     .twin-sidebar-body,
-    .twin-locate-chain-view,
-    .twin-timeline-body {
+    .twin-locate-chain-view {
       scrollbar-width: thin;              /* Firefox */
       scrollbar-color: transparent transparent;
     }
     .twin-pane-scroll:hover,
     .twin-sidebar-body:hover,
-    .twin-locate-chain-view:hover,
-    .twin-timeline-body:hover {
+    .twin-locate-chain-view:hover {
       scrollbar-color: var(--border-default) transparent;
     }
     .twin-pane-scroll::-webkit-scrollbar,
     .twin-sidebar-body::-webkit-scrollbar,
-    .twin-locate-chain-view::-webkit-scrollbar,
-    .twin-timeline-body::-webkit-scrollbar {
+    .twin-locate-chain-view::-webkit-scrollbar {
       width: 8px;
       height: 8px;
     }
     .twin-pane-scroll::-webkit-scrollbar-track,
     .twin-sidebar-body::-webkit-scrollbar-track,
-    .twin-locate-chain-view::-webkit-scrollbar-track,
-    .twin-timeline-body::-webkit-scrollbar-track {
+    .twin-locate-chain-view::-webkit-scrollbar-track {
       background: transparent;
     }
     .twin-pane-scroll::-webkit-scrollbar-thumb,
     .twin-sidebar-body::-webkit-scrollbar-thumb,
-    .twin-locate-chain-view::-webkit-scrollbar-thumb,
-    .twin-timeline-body::-webkit-scrollbar-thumb {
+    .twin-locate-chain-view::-webkit-scrollbar-thumb {
       background: transparent;            /* 默认隐藏 */
       border-radius: 4px;
       transition: background var(--duration-fast, 120ms) var(--easing-default, ease);
     }
     .twin-pane-scroll:hover::-webkit-scrollbar-thumb,
     .twin-sidebar-body:hover::-webkit-scrollbar-thumb,
-    .twin-locate-chain-view:hover::-webkit-scrollbar-thumb,
-    .twin-timeline-body:hover::-webkit-scrollbar-thumb {
+    .twin-locate-chain-view:hover::-webkit-scrollbar-thumb {
       background: var(--border-default);  /* 悬浮浮现 */
     }
     .twin-pane-scroll::-webkit-scrollbar-thumb:hover,
     .twin-sidebar-body::-webkit-scrollbar-thumb:hover,
-    .twin-locate-chain-view::-webkit-scrollbar-thumb:hover,
-    .twin-timeline-body::-webkit-scrollbar-thumb:hover {
+    .twin-locate-chain-view::-webkit-scrollbar-thumb:hover {
       background: var(--foreground-muted);
     }
 
@@ -973,7 +960,7 @@
     }
   </style>
 </head>
-<body class="train-twin-page" data-theme="dark" data-model="deepseek" data-task="pretrain" data-hardware="cluster2048">
+<body class="train-twin-page" data-theme="light" data-model="deepseek" data-task="pretrain" data-hardware="cluster2048">
   <section class="pto-ide-frame" data-ide-frame data-host="standalone" aria-label="Training Run Explainable Twin">
     <header class="pto-ide-frame__topbar pto-ide-frame__standalone-chrome">
       <div class="pto-ide-frame__topbar-left">
@@ -1016,14 +1003,6 @@
               <path d="M12 3a6.5 6.5 0 0 0 7.8 8.8A8 8 0 1 1 12 3z"></path>
             </svg>
           </button>
-          <!-- 问题诊断侧栏开关:同一 explorerPane 也可由左侧 activity rail 之外的窗口图标控制,
-               与右侧的 Timeline 面板开关放在一起,中间不隔主题图标;图标为「左侧栏」样式(左侧色块 + 分隔线),默认展开 -->
-          <button class="pto-ide-frame__window-action is-selected" id="explorerPanelToggle" type="button" aria-controls="explorerPane" aria-expanded="true" aria-pressed="true" title="收起 问题诊断" aria-label="收起 问题诊断">
-            <svg class="pto-ide-frame__window-icon" viewBox="0 0 24 24" aria-hidden="true">
-              <rect x="3" y="3" width="18" height="18" rx="2"></rect>
-              <path d="M9 3v18"></path>
-            </svg>
-          </button>
           <button class="pto-ide-frame__window-action is-selected" id="twinTimelineToggle" type="button" data-ide-toggle="visualization" aria-controls="bottomDock" aria-expanded="true" aria-pressed="true" title="隐藏 Timeline 面板" aria-label="隐藏 Timeline 面板">
             <svg class="pto-ide-frame__window-icon" viewBox="0 0 24 24" aria-hidden="true">
               <rect x="3" y="3" width="18" height="18" rx="2"></rect>
@@ -1036,7 +1015,7 @@
 
     <div class="pto-ide-frame__body">
       <nav class="pto-ide-frame__activity-rail pto-ide-frame__standalone-chrome" data-ide-slot="activity-rail" aria-label="Activity rail">
-        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" id="analysisLogToggle" aria-controls="analysisLogPane" aria-expanded="false" aria-pressed="false" title="展开 分析记录" aria-label="展开/收起 分析记录">
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button is-selected" type="button" data-ide-toggle="explorer" aria-controls="explorerPane" aria-expanded="true" aria-pressed="true" title="问题诊断" aria-label="展开/收起 问题诊断">
           <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9l-.81-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"></path>
           </svg>
@@ -1067,16 +1046,7 @@
       <div class="pto-ide-frame__workarea">
         <div class="pto-ide-frame__split" data-ide-split="standalone-vertical" data-split-direction="vertical" data-sizes="72,28" data-min-size="360,140">
           <section class="pto-ide-frame__pane pto-ide-frame__pane--stack" data-ide-pane="main-row">
-            <div class="pto-ide-frame__split" data-ide-split="standalone-main" data-split-direction="horizontal" data-sizes="18,18,64" data-pixel-sizes="240,240" data-min-size="240,240,520">
-              <aside class="pto-ide-frame__pane pto-ide-frame__explorer" data-ide-pane="analysis-log" id="analysisLogPane" aria-label="分析记录" hidden aria-hidden="true">
-                <header class="pto-ide-frame__pane-header">
-                  <span class="pto-ide-frame__pane-title">分析记录</span>
-                </header>
-                <div class="pto-ide-frame__pane-body twin-pane-scroll">
-                  <div class="twin-pane-empty">暂无分析记录</div>
-                </div>
-              </aside>
-
+            <div class="pto-ide-frame__split" data-ide-split="standalone-main" data-split-direction="horizontal" data-sizes="18,82" data-pixel-sizes="280" data-min-size="240,520">
               <aside class="pto-ide-frame__pane pto-ide-frame__explorer" data-ide-pane="explorer" id="explorerPane" aria-label="问题诊断">
                 <header class="pto-ide-frame__pane-header">
                   <span class="pto-ide-frame__pane-title">问题诊断</span>
@@ -1093,18 +1063,9 @@
                         <small><strong>MoE all-to-all 超时导致 loss NaN</strong></small>
                         <small class="diagnosis-desc" data-tooltip="layer 38 router 将 98% token 集中路由到 expert 193,EP rank 23 all-to-all send/recv 死锁,其余 rank 空等超时">layer 38 router 将 98% token 集中路由到 expert 193,EP rank 23 all-to-all send/recv 死锁</small>
                       </div>
-                      <div class="twin-option diagnosis-card" data-diagnosis="perf-compute-bottleneck" role="button" tabindex="0">
-                        <div class="diagnosis-card-head">
-                          <span>问题二</span>
-                          <span class="diagnosis-severity is-p1">P1</span>
-                          <span class="diagnosis-category">性能</span>
-                        </div>
-                        <small><strong>整网耗时下钻：算子带宽瓶颈 + AICPU 回退导致步耗时超标 42%</strong></small>
-                        <small class="diagnosis-desc" data-tooltip="lm_head MatMulV2 vocab 非对齐致 cube_util 仅 49%,CE loss 手写算子链走 AICPU 回退(526ms),PP stage 7 过载 1.82×,MFU 仅 38%">lm_head MatMulV2 vocab 非对齐致 cube_util 仅 49%,AICPU 回退 526ms</small>
-                      </div>
                       <div class="twin-option diagnosis-card" data-diagnosis="qproj-overflow" role="button" tabindex="0">
                         <div class="diagnosis-card-head">
-                          <span>问题三</span>
+                          <span>问题二</span>
                           <span class="diagnosis-severity is-p1">P1</span>
                           <span class="diagnosis-category">精度</span>
                         </div>
@@ -1113,7 +1074,7 @@
                       </div>
                       <div class="twin-option diagnosis-card" data-diagnosis="low-precision-training" role="button" tabindex="0">
                         <div class="diagnosis-card-head">
-                          <span>问题四</span>
+                          <span>问题三</span>
                           <span class="diagnosis-severity is-p1">P1</span>
                           <span class="diagnosis-category">精度</span>
                         </div>
@@ -1122,14 +1083,31 @@
                       </div>
                       <div class="twin-option diagnosis-card" data-diagnosis="nvlink" role="button" tabindex="0">
                         <div class="diagnosis-card-head">
-                          <span>问题五</span>
+                          <span>问题四</span>
                           <span class="diagnosis-severity is-p1">P1</span>
                           <span class="diagnosis-category">Infra</span>
                         </div>
                         <small><strong>HCCS 链路掉线导致 MFU 骤降</strong></small>
                         <small class="diagnosis-desc" data-tooltip="node2 NPU 3 HCCS lane 5 inactive,CRC error 突增,HCCL 回退至 RoCE 慢路径拖慢 PP pipeline,MFU 从55%降至20%">node2 NPU 3 HCCS lane 5 inactive,CRC error 突增,HCCL 回退至 RoCE 慢路径</small>
                       </div>
-
+                      <div class="twin-option diagnosis-card" data-diagnosis="perf-compute-bottleneck" role="button" tabindex="0">
+                        <div class="diagnosis-card-head">
+                          <span>问题五</span>
+                          <span class="diagnosis-severity is-p1">P1</span>
+                          <span class="diagnosis-category">性能</span>
+                        </div>
+                        <small><strong>整网耗时下钻：算子带宽瓶颈 + AICPU 回退导致步耗时超标 42%</strong></small>
+                        <small class="diagnosis-desc" data-tooltip="lm_head MatMulV2 vocab 非对齐致 cube_util 仅 49%,CE loss 手写算子链走 AICPU 回退(526ms),PP stage 7 过载 1.82×,MFU 仅 38%">lm_head MatMulV2 vocab 非对齐致 cube_util 仅 49%,AICPU 回退 526ms</small>
+                      </div>
+                      <div class="twin-option diagnosis-card" data-diagnosis="perf-comm-straggler" role="button" tabindex="0">
+                        <div class="diagnosis-card-head">
+                          <span>问题六</span>
+                          <span class="diagnosis-severity is-p1">P1</span>
+                          <span class="diagnosis-category">性能</span>
+                        </div>
+                        <small><strong>MoE all-to-all 快慢卡：步耗时周期性尖峰、尾延迟恶化</strong></small>
+                        <small class="diagnosis-desc" data-tooltip="router gate bias 漂移致 rank 17/23/41 承接 5× expert token,all-to-all 耗时暴增 32×,其余 61 rank 空等,步耗时 CV=27%">router gate bias 漂移致 rank 17/23/41 承接 5× token,all-to-all 耗时暴增 32×</small>
+                      </div>
                     </div>
                   </section>
                 </div>
@@ -1475,65 +1453,6 @@
   <!-- IDE frame shell init: workbench-shell (resize kernel) must load before ide-frame (split/explorer/dock wiring) -->
   <script src="./js/workbench-shell-pattern.js"></script>
   <script src="./js/ide-frame-pattern.js"></script>
-  <script>
-    // 「问题诊断」「分析记录」为 standalone-main split 里两个可独立展开/收起的侧栏面板;
-    // ide-frame-pattern.js 内建的 explorer 折叠逻辑只支持单一 toggle/pane 配对,这里改为本地维护
-    // 两组开关状态。必须等 ide-frame-pattern.js 的 DOMContentLoaded 初始化(创建 split gutter)
-    // 跑完再做首次同步,否则收起的「分析记录」旁会残留一条可拖拽的空 gutter。
-    (function initTwinSidebarToggles() {
-      function run() {
-        const explorerPane = document.getElementById('explorerPane');
-        const analysisPane = document.getElementById('analysisLogPane');
-        const explorerBtn = document.getElementById('explorerPanelToggle');
-        const analysisBtn = document.getElementById('analysisLogToggle');
-        if (!explorerPane || !analysisPane || !explorerBtn || !analysisBtn) return;
-
-        const gutterAfter = (pane) => (
-          pane.nextElementSibling && pane.nextElementSibling.matches('.pto-workbench-shell__split-gutter')
-            ? pane.nextElementSibling
-            : null
-        );
-
-        function applyPane(pane, btn, visible, showLabel, hideLabel) {
-          pane.hidden = !visible;
-          pane.setAttribute('aria-hidden', String(!visible));
-          btn.classList.toggle('is-selected', visible);
-          btn.setAttribute('aria-expanded', String(visible));
-          btn.setAttribute('aria-pressed', String(visible));
-          const label = visible ? hideLabel : showLabel;
-          btn.title = label;
-          btn.setAttribute('aria-label', label);
-        }
-
-        function syncGutters() {
-          // DOM 顺序为 analysisPane, explorerPane, main-content:
-          // 中间 gutter 夹在「分析记录」和「问题诊断」之间,右侧 gutter 夹在「问题诊断」和主内容之间
-          const middleGutter = gutterAfter(analysisPane);
-          const rightGutter = gutterAfter(explorerPane);
-          if (middleGutter) middleGutter.hidden = analysisPane.hidden || explorerPane.hidden;
-          if (rightGutter) rightGutter.hidden = explorerPane.hidden;
-        }
-
-        explorerBtn.addEventListener('click', () => {
-          applyPane(explorerPane, explorerBtn, explorerPane.hidden, '展开 问题诊断', '收起 问题诊断');
-          syncGutters();
-        });
-
-        analysisBtn.addEventListener('click', () => {
-          applyPane(analysisPane, analysisBtn, analysisPane.hidden, '展开 分析记录', '收起 分析记录');
-          syncGutters();
-        });
-
-        syncGutters();
-      }
-
-      if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', run, { once: true });
-      } else {
-        run();
-      }
-    })();
-  </script>
   <script src="./model-graphviz-embed/pattern.js"></script>
   <script src="./js/opv-modelviz-schema.js"></script>
   <script src="./js/opv-modelviz.js"></script>

@@ -5,6 +5,17 @@
 
 ---
 
+## 2026-07-20 — `training-monitoring-v2.html` 新增问题一「详情与修复建议」抽屉，顶栏进度条简化为常显态
+
+- 新增「详情与修复建议」抽屉：入口从顶栏进度条面板移到点击问题点后弹出的中央「问题定位」卡片(`#diagnosisLocator`)上，按钮打开右侧抽屉，iframe 内嵌 `training-monitoring.html`（新增 `?embed=locate-sidebar` 内嵌模式，只渲染 `.twin-monitor-sidebar` 训练监控侧栏，配合已有的 `?diagnosis=moe-a2a` 深链自动展开定位链面板）。
+- 顶栏「训练进度」缩略部件不再靠悬浮展开问题列表面板：移除 `#progressAxis`/`#progressConnectors`/`#progressIssues`（连带 `renderProgressIssues()`/`layoutProgressConnectors()`），已训练时长默认常显，悬浮/聚焦不再触发部件变宽，避免轨道问题标记点跟着挪位导致点不中。
+- `css/training-run-twin.css` 新增 `?embed=locate-sidebar` 内嵌样式规则。
+
+## 2026-07-20 — `training-monitoring-v2.html` 顶栏进度条面板合并为一体 + 问题一定位卡新增「关闭」
+
+- 顶栏「训练进度」缩略条与悬浮问题列表面板不再是两块分离浮层：面板宽度改为贴齐缩略条(不再固定 300px)，二者悬浮时一起变宽(`min-width`)+ 面板向下变高(`max-height`)，衔接处去圆角/去边框做到零缝拼接。
+- 移除进度条面板里的「返回」按钮(`#timeMachineBack`)；点击「问题一」后架构图上方弹出的红色定位卡新增「关闭」按钮(`#diagnosisLocatorClose`)承接同一个 `exitTimeMachine()` 退出回放逻辑，且该卡片填色改为复用进度条面板「问题1」条目(`.wzh-tm-issue.is-p0`)同一套红色 inset 光晕，两处色感保持一致。
+
 ## 2026-07-20 — `wzh_training-monitoring.html` 更名为 `training-monitoring-v2.html`，V1 入口改回旧文件
 
 - 文件改名以贴合其 V2 定位；同步更新引用：`launch-v2.html`「训练任务监控」卡的 `href`（指向新文件）、`js/training-run-twin.js` 内一处说明性注释。
