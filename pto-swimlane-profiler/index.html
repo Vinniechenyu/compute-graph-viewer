@@ -2955,7 +2955,7 @@ function drawAxis() {
     actx.fillStyle = hovered ? 'rgba(255,255,255,0.94)' : 'rgba(255,255,255,0.62)';
     actx.font = "600 10px 'Inter', sans-serif";
     actx.textAlign = 'left';
-    actx.fillText('Stitch ' + m.label, x + 4, 22);
+    actx.fillText('DevTask ' + m.label, x + 4, 22);
     if (hovered) {
       actx.fillStyle = 'rgba(255,255,255,0.78)';
       actx.fillRect(x + 4, 29, 44, 1);
@@ -4151,10 +4151,11 @@ function overviewHtml() {
   let html = defaultReportHtml();
   if (state.reportTab !== 'overview') return html;
   html += `<div class="sl-insp-section">
-    <div class="sl-insp-hint">4 个 Stitch，按 <b>${MODEL.groups.length} 个诊断分组</b>组织。Wrap 是运行时任务分组，
+    <div class="sl-insp-hint">4 个 DevTask（0–3），按 <b>${MODEL.groups.length} 个诊断分组</b>组织。Wrap 是运行时任务分组，
     不等同于物理 Core 编号；同一物理泳道在不同调用中可承载不同 Wrap。${escapeHtml(CURRENT_RUN.iterationDefinition)}<br>
     任务颜色按<b>语义诊断分组</b>编码，不按 Core、Wrap 或异常等级编码。依赖实线连接 task/HUB 的结束与开始；
-    同步虚线连接 SET 与 WAIT release。青色圆点竖线是 SET，橙色三角竖线是 WAIT，橙色斜纹仅表示实际 blocked interval。</div>
+    诊断分组不是调度分组；多个语义组会在同一 HUB ready set 中并行。同步虚线连接 SET 与 WAIT release。
+    青色圆点竖线是 SET，橙色三角竖线是 WAIT，橙色斜纹仅表示实际 blocked interval。</div>
   </div>
   <div class="sl-insp-section"><div class="sl-insp-section-label">${MODEL.groups.length} 个 Mix 子图 · 同步等待占比</div>`;
   MODEL.groups.forEach((g) => {
@@ -4242,7 +4243,7 @@ function wrapDetailHtml(w) {
       <span class="sl-pill" style="color:${grp.color}"><span class="sl-dot" style="width:8px;height:8px;background:${grp.color}"></span>${grp.short}</span>
       <span class="sl-pill ${ws.ratio >= 0.4 ? 'is-warn' : 'is-ok'}">${ws.ratio >= 0.4 ? '同步瓶颈' : '健康'}</span>
     </div>
-    <div class="sl-insp-hint">Wrap 是运行时 1C2V 任务分组，不是物理 Core 编号。下表泳道名取 Stitch 1 的映射；后续 Stitch 会重映射。</div>
+    <div class="sl-insp-hint">Wrap 是运行时 1C2V 任务分组，不是物理 Core 编号。下表泳道名取 DevTask 0 的映射；后续 DevTask 会重映射。</div>
   </div>
   <div class="sl-report-card"><div class="sl-report-card__title">单元内三核 · 任务时间与跨核同步等待</div>`;
   cores3.forEach((c) => {
@@ -4392,7 +4393,7 @@ function taskDetailHtml(t) {
       ${t.isSubtask ? `<div class="sl-kv"><span class="sl-kv-key">所属父任务</span><span class="sl-kv-val mono">${escapeHtml(t.parentTaskName)}</span></div>
       <div class="sl-kv"><span class="sl-kv-key">子任务类型</span><span class="sl-kv-val">${t.subtaskKind === 'wait' ? '同步等待' : escapeHtml(t.primarySublane || '计算')}</span></div>` : ''}
       <div class="sl-kv"><span class="sl-kv-key">所属 Wrap</span><span class="sl-kv-val">${t.wrap != null ? 'Wrap ' + wrapInstanceDisplayId(t.wrap, t.iteration) : '—'}</span></div>
-      <div class="sl-kv"><span class="sl-kv-key">Stitch</span><span class="sl-kv-val">${t.stitchIndex != null ? 'Stitch ' + (t.stitchIndex + 1) : '—'}</span></div>
+      <div class="sl-kv"><span class="sl-kv-key">DevTask</span><span class="sl-kv-val">${t.stitchIndex != null ? 'DevTask ' + t.stitchIndex : '—'}</span></div>
       <div class="sl-kv"><span class="sl-kv-key">runtime wrapId</span><span class="sl-kv-val">${t.wrapId ?? t.rawWrapId ?? '—'}</span></div>
       <div class="sl-kv"><span class="sl-kv-key">local opWrapId</span><span class="sl-kv-val">${t.opWrapId ?? '—'}</span></div>
       <div class="sl-kv"><span class="sl-kv-key">seqNo / taskId</span><span class="sl-kv-val mono">${t.seqNo ?? '—'} / ${t.taskId ?? '—'}</span></div>
