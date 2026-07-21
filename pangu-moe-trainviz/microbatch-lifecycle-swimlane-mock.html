@@ -729,9 +729,31 @@
         }
         return events;
       }
+      function eventsForDecoderStagePhase(scope, rankMeta, phase, phaseStart, computeEnd) {
+        const forward = phase === 'forward';
+        const layerCount = scope.layerEnd - scope.layerStart + 1;
+        const layers = forward
+          ? Array.from({ length: layerCount }, (_, index) => scope.layerStart + index)
+          : Array.from({ length: layerCount }, (_, index) => scope.layerEnd - index);
+        const weights = layers.map(layer => 1 + (layer % 3 === 0 ? .05 : 0));
+        const weightTotal = weights.reduce((sum, value) => sum + value, 0);
+        const stageBudget = Math.max(.1, computeEnd - phaseStart);
+        const events = [];
+        let cursor = phaseStart;
+        layers.forEach((layer, index) => {
+          const duration = stageBudget * weights[index] / weightTotal;
+          const windowEnd = index === layers.length - 1 ? computeEnd : +(cursor + duration).toFixed(3);
+          events.push(...eventsForOperatorWindow(scope, rankMeta, phase, rankOperatorSpecs, layer, cursor, windowEnd));
+          cursor = windowEnd;
+        });
+        if (!forward) {
+          events.push(gradientAllReduceEvent(scope, rankMeta, phaseStart, computeEnd, `L${scope.layerEnd}–L${scope.layerStart}`));
+        }
+        return events;
+      }
       function eventsForRankPhase(scope, rankMeta, phase, phaseStart, computeEnd) {
         if (scope.stage === 0) return eventsForPp0StagePhase(scope, rankMeta, phase, phaseStart, computeEnd);
-        return eventsForOperatorPhase(scope, rankMeta, phase);
+        return eventsForDecoderStagePhase(scope, rankMeta, phase, phaseStart, computeEnd);
       }
       function buildRankHierarchyRows() {
         const result = [];
@@ -800,11 +822,9 @@
               depth: 3, parentRow: groupId, rowType: 'rank',
               meta: {
                 ...scope, ...meta,
-                ...(profile ? {
-                  detailFwdStart: forwardStart, detailFwdEnd: forwardEnd,
-                  detailBwdStart: backwardStart, detailBwdEnd: backwardEnd
-                } : {}),
-                detailMode: profile ? 'full-stage' : 'representative-layer'
+                detailFwdStart: forwardStart, detailFwdEnd: forwardEnd,
+                detailBwdStart: backwardStart, detailBwdEnd: backwardEnd,
+                detailMode: 'full-stage'
               },
               detailEvents
             }));
@@ -1468,15 +1488,6 @@
             ctx.restore();
           }
           drawDirectionalLaneEdgeTexture(ctx, lane, x, range, y, rowH);
-          drawLaneConnector(ctx, lane, y, rowH, subtle);
-          const contentX = 12 + (lane.depth || 0) * 15 + (lane.depth ? 13 : 0);
-          const rowExpandRect = drawRowExpand(ctx, lane, contentX, y, rowH);
-          const labelX = contentX + (rowExpandRect ? 20 : 0);
-          const rowLabelRect = expandedRank
-            ? drawExpandedRankHeader(ctx, lane, labelX, y, rowH, gutter - labelX - 10, text)
-            : drawLaneHeader(ctx, lane, labelX, y, rowH, gutter - labelX - 10, text);
-          hitRects.push({ ...rowLabelRect, row: lane, action: 'row-label' });
-          if (rowExpandRect) hitRects.push({ ...rowExpandRect, row: lane, action: 'toggle-row' });
 
           eventsForLane(lane).forEach(item => {
             if (item.endMs < range.start || item.startMs > range.end) return;
@@ -1544,6 +1555,35 @@
             hitRects.push({ x: barX, y: barY - 1, w: barW, h: TIMELINE_LAYOUT.eventHeight + 4, item, action: 'select' });
           });
         });
+
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.fillStyle = surface;
+        ctx.fillRect(0, 0, gutter, headerH);
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = text;
+        ctx.font = `600 11px ${css('--font-sans') || 'sans-serif'}`;
+        ctx.fillText('泳道 / 对象', 12, 20);
+        laneLayouts.forEach(({ lane, y, rowH }, index) => {
+          ctx.fillStyle = index % 2
+            ? (css('--surface-1') || surface)
+            : (css('--background') || '#111111');
+          ctx.fillRect(0, y, gutter, rowH);
+          ctx.strokeStyle = subtle;
+          ctx.beginPath(); ctx.moveTo(0, y + rowH + .5); ctx.lineTo(gutter, y + rowH + .5); ctx.stroke();
+          drawLaneConnector(ctx, lane, y, rowH, subtle);
+          const expandedRank = lane.rowType === 'rank' && isExpandedRow(lane);
+          const contentX = 12 + (lane.depth || 0) * 15 + (lane.depth ? 13 : 0);
+          const rowExpandRect = drawRowExpand(ctx, lane, contentX, y, rowH);
+          const labelX = contentX + (rowExpandRect ? 20 : 0);
+          const rowLabelRect = expandedRank
+            ? drawExpandedRankHeader(ctx, lane, labelX, y, rowH, gutter - labelX - 10, text)
+            : drawLaneHeader(ctx, lane, labelX, y, rowH, gutter - labelX - 10, text);
+          hitRects.push({ ...rowLabelRect, row: lane, action: 'row-label', fixed: true });
+          if (rowExpandRect) hitRects.push({ ...rowExpandRect, row: lane, action: 'toggle-row', fixed: true });
+        });
+        ctx.strokeStyle = css('--border-default') || subtle;
+        ctx.beginPath(); ctx.moveTo(gutter - .5, 0); ctx.lineTo(gutter - .5, height); ctx.stroke();
       }
 
       function tooltipHtml(item) {
@@ -1560,9 +1600,12 @@
 
       function hitAt(event) {
         const rect = canvas.getBoundingClientRect();
-        const px = event.clientX - rect.left + scroll.scrollLeft;
+        const localX = event.clientX - rect.left;
         const py = event.clientY - rect.top;
-        return [...hitRects].reverse().find(hit => px >= hit.x && px <= hit.x + hit.w && py >= hit.y && py <= hit.y + hit.h) || null;
+        return [...hitRects].reverse().find(hit => {
+          const px = hit.fixed ? localX : localX + scroll.scrollLeft;
+          return px >= hit.x && px <= hit.x + hit.w && py >= hit.y && py <= hit.y + hit.h;
+        }) || null;
       }
 
       canvas.addEventListener('mousemove', event => {
