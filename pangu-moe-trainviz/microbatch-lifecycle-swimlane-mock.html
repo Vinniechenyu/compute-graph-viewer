@@ -126,7 +126,26 @@
     .timeline-toolbar { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
     .timeline-toolbar .segmented button { min-height: 26px; }
     .timeline-actions { display: flex; align-items: center; gap: var(--space-2); }
-    .zoom-control-readout { min-width: 44px; }
+    .timeline-actions.zoom-control-group .btn.btn-sm.btn-icon {
+      width: 28px;
+      min-width: 28px;
+      max-width: 28px;
+      height: 28px;
+      min-height: 28px;
+      padding: 0;
+      flex: 0 0 28px;
+      aspect-ratio: 1;
+      border-radius: 8px;
+    }
+    .zoom-control-readout { min-width: 48px; text-align: center; }
+    .zoom-slider {
+      width: 132px;
+      height: 28px;
+      margin: 0 2px;
+      accent-color: var(--primary);
+      cursor: pointer;
+    }
+    .zoom-slider:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
     .info-icon { font-weight: var(--font-weight-bold); }
     .timeline-scroll {
       position: relative;
@@ -134,7 +153,13 @@
       overflow: auto;
       background: var(--background);
     }
-    #timelineCanvas { display: block; cursor: crosshair; }
+    .timeline-surface { position: relative; min-height: 100%; }
+    #timelineCanvas {
+      position: sticky;
+      left: 0;
+      display: block;
+      cursor: crosshair;
+    }
     .timeline-footer {
       display: flex;
       align-items: center;
@@ -213,7 +238,27 @@
     }
     .statusbar span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-    .pto-swimlane-task-tooltip { position: fixed; z-index: var(--z-overlay); }
+    .pto-swimlane-task-tooltip {
+      position: fixed;
+      z-index: var(--z-overlay);
+      width: min(460px, calc(100vw - 16px));
+      min-width: 320px;
+      max-width: calc(100vw - 16px);
+    }
+    .pto-swimlane-task-tooltip__row {
+      display: grid;
+      grid-template-columns: 72px minmax(0, 1fr);
+      align-items: start;
+      gap: 12px;
+    }
+    .pto-swimlane-task-tooltip__key {
+      min-width: 0;
+      white-space: nowrap;
+    }
+    .pto-swimlane-task-tooltip__value {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
 
   </style>
 </head>
@@ -244,13 +289,18 @@
         </div>
         <div class="timeline-actions zoom-control-group">
           <button class="btn btn-sm btn-icon" id="zoomOut" type="button" aria-label="缩小">−</button>
-          <output class="zoom-control-readout" id="zoomValue">1.0×</output>
+          <input class="zoom-slider" id="zoomSlider" type="range" min="0" max="6" step="1" value="0"
+            aria-label="时间轴缩放倍率" aria-valuemin="1" aria-valuemax="64" aria-valuenow="1"
+            title="离散缩放：1× / 2× / 4× / 8× / 16× / 32× / 64×">
           <button class="btn btn-sm btn-icon" id="zoomIn" type="button" aria-label="放大">+</button>
+          <output class="zoom-control-readout" id="zoomValue">1×</output>
           <button class="btn btn-sm btn-icon info-icon" id="objectInfoBtn" type="button" aria-label="查看对象层级" aria-expanded="false">i</button>
         </div>
       </header>
       <div class="timeline-scroll" id="timelineScroll">
-        <canvas id="timelineCanvas" aria-label="MB07 微批次生命周期泳道"></canvas>
+        <div class="timeline-surface" id="timelineSurface">
+          <canvas id="timelineCanvas" aria-label="MB07 微批次生命周期泳道"></canvas>
+        </div>
       </div>
       <footer class="timeline-footer">
         <div class="legend">
@@ -309,6 +359,14 @@
         ffn_residual_add: '#8B5CF6',
         gradient_all_reduce: '#06B6D4'
       });
+      const TIMELINE_LAYOUT = Object.freeze({
+        rowHeight: 22,
+        eventHeight: 16,
+        expandedRankHeight: 58,
+        rankTrackPitch: 18,
+        rankTrackTop: 2
+      });
+      const ZOOM_STEPS = Object.freeze([1, 2, 4, 8, 16, 32, 64]);
 
       const stageEvents = [
         event('pp0-fwd', 'PP0 · L0–L11', '前向计算 · 低层块', 'forward', 0, 31.80, { stage: 'PP0', layers: 'L0–L11', flops: '—' }),
@@ -473,21 +531,25 @@
         '0-0': Object.freeze({
           role: 'TP0 / EP0', hiddenShard: 'H[0:1280]', attentionHeads: 'head 0–23',
           localExperts: 'E0–E127', routedTokenSlots: '31.2k', expertLoad: '0.95×', hotExperts: 'E12 / E47 / E93',
+          forwardStartOffset: 0, backwardStartOffset: .03,
           forwardSyncWait: .86, backwardSyncWait: .54, computeScale: .97, computeSkew: -.004
         }),
         '0-1': Object.freeze({
           role: 'TP0 / EP1', hiddenShard: 'H[0:1280]', attentionHeads: 'head 0–23',
           localExperts: 'E128–E255', routedTokenSlots: '34.7k', expertLoad: '1.06×', hotExperts: 'E141 / E188 / E233',
+          forwardStartOffset: .04, backwardStartOffset: 0,
           forwardSyncWait: 0, backwardSyncWait: 0, computeScale: 1.04, computeSkew: .006
         }),
         '1-0': Object.freeze({
           role: 'TP1 / EP0', hiddenShard: 'H[1280:2560]', attentionHeads: 'head 24–47',
           localExperts: 'E0–E127', routedTokenSlots: '32.0k', expertLoad: '0.98×', hotExperts: 'E12 / E64 / E101',
+          forwardStartOffset: .02, backwardStartOffset: .02,
           forwardSyncWait: .52, backwardSyncWait: .33, computeScale: .99, computeSkew: .001
         }),
         '1-1': Object.freeze({
           role: 'TP1 / EP1', hiddenShard: 'H[1280:2560]', attentionHeads: 'head 24–47',
           localExperts: 'E128–E255', routedTokenSlots: '33.6k', expertLoad: '1.03×', hotExperts: 'E141 / E196 / E244',
+          forwardStartOffset: .06, backwardStartOffset: .05,
           forwardSyncWait: .18, backwardSyncWait: .12, computeScale: 1.02, computeSkew: .004
         })
       });
@@ -636,9 +698,8 @@
           }
         );
       }
-      function eventsForPp0StagePhase(scope, rankMeta, phase, computeEnd) {
+      function eventsForPp0StagePhase(scope, rankMeta, phase, phaseStart, computeEnd) {
         const forward = phase === 'forward';
-        const phaseStart = forward ? scope.fwdStart : scope.bwdStart;
         const embeddingDuration = forward ? 1.18 : 1.46;
         const layers = forward
           ? Array.from({ length: 12 }, (_, index) => index)
@@ -668,8 +729,8 @@
         }
         return events;
       }
-      function eventsForRankPhase(scope, rankMeta, phase, computeEnd) {
-        if (scope.stage === 0) return eventsForPp0StagePhase(scope, rankMeta, phase, computeEnd);
+      function eventsForRankPhase(scope, rankMeta, phase, phaseStart, computeEnd) {
+        if (scope.stage === 0) return eventsForPp0StagePhase(scope, rankMeta, phase, phaseStart, computeEnd);
         return eventsForOperatorPhase(scope, rankMeta, phase);
       }
       function buildRankHierarchyRows() {
@@ -684,7 +745,8 @@
           const groupEvents = [
             event(`${groupId}-forward`, `PP${scope.stage} Rank 组`, '4 Rank 并行 · Forward', 'forward', scope.fwdStart, scope.fwdEnd, {
               rankGroup: `Rank ${rankIds[0]}–${rankIds.at(-1)}`, dpReplica: `DP${PARALLEL_WORLD.activeDp}`,
-              topology: 'TP2 × EP2', stage: `PP${scope.stage}`, layers: `L${scope.layerStart}–L${scope.layerEnd}`, fidelity: '32-Rank 模拟拓扑'
+              topology: 'TP2 × EP2', stage: `PP${scope.stage}`, layers: `L${scope.layerStart}–L${scope.layerEnd}`,
+              envelope: '最早 Rank 启动 → 最晚 Rank 完成', fidelity: '32-Rank 模拟拓扑'
             }),
             event(`${groupId}-backward`, `PP${scope.stage} Rank 组`, '4 Rank 并行 · Backward', 'backward', scope.bwdStart, scope.bwdEnd, {
               rankGroup: `Rank ${rankIds[0]}–${rankIds.at(-1)}`, dpReplica: `DP${PARALLEL_WORLD.activeDp}`,
@@ -697,27 +759,29 @@
           rankMeta.forEach(meta => {
             const rankId = `rank-pp${scope.stage}-r${meta.rank}`;
             const profile = rankExecutionProfile(scope, meta);
+            const forwardStart = profile ? +(scope.fwdStart + profile.forwardStartOffset).toFixed(2) : scope.fwdStart;
+            const backwardStart = profile ? +(scope.bwdStart + profile.backwardStartOffset).toFixed(2) : scope.bwdStart;
             const forwardEnd = profile ? +(scope.fwdEnd - profile.forwardSyncWait).toFixed(2) : scope.fwdEnd;
             const backwardEnd = profile ? +(scope.bwdEnd - profile.backwardSyncWait).toFixed(2) : scope.bwdEnd;
-            const forwardOps = eventsForRankPhase(scope, meta, 'forward', forwardEnd);
-            const backwardOps = eventsForRankPhase(scope, meta, 'backward', backwardEnd);
+            const forwardOps = eventsForRankPhase(scope, meta, 'forward', forwardStart, forwardEnd);
+            const backwardOps = eventsForRankPhase(scope, meta, 'backward', backwardStart, backwardEnd);
             const rankEvents = [
-              event(`${rankId}-forward`, `Rank ${meta.rank}`, `F · L${scope.layerStart}–L${scope.layerEnd}${profile ? ` · ${profile.role}` : ''}`, 'forward', scope.fwdStart, forwardEnd, {
+              event(`${rankId}-forward`, `Rank ${meta.rank}`, `F · L${scope.layerStart}–L${scope.layerEnd}${profile ? ` · ${profile.role}` : ''}`, 'forward', forwardStart, forwardEnd, {
                 rankId: `Rank ${meta.rank}`, dpReplica: `DP${PARALLEL_WORLD.activeDp}`, tpShard: `TP${meta.tp}`, epShard: `EP${meta.ep}`,
                 stage: `PP${scope.stage}`, layers: `L${scope.layerStart}–L${scope.layerEnd}`, representativeLayer: `L${scope.layerEnd}`,
                 ...(profile ? {
                   rankRole: profile.role, localTensorShard: profile.hiddenShard, localAttentionHeads: profile.attentionHeads,
                   localExperts: profile.localExperts, routedTokenSlots: profile.routedTokenSlots, expertLoad: profile.expertLoad,
-                  syncWait: `${profile.forwardSyncWait.toFixed(2)} ms`
+                  startOffset: `${profile.forwardStartOffset.toFixed(2)} ms`, syncWait: `${profile.forwardSyncWait.toFixed(2)} ms`
                 } : {}), fidelity: profile ? '模型配置约束 + 确定性模拟时序' : '阶段级模拟时序'
               }),
-              event(`${rankId}-backward`, `Rank ${meta.rank}`, `B · L${scope.layerEnd}–L${scope.layerStart}${profile ? ` · ${profile.role}` : ''}`, 'backward', scope.bwdStart, backwardEnd, {
+              event(`${rankId}-backward`, `Rank ${meta.rank}`, `B · L${scope.layerEnd}–L${scope.layerStart}${profile ? ` · ${profile.role}` : ''}`, 'backward', backwardStart, backwardEnd, {
                 rankId: `Rank ${meta.rank}`, dpReplica: `DP${PARALLEL_WORLD.activeDp}`, tpShard: `TP${meta.tp}`, epShard: `EP${meta.ep}`,
                 stage: `PP${scope.stage}`, layers: `L${scope.layerEnd}–L${scope.layerStart}`, representativeLayer: `L${scope.layerEnd}`,
                 ...(profile ? {
                   rankRole: profile.role, localTensorShard: profile.hiddenShard, localAttentionHeads: profile.attentionHeads,
                   localExperts: profile.localExperts, routedTokenSlots: profile.routedTokenSlots, expertLoad: profile.expertLoad,
-                  syncWait: `${profile.backwardSyncWait.toFixed(2)} ms`
+                  startOffset: `${profile.backwardStartOffset.toFixed(2)} ms`, syncWait: `${profile.backwardSyncWait.toFixed(2)} ms`
                 } : {}), fidelity: profile ? '模型配置约束 + 确定性模拟时序' : '阶段级模拟时序'
               })
             ];
@@ -733,7 +797,15 @@
             if (forwardSyncEvent) { rankEvents.push(forwardSyncEvent); detailEvents.push(forwardSyncEvent); }
             if (backwardSyncEvent) { rankEvents.push(backwardSyncEvent); detailEvents.push(backwardSyncEvent); }
             result.push(row(rankId, `Rank ${meta.rank}`, rankEvents, 'rank', {
-              depth: 3, parentRow: groupId, rowType: 'rank', meta: { ...scope, ...meta, detailMode: profile ? 'full-stage' : 'representative-layer' },
+              depth: 3, parentRow: groupId, rowType: 'rank',
+              meta: {
+                ...scope, ...meta,
+                ...(profile ? {
+                  detailFwdStart: forwardStart, detailFwdEnd: forwardEnd,
+                  detailBwdStart: backwardStart, detailBwdEnd: backwardEnd
+                } : {}),
+                detailMode: profile ? 'full-stage' : 'representative-layer'
+              },
               detailEvents
             }));
           });
@@ -806,6 +878,7 @@
 
       const canvas = document.getElementById('timelineCanvas');
       const scroll = document.getElementById('timelineScroll');
+      const timelineSurface = document.getElementById('timelineSurface');
       const tree = document.getElementById('objectTree');
       const treeSearch = document.getElementById('treeSearch');
       const objectInfoBtn = document.getElementById('objectInfoBtn');
@@ -1070,7 +1143,8 @@
           graphNodeId: 'ModelViz 节点', collective: 'Collective', participants: '参与 Rank', stream: '执行流', phase: '阶段', fidelity: '数据口径',
           rankRole: 'Rank 角色', localTensorShard: '本地张量分片', localAttentionHeads: '本地 Attention Heads',
           localExperts: '本地专家', routedTokenSlots: '路由 Token Slots', expertLoad: '专家负载', hotExperts: '热点专家',
-          collectivePayload: 'Collective 载荷', syncWait: '同步等待', syncPoint: '同步点'
+          collectivePayload: 'Collective 载荷', startOffset: '启动偏移', syncWait: '同步等待', syncPoint: '同步点',
+          envelope: '父级包络'
         };
         return labels[key] || key.replace(/([A-Z])/g, ' $1').replace(/^./, char => char.toUpperCase());
       }
@@ -1270,8 +1344,8 @@
       }
 
       function drawExpandedRankHeader(ctx, lane, x, y, rowH, maxWidth, textColor) {
-        const tagH = 18;
-        const tagY = y + 4;
+        const tagH = TIMELINE_LAYOUT.eventHeight;
+        const tagY = y + TIMELINE_LAYOUT.rankTrackTop;
         ctx.save();
         ctx.font = `650 10px ${css('--font-mono') || 'monospace'}`;
         const tagText = fitCanvasText(ctx, lane.label, Math.max(24, maxWidth - 92));
@@ -1290,7 +1364,11 @@
         ctx.fillStyle = css('--foreground-muted') || '#888';
         ctx.font = `600 9px ${css('--font-mono') || 'monospace'}`;
         ctx.textAlign = 'right';
-        trackLabels.forEach((label, track) => ctx.fillText(label, x + maxWidth, y + 13.5 + track * 21));
+        trackLabels.forEach((label, track) => ctx.fillText(
+          label,
+          x + maxWidth,
+          y + TIMELINE_LAYOUT.rankTrackTop + TIMELINE_LAYOUT.eventHeight / 2 + track * TIMELINE_LAYOUT.rankTrackPitch
+        ));
         ctx.restore();
         return { x, y, w: maxWidth, h: rowH };
       }
@@ -1320,8 +1398,8 @@
         const dpr = Math.min(window.devicePixelRatio || 1, 2);
         const gutter = 236;
         const headerH = 48;
-        const baseRowH = 30;
-        const expandedRankH = 72;
+        const baseRowH = TIMELINE_LAYOUT.rowHeight;
+        const expandedRankH = TIMELINE_LAYOUT.expandedRankHeight;
         let layoutY = headerH;
         const laneLayouts = list.map(lane => {
           const rowH = lane.rowType === 'rank' && isExpandedRow(lane) ? expandedRankH : baseRowH;
@@ -1332,13 +1410,16 @@
         const viewportW = Math.max(640, scroll.clientWidth);
         const width = Math.round(gutter + Math.max(520, viewportW - gutter) * zoom);
         const height = layoutY + 12;
-        canvas.style.width = `${width}px`;
+        timelineSurface.style.width = `${width}px`;
+        timelineSurface.style.height = `${height}px`;
+        canvas.style.width = `${viewportW}px`;
         canvas.style.height = `${height}px`;
-        canvas.width = Math.round(width * dpr);
+        canvas.width = Math.round(viewportW * dpr);
         canvas.height = Math.round(height * dpr);
         const ctx = canvas.getContext('2d');
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        ctx.clearRect(0, 0, width, height);
+        ctx.clearRect(0, 0, viewportW, height);
+        ctx.translate(-scroll.scrollLeft, 0);
         hitRects = [];
 
         const plotLeft = gutter;
@@ -1381,7 +1462,7 @@
             ctx.save();
             ctx.strokeStyle = rgbaFromHex('#ffffff', .055);
             for (let track = 1; track < 3; track += 1) {
-              const dividerY = y + 4 + track * 21;
+              const dividerY = y + TIMELINE_LAYOUT.rankTrackTop + track * TIMELINE_LAYOUT.rankTrackPitch - 1;
               ctx.beginPath(); ctx.moveTo(gutter, dividerY + .5); ctx.lineTo(width, dividerY + .5); ctx.stroke();
             }
             ctx.restore();
@@ -1404,7 +1485,9 @@
             const barX = x(start);
             const barW = Math.max(3, x(end) - barX);
             const track = expandedRank ? Math.max(0, Math.min(2, Number(item.metrics.track) || 0)) : 0;
-            const barY = expandedRank ? y + 4 + track * 21 : y + Math.round((rowH - 18) / 2);
+            const barY = expandedRank
+              ? y + TIMELINE_LAYOUT.rankTrackTop + track * TIMELINE_LAYOUT.rankTrackPitch
+              : y + Math.round((rowH - TIMELINE_LAYOUT.eventHeight) / 2);
             const selected = item.id === selectedId;
             if (item.kind === 'hold') {
               const bandH = 16;
@@ -1447,18 +1530,18 @@
               return;
             }
             window.PtoSwimlaneTaskPattern.drawTaskBar(ctx, {
-              x: barX, y: barY, width: barW, height: 18, baseColor: colorFor(item),
+              x: barX, y: barY, width: barW, height: TIMELINE_LAYOUT.eventHeight, baseColor: colorFor(item),
               task: { label: item.label, opName: item.label }, isSelected: selected,
               isRelated: hoverHit?.item?.metrics?.transactionId && hoverHit.item.metrics.transactionId === item.metrics.transactionId,
               fontFamily: css('--font-mono') || 'monospace'
             });
             if (item.kind === 'forward' || item.kind === 'backward') {
-              drawChevronTrack(ctx, barX, barY, barW, 18, item.kind, {
+              drawChevronTrack(ctx, barX, barY, barW, TIMELINE_LAYOUT.eventHeight, item.kind, {
                 step: 6, inset: .65, lineWidth: .55, radius: 3, color: 'rgba(255,255,255,.30)'
               });
-              redrawTaskLabel(ctx, item, barX, barY, barW, 18);
+              redrawTaskLabel(ctx, item, barX, barY, barW, TIMELINE_LAYOUT.eventHeight);
             }
-            hitRects.push({ x: barX, y: barY, w: barW, h: 22, item, action: 'select' });
+            hitRects.push({ x: barX, y: barY - 1, w: barW, h: TIMELINE_LAYOUT.eventHeight + 4, item, action: 'select' });
           });
         });
       }
@@ -1477,7 +1560,7 @@
 
       function hitAt(event) {
         const rect = canvas.getBoundingClientRect();
-        const px = event.clientX - rect.left;
+        const px = event.clientX - rect.left + scroll.scrollLeft;
         const py = event.clientY - rect.top;
         return [...hitRects].reverse().find(hit => px >= hit.x && px <= hit.x + hit.w && py >= hit.y && py <= hit.y + hit.h) || null;
       }
@@ -1632,13 +1715,33 @@
         }
         setActiveRange(button.dataset.range);
       });
+      const zoomSlider = document.getElementById('zoomSlider');
+      const zoomOut = document.getElementById('zoomOut');
+      const zoomIn = document.getElementById('zoomIn');
+      const zoomValue = document.getElementById('zoomValue');
+      function nearestZoomIndex(value) {
+        return ZOOM_STEPS.reduce((best, step, index) => (
+          Math.abs(step - value) < Math.abs(ZOOM_STEPS[best] - value) ? index : best
+        ), 0);
+      }
       function setZoom(next) {
-        zoom = Math.max(1, Math.min(3, next));
-        document.getElementById('zoomValue').textContent = `${zoom.toFixed(1)}×`;
+        const index = nearestZoomIndex(next);
+        zoom = ZOOM_STEPS[index];
+        zoomSlider.value = String(index);
+        zoomSlider.setAttribute('aria-valuenow', String(zoom));
+        zoomValue.textContent = `${zoom}×`;
+        zoomOut.disabled = index === 0;
+        zoomIn.disabled = index === ZOOM_STEPS.length - 1;
         draw();
       }
-      document.getElementById('zoomOut').addEventListener('click', () => setZoom(zoom - .5));
-      document.getElementById('zoomIn').addEventListener('click', () => setZoom(zoom + .5));
+      zoomSlider.addEventListener('input', event => setZoom(ZOOM_STEPS[Number(event.target.value)]));
+      zoomOut.addEventListener('click', () => setZoom(ZOOM_STEPS[Math.max(0, nearestZoomIndex(zoom) - 1)]));
+      zoomIn.addEventListener('click', () => setZoom(ZOOM_STEPS[Math.min(ZOOM_STEPS.length - 1, nearestZoomIndex(zoom) + 1)]));
+      let scrollRedrawFrame = 0;
+      scroll.addEventListener('scroll', () => {
+        cancelAnimationFrame(scrollRedrawFrame);
+        scrollRedrawFrame = requestAnimationFrame(draw);
+      }, { passive: true });
       document.getElementById('themeToggle').addEventListener('click', event => {
         const root = document.documentElement;
         const light = root.dataset.theme !== 'light';
@@ -1649,8 +1752,8 @@
       window.addEventListener('resize', () => { draw(); positionHierarchyPopover(); });
 
       syncRankRangeControls();
+      setZoom(1);
       renderTree();
-      draw();
     })();
   </script>
 </body>
