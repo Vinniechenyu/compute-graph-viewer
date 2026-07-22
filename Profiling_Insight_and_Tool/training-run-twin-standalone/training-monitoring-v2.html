@@ -2143,6 +2143,16 @@
             <path d="M12 3v18"></path>
           </svg>
         </button>
+        <!-- 「配置关系」（节点连线样式），跳转 Config & Relation Observer，三页互跳 -->
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" id="navConfigRelation" aria-label="配置关系" title="配置关系">
+          <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="18" cy="5" r="3"></circle>
+            <circle cx="6" cy="12" r="3"></circle>
+            <circle cx="18" cy="19" r="3"></circle>
+            <path d="m8.6 13.5 6.8 4"></path>
+            <path d="m15.4 6.5-6.8 4"></path>
+          </svg>
+        </button>
       </nav>
 
       <div class="pto-ide-frame__workarea">
@@ -2880,6 +2890,8 @@ MoE：256+1（top-8 路由 · EP 切分）">?</span>
     (function () {
       const btn = document.getElementById('navTaskCompare');
       if (btn) btn.addEventListener('click', () => { window.location.href = './TaskCompare.html'; });
+      const cfg = document.getElementById('navConfigRelation');
+      if (cfg) cfg.addEventListener('click', () => { window.location.href = './config-relation-observer.html'; });
     })();
   </script>
   <script>
