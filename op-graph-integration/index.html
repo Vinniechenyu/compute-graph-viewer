@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>算子入图 · Op Graph-Integration</title>
+<link rel="stylesheet" href="../vendor/pto-design-system/tokens/foundation.css">
+<link rel="stylesheet" href="../vendor/pto-design-system/tokens/semantic.css">
+<link rel="stylesheet" href="../vendor/pto-design-system/tokens/components.css">
+<link rel="stylesheet" href="../vendor/pto-design-system/css/style.css">
+<link rel="stylesheet" href="../vendor/pto-design-system/patterns/workbench-shell/pattern.css">
+<link rel="stylesheet" href="../vendor/pto-design-system/patterns/floating-playback-control/pattern.css">
+<link rel="stylesheet" href="../vendor/pto-design-system/patterns/ide-frame/pattern.css">
+<link rel="stylesheet" href="../vendor/pto-design-system/patterns/ide-frame/vscode.css">
+<style>
+  /* ── make the standard IDE frame fill the viewport (full-bleed app host) ── */
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--ide-frame-page-bg); color: var(--foreground); font-family: var(--font-sans); overflow: hidden; }
+  .pto-ide-frame { width: 100vw; height: 100vh; aspect-ratio: auto; border-radius: 0; box-shadow: none; }
+  .mono { font-family: var(--font-mono); }
+
+  /* ══ domain content only (module-local; no pattern internals overridden) ══ */
+
+  /* explorer file tree */
+  .tree { padding: 6px 6px 12px; }
+  .tree-sec { font-size: var(--font-size-label-xs); letter-spacing: var(--letter-spacing-label); text-transform: uppercase; color: var(--foreground-muted); padding: 6px 8px 4px; }
+  .tree-row { display: flex; align-items: center; gap: 7px; padding: 4px 8px; border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: var(--font-size-body-sm); color: var(--foreground-secondary); cursor: default; }
+  .tree-row.dir { color: var(--foreground); }
+  .tree-row.file { padding-left: 22px; }
+  .tree-row.active { background: var(--state-selected); color: var(--foreground); }
+  .tree-row .d { width: 6px; height: 6px; border-radius: 999px; margin-left: auto; }
+  .tree-row .d.mod { background: var(--warning); }
+
+  /* editor */
+  .editor-scroll { min-height: 100%; }
+  .codelens { display: flex; align-items: center; gap: var(--space-4); padding: 8px 16px 4px 54px; font-size: 11px; color: var(--foreground-muted); font-family: var(--font-mono); }
+  .codelens .cl-run { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; color: var(--primary-hover); font-weight: 600; border: 1px solid var(--primary); border-radius: var(--radius-pill); padding: 2px 11px; background: rgba(67,105,239,.10); }
+  .codelens .cl-run:hover { background: rgba(67,105,239,.20); }
+  .codelens .cl-run.spent { color: var(--foreground-disabled); border-color: var(--border-default); background: none; cursor: default; }
+  pre.src { padding: 2px 16px 20px 16px; margin: 0; font-family: var(--font-mono); font-size: 12.5px; line-height: 1.7; color: var(--foreground-secondary); }
+  pre.src .ln { display: block; padding-left: 40px; position: relative; }
+  pre.src .ln::before { counter-increment: ln; content: attr(data-n); position: absolute; left: 0; width: 30px; text-align: right; color: var(--foreground-disabled); }
+  pre.src .ln.mark { background: color-mix(in srgb, var(--primary) 9%, transparent); box-shadow: inset 2px 0 0 var(--primary); }
+  pre.src .cm { color: var(--foreground-muted); }
+  pre.src .kw { color: #a78bfa; }
+  pre.src .fn { color: var(--primary-hover); }
+  pre.src .ty { color: #4fd1c5; }
+  pre.src .st { color: var(--success); }
+
+  /* inspector = task panel */
+  .tp-status { display: inline-flex; align-items: center; gap: 6px; font-size: var(--font-size-body-sm); padding: 2px 9px; border-radius: var(--radius-pill); background: var(--surface-3); color: var(--foreground-secondary); }
+  .tp-status .d { width: 7px; height: 7px; border-radius: 999px; background: var(--foreground-muted); }
+  .tp-status.run .d { background: var(--warning); box-shadow: 0 0 7px var(--warning); }
+  .tp-status.wait .d { background: var(--primary); box-shadow: 0 0 7px var(--primary); }
+  .tp-status.done .d { background: var(--success); box-shadow: 0 0 7px var(--success); }
+  .tp-inner { padding: var(--space-4); }
+  .tp-mini { display: flex; gap: 4px; margin-bottom: var(--space-4); }
+  .tp-seg { flex: 1; }
+  .tp-seg .bar { height: 4px; border-radius: 999px; background: var(--surface-3); }
+  .tp-seg.done .bar { background: var(--success); }
+  .tp-seg.active .bar { background: var(--primary); }
+  .tp-seg .lb { font-size: 10px; color: var(--foreground-disabled); margin-top: 5px; text-align: center; white-space: nowrap; }
+  .tp-seg.done .lb, .tp-seg.active .lb { color: var(--foreground-secondary); }
+
+  .tp-empty { text-align: center; padding: 14% var(--space-5) 0; color: var(--foreground-muted); }
+  .tp-empty .big { font-size: 40px; margin-bottom: var(--space-3); opacity: .85; }
+  .tp-empty h3 { font-size: var(--font-size-title-sm); color: var(--foreground-secondary); font-weight: 600; }
+  .tp-empty p { margin-top: var(--space-2); font-size: var(--font-size-body-sm); max-width: 40ch; margin-inline: auto; line-height: 1.6; }
+
+  /* pipeline timeline */
+  .pstage { position: relative; padding-left: 30px; padding-bottom: var(--space-3); }
+  .pstage::before { content:""; position: absolute; left: 12px; top: 26px; bottom: -2px; width: 2px; background: var(--border-default); }
+  .pstage:last-child::before { display: none; }
+  .pnode { position: absolute; left: 0; top: 3px; width: 25px; height: 25px; border-radius: 999px; display: grid; place-items: center; font-size: 11px; font-weight: 700; z-index: 1; background: var(--surface-3); color: var(--foreground-muted); border: 1px solid var(--border-default); }
+  .pstage.run .pnode { background: var(--primary); color: #fff; border-color: var(--primary); }
+  .pstage.done .pnode { background: var(--success); color: #05130d; border-color: var(--success); }
+  .pstage.attn .pnode, .pstage.review .pnode, .pstage.confirm .pnode { background: var(--warning); color: #201400; border-color: var(--warning); }
+  .pstage-head { display: flex; align-items: baseline; gap: var(--space-2); cursor: default; padding: 4px 0; min-height: 30px; }
+  .pstage-head.click { cursor: pointer; }
+  .pstage-head.click:hover .pstage-title { color: var(--foreground); }
+  .pstage-title { font-weight: 600; font-size: var(--font-size-body-md); color: var(--foreground); }
+  .pstage.idle .pstage-title { color: var(--foreground-muted); font-weight: 500; }
+  .pstage-cap { font-size: var(--font-size-body-sm); color: var(--foreground-muted); }
+  .pstage-head .spacer { flex: 1; }
+  .chev { color: var(--foreground-disabled); font-size: 10px; }
+  .pstage.open .chev { transform: rotate(90deg); }
+  .pstage-body { margin-top: var(--space-2); }
+
+  .soft { background: var(--surface-1); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: var(--space-3) var(--space-4); }
+  .soft + .soft { margin-top: var(--space-3); }
+  .soft-head { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); }
+  .soft-head .t { font-weight: 600; font-size: var(--font-size-body-md); }
+  .soft-head .spacer { flex: 1; }
+  .kv { display: flex; justify-content: space-between; gap: var(--space-3); padding: 4px 0; font-size: var(--font-size-body-sm); }
+  .kv .k { color: var(--foreground-muted); flex: none; }
+  .kv .v { font-family: var(--font-mono); color: var(--foreground); text-align: right; }
+  .sig-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 var(--space-4); }
+
+  .badge { display: inline-flex; align-items: center; gap: 5px; border-radius: var(--radius-pill); padding: 2px 9px; font-size: var(--font-size-body-sm); font-weight: 500; background: var(--surface-3); }
+  .badge::before { content:""; width: 6px; height: 6px; border-radius: 999px; background: currentColor; }
+  .badge.b-ns::before { display: none; }
+  .badge--success { color: var(--success); }
+  .badge--warning { color: var(--warning); }
+  .badge--info { color: var(--primary); }
+
+  .file-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border-subtle); }
+  .file-tab { padding: 6px 11px; font-family: var(--font-mono); font-size: var(--font-size-body-sm); color: var(--foreground-muted); cursor: pointer; border-bottom: 2px solid transparent; display: inline-flex; align-items: center; gap: 6px; }
+  .file-tab:hover { color: var(--foreground-secondary); }
+  .file-tab.active { color: var(--foreground); border-bottom-color: var(--primary); }
+  .file-tab .st { width: 7px; height: 7px; border-radius: 999px; background: var(--success); }
+  pre.code { background: var(--surface-1); border: 1px solid var(--border-subtle); border-top: none; border-radius: 0 0 var(--radius-lg) var(--radius-lg); padding: var(--space-3) var(--space-4); margin: 0; overflow-x: auto; font-family: var(--font-mono); font-size: 11.5px; line-height: 1.65; color: var(--foreground-secondary); max-height: 260px; }
+  pre.code .cm { color: var(--foreground-muted); }
+  pre.code .kw { color: #a78bfa; }
+  pre.code .fn { color: var(--primary-hover); }
+  pre.code .st { color: var(--success); }
+  pre.code .hl { background: color-mix(in srgb, var(--success) 10%, transparent); display: inline-block; width: 100%; }
+
+  .check { display: flex; gap: var(--space-3); padding: 9px 0; border-bottom: 1px solid var(--border-subtle); }
+  .check:last-child { border-bottom: none; }
+  .check .ico { flex: none; width: 20px; height: 20px; border-radius: 999px; display: grid; place-items: center; font-size: 11px; font-weight: 700; }
+  .check .ico.ok { background: rgba(4,215,147,.16); color: var(--success); }
+  .check .ico.warn { background: rgba(255,170,59,.16); color: var(--warning); }
+  .check .c-title { font-weight: 500; display: flex; gap: var(--space-2); align-items: center; font-size: var(--font-size-body-sm); }
+  .check .c-desc { color: var(--foreground-muted); font-size: var(--font-size-body-sm); margin-top: 2px; }
+  .check .c-fix { margin-top: 5px; font-size: var(--font-size-body-sm); color: var(--foreground-muted); }
+  .check .c-fix code { background: var(--surface-2); padding: 1px 6px; border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: 11px; color: var(--warning); }
+
+  .graph-wrap { background: var(--surface-1); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: var(--space-3); }
+  .g-label { font-family: var(--font-mono); font-size: 11px; fill: var(--foreground); }
+  .g-sub { font-family: var(--font-mono); font-size: 9px; fill: var(--foreground-muted); }
+  .g-edge-label { font-family: var(--font-mono); font-size: 9px; fill: var(--foreground-secondary); }
+  .legend { display: flex; gap: var(--space-3); flex-wrap: wrap; margin-top: var(--space-2); font-size: 11px; color: var(--foreground-secondary); }
+  .legend .li { display: inline-flex; align-items: center; gap: 5px; }
+  .legend .sw { width: 11px; height: 11px; border-radius: 3px; }
+
+  .log { background: #0a0a0a; border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: var(--space-3) var(--space-4); font-family: var(--font-mono); font-size: 11.5px; line-height: 1.75; height: 230px; overflow-y: auto; color: var(--foreground-secondary); }
+  .log .ts { color: var(--foreground-disabled); }
+  .log .ok { color: var(--success); }
+  .log .info { color: var(--primary-hover); }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
+  .metric { background: var(--surface-1); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: var(--space-3); }
+  .metric .m-val { font-size: 18px; font-weight: 600; font-family: var(--font-mono); }
+  .metric .m-lab { color: var(--foreground-muted); font-size: 11px; margin-top: 2px; }
+
+  .success-hero { text-align: center; padding: var(--space-4); }
+  .success-hero .ring { width: 54px; height: 54px; border-radius: 999px; background: rgba(4,215,147,.12); border: 2px solid var(--success); color: var(--success); display: grid; place-items: center; font-size: 24px; margin: 0 auto var(--space-2); }
+  .success-hero h2 { font-size: var(--font-size-title-sm); }
+  .success-hero p { color: var(--foreground-secondary); margin-top: 4px; font-size: var(--font-size-body-sm); }
+
+  .actions { display: flex; gap: var(--space-2); flex-wrap: wrap; margin-top: var(--space-3); }
+  .note-card { background: rgba(255,170,59,.07); border: 1px solid rgba(255,170,59,.28); border-radius: var(--radius-lg); padding: var(--space-3) var(--space-4); font-size: var(--font-size-body-sm); color: var(--foreground-secondary); }
+  .note-card.info { background: rgba(67,105,239,.07); border-color: rgba(67,105,239,.3); }
+  .note-card b { color: var(--foreground); }
+
+  /* status strip content */
+  .sb-seg { display: inline-flex; align-items: center; gap: 6px; }
+  .sb-dot { width: 7px; height: 7px; border-radius: 999px; background: var(--foreground-muted); }
+  .sb-dot.run { background: var(--warning); }
+  .sb-dot.wait { background: var(--primary); }
+  .sb-dot.done { background: var(--success); }
+  .sb-chip { padding: 1px 8px; border-radius: var(--radius-sm); background: var(--state-hover); color: var(--foreground-secondary); font-family: var(--font-mono); }
+
+  .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--border-strong); border-top-color: var(--primary); border-radius: 999px; animation: sp .7s linear infinite; }
+  .pstage.run .pnode .spin { border-color: rgba(255,255,255,.4); border-top-color:#fff; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+  .fade { animation: fd .3s ease; }
+  @keyframes fd { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+</style>
+</head>
+<body>
+
+<!-- ══════════════ STANDARD PTO IDE FRAME (pattern: ide-frame) ══════════════ -->
+<section class="pto-ide-frame" data-ide-frame data-host="standalone" aria-label="算子入图 IDE">
+
+  <!-- top chrome -->
+  <header class="pto-ide-frame__topbar pto-ide-frame__standalone-chrome">
+    <div class="pto-ide-frame__topbar-left">
+      <div class="pto-ide-frame__host-chip" data-ide-slot="host-chip">
+        <svg class="pto-ide-frame__host-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="m7 9 3 3-3 3"></path><path d="M12 15h5"></path>
+        </svg>
+        <span>custom_ops</span>
+      </div>
+    </div>
+    <div class="pto-ide-frame__topbar-center">
+      <div class="pto-ide-frame__search" data-ide-slot="global-search"><span class="mono" style="color:var(--foreground-muted);font-size:12px">flash_attention_v2.cpp</span></div>
+    </div>
+    <div class="pto-ide-frame__topbar-right">
+      <div class="pto-ide-frame__window-actions" data-ide-slot="window-controls" aria-label="Window controls">
+        <button class="pto-ide-frame__window-action" type="button" aria-label="Back"><svg class="pto-ide-frame__window-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18 9 12l6-6"></path></svg></button>
+        <button class="pto-ide-frame__window-action" type="button" aria-label="Forward"><svg class="pto-ide-frame__window-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg></button>
+        <span class="pto-ide-frame__window-separator" aria-hidden="true"></span>
+        <button class="pto-ide-frame__window-action" type="button" aria-label="Settings"><svg class="pto-ide-frame__window-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>
+        <button class="pto-ide-frame__window-action pto-ide-frame__window-action--danger" type="button" aria-label="Close"><svg class="pto-ide-frame__window-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg></button>
+      </div>
+    </div>
+  </header>
+
+  <div class="pto-ide-frame__body">
+
+    <!-- activity rail -->
+    <nav class="pto-ide-frame__activity-rail pto-ide-frame__standalone-chrome" data-ide-slot="activity-rail" aria-label="Activity rail">
+      <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button is-selected" type="button" data-ide-toggle="explorer" aria-label="资源管理器" aria-controls="ogi-explorer" aria-expanded="true" aria-pressed="true" title="资源管理器">
+        <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9l-.81-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"></path></svg>
+      </button>
+      <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" aria-label="搜索" title="搜索">
+        <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+      </button>
+      <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" aria-label="源代码管理" title="源代码管理">
+        <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="18" cy="18" r="3"></circle><circle cx="6" cy="6" r="3"></circle><path d="M13 6h3a2 2 0 0 1 2 2v7"></path><path d="M6 9v12"></path></svg>
+      </button>
+      <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" aria-label="算子入图" title="算子入图">
+        <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 10-12h-7z"></path></svg>
+      </button>
+    </nav>
+
+    <!-- workarea: 3-pane split + status strip -->
+    <div class="pto-ide-frame__workarea">
+      <div class="pto-ide-frame__split" data-ide-split="standalone-main" data-split-direction="horizontal" data-sizes="16,44,40" data-min-size="170,340,360">
+
+        <!-- explorer -->
+        <aside class="pto-ide-frame__pane pto-ide-frame__explorer" data-ide-pane="explorer" id="ogi-explorer">
+          <header class="pto-ide-frame__pane-header" data-ide-slot="navigation-header">
+            <span class="pto-ide-frame__pane-title">资源管理器</span>
+          </header>
+          <div class="pto-ide-frame__pane-body" data-ide-slot="navigation">
+            <div class="tree">
+              <div class="tree-sec">CUSTOM_OPS</div>
+              <div class="tree-row dir">▾ flash_attention</div>
+              <div class="tree-row file active">flash_attention_v2.cpp <span class="d mod"></span></div>
+              <div class="tree-row file">flash_attention_tiling.h</div>
+              <div class="tree-row file">op_host.cpp</div>
+              <div class="tree-row dir" style="margin-top:6px">▸ op_proto</div>
+              <div class="tree-row dir">▸ op_info_cfg</div>
+              <div class="tree-row dir">▸ framework</div>
+            </div>
+          </div>
+        </aside>
+
+        <!-- editor -->
+        <section class="pto-ide-frame__pane" data-ide-pane="editor-preview">
+          <div class="pto-ide-frame__tabstrip" data-ide-slot="preview-tabs">
+            <div class="tab-control" role="tablist">
+              <button class="tab-control-item is-selected" type="button" role="tab">flash_attention_v2.cpp</button>
+              <button class="tab-control-item" type="button" role="tab">flash_attention_tiling.h</button>
+            </div>
+          </div>
+          <header class="pto-ide-frame__pane-header" data-ide-slot="preview-header">
+            <span class="pto-ide-frame__pane-meta mono">custom_ops › flash_attention › flash_attention_v2.cpp</span>
+            <span class="pto-ide-frame__pane-meta">AscendC · BF16</span>
+          </header>
+          <div class="pto-ide-frame__pane-body" data-ide-slot="preview">
+            <div class="editor-scroll">
+              <div class="codelens">
+                <span class="cl-run" id="cl-run">⚡ 算子入图</span>
+                <span>▷ 运行</span><span>🐞 调试</span><span>⧉ 2 引用</span>
+              </div>
+              <pre class="src" id="src"></pre>
+            </div>
+          </div>
+        </section>
+
+        <!-- inspector = 算子入图 task panel -->
+        <aside class="pto-ide-frame__pane" data-ide-pane="inspector">
+          <header class="pto-ide-frame__pane-header" data-ide-slot="inspector-header">
+            <span class="pto-ide-frame__pane-title">算子入图 · FlashAttentionV2</span>
+            <span class="tp-status" id="tp-status"><span class="d"></span>未开始</span>
+          </header>
+          <div class="pto-ide-frame__pane-body" data-ide-slot="inspector">
+            <div class="tp-inner">
+              <div class="tp-mini" id="tp-mini"></div>
+              <div id="tp-body"></div>
+            </div>
+          </div>
+        </aside>
+
+      </div>
+
+      <!-- status strip (pattern-owned position; fixes the old floating bar) -->
+      <footer class="pto-ide-frame__status-strip pto-ide-frame__standalone-chrome" data-ide-slot="status">
+        <div class="sb-seg" style="gap:14px">
+          <span class="sb-seg">⎇ main</span>
+          <span class="sb-seg"><span class="sb-dot" id="sb-dot"></span><span id="sb-msg">就绪 · 点击编辑器中的「⚡ 算子入图」发起任务</span></span>
+        </div>
+        <div class="sb-seg" style="gap:8px">
+          <span class="sb-chip">Ascend 910B</span>
+          <span class="sb-chip">CANN 8.0 · GE</span>
+        </div>
+      </footer>
+
+    </div>
+  </div>
+</section>
+
+<!-- pattern runtime (order matters) -->
+<script src="../vendor/pto-design-system/patterns/workbench-shell/pattern.js"></script>
+<script src="../vendor/pto-design-system/patterns/floating-playback-control/pattern.js"></script>
+<script src="../vendor/pto-design-system/patterns/ide-frame/pattern.js"></script>
+
+<script>
+// ════════════════════════════════════════════════════════════════
+//  算子入图 — editor-launched, auto-running pipeline
+// ════════════════════════════════════════════════════════════════
+const OP = {
+  type: "FlashAttentionV2",
+  inputs: [
+    { name: "query", dtype: "BF16", shape: "[B,N,S,D]" },
+    { name: "key",   dtype: "BF16", shape: "[B,N,S,D]" },
+    { name: "value", dtype: "BF16", shape: "[B,N,S,D]" },
+  ],
+  outputs: [ { name: "attn_out", dtype: "BF16", shape: "[B,N,S,D]" } ],
+  attrs: [
+    { name: "scale",    type: "float" },
+    { name: "head_num", type: "int" },
+    { name: "layout",   type: "string" },
+  ],
+  engine: "AI Core (Cube+Vector)",
+  tiling: "FlashAttentionTilingData",
+};
+
+const STAGES = [
+  { id:"detect",   title:"识别算子",     cap:"解析当前源码，抽取入图所需算子签名" },
+  { id:"generate", title:"生成入图契约", cap:"产出原型定义 / 算子信息库 / 框架适配" },
+  { id:"validate", title:"静态校验",     cap:"检查 shape 推导、dtype·format、可入图性" },
+  { id:"preview",  title:"入图预览",     cap:"在计算图上下文中预览该节点与融合边界" },
+  { id:"deploy",   title:"构建部署",     cap:"编译算子包、注册 GE、回归确认被选中" },
+];
+
+const S = {
+  started: false,
+  status: STAGES.map(()=> "idle"),
+  active: -1,
+  expanded: new Set(),
+  fileTab: 0,
+  checksShown: 0,
+  warningsResolved: false,
+  logLines: [],
+  deployed: false,
+};
+
+const $body = document.getElementById("tp-body");
+const $mini = document.getElementById("tp-mini");
+const $tpStatus = document.getElementById("tp-status");
+const $sbMsg = document.getElementById("sb-msg");
+const $sbDot = document.getElementById("sb-dot");
+const $clRun = document.getElementById("cl-run");
+
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
+let pending = null;
+const gate = () => new Promise(res => pending = res);
+function decide(v){ if(pending){ const r=pending; pending=null; r(v); } }
+
+// ════ RENDER ════
+function render() {
+  renderMini();
+  renderStatus();
+  if (!S.started) { $body.innerHTML = emptyState(); return; }
+  $body.innerHTML = STAGES.map((st,i)=> stageHTML(i)).join("");
+  bind();
+  const act = $body.querySelector(".pstage.is-active");
+  if (act) act.scrollIntoView({ behavior:"smooth", block:"nearest" });
+  const log = document.getElementById("build-log");
+  if (log) log.scrollTop = log.scrollHeight;
+}
+
+function renderMini() {
+  $mini.innerHTML = STAGES.map((st,i)=>{
+    const done = S.status[i]==="done";
+    const active = i===S.active && !done;
+    return `<div class="tp-seg ${done?'done':''} ${active?'active':''}"><div class="bar"></div><div class="lb">${st.title}</div></div>`;
+  }).join("");
+}
+
+function renderStatus() {
+  const done = S.status.filter(s=>s==="done").length;
+  let cls="", txt="";
+  if (!S.started) { txt="未开始"; }
+  else if (S.deployed) { cls="done"; txt="已入图"; }
+  else if (["attn","review","confirm"].includes(S.status[S.active])) { cls="wait"; txt="待确认"; }
+  else { cls="run"; txt=`运行中 · ${done}/5`; }
+  $tpStatus.className = "tp-status "+cls;
+  $tpStatus.innerHTML = `<span class="d"></span>${txt}`;
+}
+
+function emptyState() {
+  return `<div class="tp-empty fade">
+    <div class="big">⚡</div>
+    <h3>从源码发起算子入图</h3>
+    <p>你已在编辑器中完成 <span class="mono" style="color:var(--foreground-secondary)">FlashAttentionV2</span> 的实现。点击源码上方的
+    <span style="color:var(--primary-hover)">⚡ 算子入图</span>，工具会自动识别签名、生成入图契约、静态校验并预览，只在需要你决策时暂停。</p>
+    <div style="margin-top:var(--space-5)"><button class="btn btn-sm btn-solid" id="start-btn">⚡ 发起算子入图任务</button></div>
+  </div>`;
+}
+
+function stageHTML(i) {
+  const st = STAGES[i], status = S.status[i];
+  const activeStates = ["run","attn","review","confirm"];
+  const isActive = activeStates.includes(status);
+  const open = isActive || i===S.active || S.expanded.has(i);
+  const canClick = status==="done";
+  const clsMap = { run:"run", done:"done", attn:"attn", review:"review", confirm:"confirm", idle:"idle" };
+  const node = status==="run" ? `<span class="spin"></span>`
+             : status==="done" ? "✓"
+             : ["attn","review","confirm"].includes(status) ? "!"
+             : (i+1);
+  return `<div class="pstage ${clsMap[status]} ${open?'open':''} ${isActive?'is-active':''}">
+    <div class="pnode">${node}</div>
+    <div class="pstage-head ${canClick?'click':''}" data-i="${i}">
+      <span class="pstage-title">${st.title}</span>
+      <span class="pstage-cap">${capFor(i)}</span>
+      <span class="spacer"></span>
+      ${canClick? `<span class="chev">▶</span>`:""}
+    </div>
+    ${open? `<div class="pstage-body fade">${bodyFor(i)}</div>` : ""}
+  </div>`;
+}
+
+function capFor(i) {
+  const status = S.status[i];
+  if (status==="idle") return STAGES[i].cap;
+  if (status==="run") return runCap(i);
+  if (status==="done") return doneCap(i);
+  return STAGES[i].cap;
+}
+function runCap(i){ return ["解析源码…","生成契约产物…","执行校验规则…","构建图上下文…","编译并注册…"][i]; }
+function doneCap(i){
+  return [
+    `${OP.type} · 3 输入 / 1 输出 · 3 属性`,
+    `3 份契约产物已生成`,
+    S.warningsResolved ? `6 项通过（2 项建议已套用）` : `4 通过 · 2 提醒 · 0 阻断`,
+    `节点可放置 AI Core · 融合后 7→5`,
+    `已注册 GE · 回归 PASS`,
+  ][i];
+}
+
+function bodyFor(i){ return [detectBody, generateBody, validateBody, previewBody, deployBody][i](); }
+
+function detectBody() {
+  if (S.status[0]==="run") return skeleton("正在解析 AscendC 源码…");
+  const io = a => a.map(t=>`<div class="kv"><span class="k">${t.name}</span><span class="v">${t.dtype} · ${t.shape}</span></div>`).join("");
+  return `<div class="soft">
+    <div class="soft-head"><span class="t">算子签名</span><span class="spacer"></span><span class="badge badge--success">解析成功</span></div>
+    <div class="sig-grid">
+      <div class="kv"><span class="k">op type</span><span class="v">${OP.type}</span></div>
+      <div class="kv"><span class="k">engine</span><span class="v">${OP.engine}</span></div>
+      <div class="kv"><span class="k">tiling</span><span class="v">${OP.tiling}</span></div>
+      <div class="kv"><span class="k">attrs</span><span class="v">${OP.attrs.length}</span></div>
+    </div>
+    <div style="height:1px;background:var(--border-subtle);margin:8px 0"></div>
+    <div class="sig-grid">
+      <div><div class="kv"><span class="k" style="color:var(--foreground-secondary)">输入</span><span class="v"></span></div>${io(OP.inputs)}</div>
+      <div><div class="kv"><span class="k" style="color:var(--foreground-secondary)">输出</span><span class="v"></span></div>${io(OP.outputs)}
+        <div class="kv" style="margin-top:6px"><span class="k" style="color:var(--foreground-secondary)">属性</span><span class="v"></span></div>
+        ${OP.attrs.map(a=>`<div class="kv"><span class="k">${a.name}</span><span class="v">${a.type}</span></div>`).join("")}
+      </div>
+    </div>
+  </div>`;
+}
+
+let runGenCaption = "生成契约产物…";
+function generateBody() {
+  if (S.status[1]==="run") return skeleton(runGenCaption);
+  const f = GEN_FILES[S.fileTab];
+  return `<div class="soft" style="padding:0;overflow:hidden">
+    <div class="file-tabs">
+      ${GEN_FILES.map((g,i)=>`<div class="file-tab ${i===S.fileTab?'active':''}" data-f="${i}"><span class="st"></span>${g.name}</div>`).join("")}
+    </div>
+    <pre class="code" style="border:none;border-radius:0">${f.code}</pre>
+  </div>
+  <div class="note-card info" style="margin-top:var(--space-2)">${f.note}</div>`;
+}
+
+function validateBody() {
+  const shown = CHECKS.slice(0, S.checksShown);
+  const list = shown.map(c=>{
+    const resolved = S.warningsResolved && c.level==="warn";
+    const lvl = resolved ? "ok" : c.level;
+    return `<div class="check fade">
+      <div class="ico ${lvl}">${lvl==="ok"?"✓":"!"}</div>
+      <div class="c-body" style="flex:1">
+        <div class="c-title">${c.title}
+          <span class="badge b-ns badge--${lvl==="ok"?"success":"warning"}">${resolved?"已修复":c.tag}</span></div>
+        <div class="c-desc">${c.desc}</div>
+        ${(c.fix && !resolved)?`<div class="c-fix">建议：${c.fix}</div>`:""}
+      </div>
+    </div>`;
+  }).join("");
+  let footer = "";
+  if (S.status[2]==="attn") {
+    footer = `<div class="note-card" style="margin-top:var(--space-3)">
+      <b>2 项提醒不阻断入图</b>，但建议处理以获得更好的 GE 选择率与融合效果。
+      <div class="actions">
+        <button class="btn btn-sm btn-solid" data-act="fix">应用建议修复</button>
+        <button class="btn btn-sm" data-act="skip">忽略并继续</button>
+      </div></div>`;
+  } else if (S.status[2]==="done" && S.warningsResolved) {
+    footer = `<div class="note-card info" style="margin-top:var(--space-3)">已套用 2 项建议：补充 FP16 组合、注册 UB Fusion 规则。全部规则通过。</div>`;
+  }
+  return `<div class="soft">${list}</div>${footer}`;
+}
+
+function previewBody() {
+  const footer = S.status[3]==="review" ? `<div class="actions" style="margin-top:var(--space-3)">
+      <button class="btn btn-sm btn-solid" data-act="preview-ok">确认结构无误，继续</button></div>` : "";
+  return `<div class="graph-wrap">${GRAPH_SVG}
+    <div class="legend">
+      <span class="li"><span class="sw" style="background:var(--surface-3)"></span>上下游算子</span>
+      <span class="li"><span class="sw" style="background:var(--primary)"></span>本算子（新入图）</span>
+      <span class="li"><span class="sw" style="background:rgba(4,215,147,.25);border:1px dashed var(--success)"></span>可融合边界</span>
+    </div></div>
+  <div class="grid2" style="margin-top:var(--space-2)">
+    <div class="soft"><div class="kv"><span class="k">节点可放置</span><span class="v" style="color:var(--success)">AI Core</span></div>
+      <div class="kv"><span class="k">shape 推导</span><span class="v" style="color:var(--success)">闭合</span></div>
+      <div class="kv"><span class="k">回退 AICPU</span><span class="v" style="color:var(--success)">否</span></div></div>
+    <div class="soft"><div class="kv"><span class="k">上游 Cast</span><span class="v" style="color:var(--warning)">可融合</span></div>
+      <div class="kv"><span class="k">下游 Add</span><span class="v" style="color:var(--warning)">可融合</span></div>
+      <div class="kv"><span class="k">HBM 往返</span><span class="v" style="color:var(--success)">-38%</span></div></div>
+  </div>${footer}`;
+}
+
+function deployBody() {
+  if (S.status[4]==="confirm") {
+    return `<div class="note-card">
+      即将编译 custom op 包并<b> 注册到 GE</b>（写入 CANN 算子库 <span class="mono">opp/vendors/custom</span>）。这是本任务唯一有落盘副作用的步骤。
+      <div class="actions"><button class="btn btn-sm btn-solid" data-act="build">🚀 构建并注册</button>
+      <button class="btn btn-sm" data-act="build-cancel">稍后</button></div></div>`;
+  }
+  if (S.status[4]==="run") {
+    return `<div class="log" id="build-log">${S.logLines.map(l=>`<div>${l}</div>`).join("")}</div>`;
+  }
+  return `<div class="soft success-hero fade">
+      <div class="ring">✓</div><h2>算子已成功入图</h2>
+      <p><span class="mono">${OP.type}</span> 已注册到 GE，回归图中被正确选中。</p></div>
+    <div class="grid2" style="margin-top:var(--space-2)">
+      <div class="metric"><div class="m-val" style="color:var(--success)">Selected</div><div class="m-lab">GE 选择（非 AICPU 回退）</div></div>
+      <div class="metric"><div class="m-val">2.7e-3</div><div class="m-lab">回归精度误差（阈 4e-3）</div></div>
+      <div class="metric"><div class="m-val" style="font-size:14px">op_package_v2.run</div><div class="m-lab">算子包 · 已安装</div></div>
+      <div class="metric"><div class="m-val" style="color:var(--success)">7 → 5</div><div class="m-lab">融合后图节点数</div></div>
+    </div>
+    <div class="actions"><button class="btn btn-sm">在 Pass IR 查看</button><button class="btn btn-sm">打开性能泳道</button><button class="btn btn-sm">导出算子包</button></div>`;
+}
+
+function skeleton(txt){
+  return `<div class="soft" style="display:flex;align-items:center;gap:var(--space-3);color:var(--foreground-muted)">
+    <span class="spin"></span><span style="font-size:var(--font-size-body-sm)">${txt}</span></div>`;
+}
+
+function bind() {
+  $body.querySelectorAll(".pstage-head.click").forEach(h=>{
+    h.onclick = () => { const i=+h.dataset.i; if(S.expanded.has(i)) S.expanded.delete(i); else S.expanded.add(i); render(); };
+  });
+  $body.querySelectorAll(".file-tab").forEach(t=>{ t.onclick = e=>{ e.stopPropagation(); S.fileTab=+t.dataset.f; render(); }; });
+  $body.querySelectorAll("[data-act]").forEach(b=>{ b.onclick = e => { e.stopPropagation(); handleAct(b.dataset.act); }; });
+}
+function handleAct(act){
+  if (act==="fix"){ S.warningsResolved=true; decide("fix"); }
+  else if (act==="skip"){ decide("skip"); }
+  else if (act==="preview-ok"){ decide("ok"); }
+  else if (act==="build"){ decide("build"); }
+}
+
+// ════ PIPELINE ════
+async function runPipeline() {
+  if (S.started) return;
+  S.started = true;
+  $clRun.classList.add("spent"); $clRun.textContent = "⚡ 入图任务进行中";
+  setSb("识别算子…","run");
+
+  S.active=0; S.status[0]="run"; render(); await sleep(950);
+  S.status[0]="done"; setSb("已识别签名 · 生成入图契约…","run");
+
+  S.active=1; S.status[1]="run"; render();
+  const gs=["原型定义 InferShape…","算子信息库 .ini…","框架适配 plugin…"];
+  for (let k=0;k<gs.length;k++){ runGenCaption=gs[k]; render(); await sleep(620); }
+  S.status[1]="done"; S.fileTab=0; setSb("契约已生成 · 静态校验…","run");
+
+  S.active=2; S.status[2]="run"; S.checksShown=0; render();
+  for (let k=0;k<CHECKS.length;k++){ S.checksShown=k+1; render(); await sleep(340); }
+  S.status[2]="attn"; setSb("校验完成 · 2 项提醒待处理","wait"); render();
+  const vChoice = await gate();
+  S.status[2]="done"; setSb(vChoice==="fix"?"建议已套用 · 生成入图预览…":"已忽略提醒 · 生成入图预览…","run");
+
+  S.active=3; S.status[3]="run"; render(); await sleep(650);
+  S.status[3]="review"; setSb("入图预览就绪 · 请确认结构","wait"); render();
+  await gate();
+  S.status[3]="done"; setSb("预览已确认 · 待构建","wait");
+
+  S.active=4; S.status[4]="confirm"; render();
+  await gate();
+  S.status[4]="run"; S.logLines=[]; setSb("构建并注册中…","run"); render();
+  for (const l of BUILD_LOG){ S.logLines.push(l); render(); await sleep(340+Math.random()*240); }
+  S.deployed=true; S.status[4]="done"; setSb("✓ 算子已成功入图","done"); render();
+}
+function setSb(t, tone){ $sbMsg.textContent=t; $sbDot.className = "sb-dot "+(tone||""); }
+
+$clRun.onclick = runPipeline;
+document.addEventListener("click", e=>{ if(e.target.id==="start-btn") runPipeline(); });
+
+// ════ STATIC CONTENT ════
+const SRC_LINES = [
+  `<span class="cm">// AscendC custom kernel — 已在 IDE 中完成实现</span>`,
+  `<span class="cm">// dtype=BF16  format=ND  layout=BNSD</span>`,
+  ``,
+  `<span class="kw">class</span> <span class="ty">FlashAttentionV2</span> {`,
+  ` <span class="kw">public</span>:`,
+  `  <span class="kw">__aicore__ inline</span> <span class="kw">void</span> <span class="fn">Init</span>(`,
+  `      <span class="ty">GM_ADDR</span> query, <span class="ty">GM_ADDR</span> key, <span class="ty">GM_ADDR</span> value,`,
+  `      <span class="ty">GM_ADDR</span> attn_out,`,
+  `      <span class="kw">const</span> <span class="ty">FlashAttentionTilingData</span>& tiling) {`,
+  `    scale_   = tiling.<span class="fn">scale</span>;        <span class="cm">// attr float</span>`,
+  `    headNum_ = tiling.<span class="fn">headNum</span>;      <span class="cm">// attr int</span>`,
+  `    <span class="cm">// ... 初始化 Cube / Vector 队列 ...</span>`,
+  `  }`,
+  `  <span class="kw">__aicore__ inline</span> <span class="kw">void</span> <span class="fn">Process</span>() {`,
+  `    <span class="cm">// Cube(QK^T) + Vector(softmax) 混合流水</span>`,
+  `    <span class="fn">CopyIn</span>(); <span class="fn">ComputeQK</span>(); <span class="fn">Softmax</span>();`,
+  `    <span class="fn">ComputePV</span>(); <span class="fn">CopyOut</span>();`,
+  `  }`,
+  `};`,
+];
+const MARKED = new Set([3]);
+document.getElementById("src").innerHTML =
+  SRC_LINES.map((l,i)=>`<span class="ln ${MARKED.has(i)?'mark':''}" data-n="${i+1}">${l||"&nbsp;"}</span>`).join("");
+
+const GEN_FILES = [
+  { name:"flash_attention_v2.cc", note:"InferShape 直接复用签名的 [B,N,S,D] 传播，输出 dtype 跟随 query；<b>绿底</b>为工具从签名自动补全。",
+    code:`<span class="cm">// op_proto — 原型定义 (InferShape / InferDataType)</span>
+<span class="fn">IMPLEMT_COMMON_INFERFUNC</span>(FlashAttentionV2InferShape) {
+  <span class="kw">auto</span> q = op.<span class="fn">GetInputDesc</span>(<span class="st">"query"</span>);
+<span class="hl">  Shape out = q.GetShape();            <span class="cm">// [B,N,S,D] 闭合传播</span></span>
+  <span class="kw">auto</span> y = op.<span class="fn">GetOutputDesc</span>(<span class="st">"attn_out"</span>);
+  y.<span class="fn">SetShape</span>(out);
+<span class="hl">  y.SetDataType(q.GetDataType());      <span class="cm">// BF16 跟随输入</span></span>
+  y.<span class="fn">SetFormat</span>(FORMAT_ND);
+  op.<span class="fn">UpdateOutputDesc</span>(<span class="st">"attn_out"</span>, y);
+  <span class="kw">return</span> GRAPH_SUCCESS;
+}
+<span class="fn">COMMON_INFER_FUNC_REG</span>(FlashAttentionV2, FlashAttentionV2InferShape);` },
+  { name:"flash_attention_v2.ini", note:"dtype/format 组合来自签名 BF16·ND；GE 用它匹配图中张量以决定能否选中此算子。",
+    code:`<span class="cm">; op_info_cfg — 算子信息库 (AI Core)</span>
+[FlashAttentionV2]
+<span class="hl">input0.name=query   input0.dtype=bf16   input0.format=ND</span>
+<span class="hl">input1.name=key     input1.dtype=bf16   input1.format=ND</span>
+<span class="hl">input2.name=value   input2.dtype=bf16   input2.format=ND</span>
+<span class="hl">output0.name=attn_out output0.dtype=bf16 output0.format=ND</span>
+attr.scale.type=float
+attr.head_num.type=int
+attr.layout.type=str` },
+  { name:"..._plugin.cc", note:"框架层算子 → Ascend 算子映射；scale / head_num / layout 三个属性自动接线透传。",
+    code:`<span class="cm">// framework plugin — 框架层 → Ascend 算子</span>
+<span class="fn">REGISTER_CUSTOM_OP</span>(<span class="st">"FlashAttentionV2"</span>)
+    .<span class="fn">FrameworkType</span>(TENSORFLOW)
+    .<span class="fn">OriginOpType</span>(<span class="st">"FlashAttention"</span>)
+    .<span class="fn">ParseParamsByOperatorFn</span>(ParseParams);
+
+Status <span class="fn">ParseParams</span>(<span class="kw">const</span> Message* src, ge::Operator& op) {
+<span class="hl">  op.SetAttr("scale",    0.088f);    <span class="cm">// ← 签名属性</span></span>
+<span class="hl">  op.SetAttr("head_num", head_num);</span>
+<span class="hl">  op.SetAttr("layout",   "BNSD");</span>
+  <span class="kw">return</span> SUCCESS;
+}` },
+];
+
+const CHECKS = [
+  { level:"ok",   tag:"通过", title:"InferShape 闭合性", desc:"输出 [B,N,S,D] 可由输入完全推导，GE 编译期可做内存规划。" },
+  { level:"ok",   tag:"通过", title:"dtype / format 一致", desc:"签名(BF16·ND)、信息库、原型三处声明一致。" },
+  { level:"ok",   tag:"通过", title:"属性完整性", desc:"scale / head_num / layout 在三层均已接线。" },
+  { level:"ok",   tag:"通过", title:"可入图 / 可放置", desc:"算子可被 GE 放置到 AI Core，不会回退 AICPU。" },
+  { level:"warn", tag:"提醒", title:"缺少 FP16 支持组合", desc:"信息库仅声明 BF16，图中若有 FP16 分支将不被选中。", fix:"在 .ini 增补 <code>dtype=float16</code> 组合" },
+  { level:"warn", tag:"提醒", title:"未声明融合规则", desc:"上游 Cast、下游 Add 具融合潜力，但未注册 fusion pass。", fix:"注册 <code>UB Fusion</code> 规则减少 HBM 往返" },
+];
+
+const BUILD_LOG = [
+  `<span class="ts">[00:00]</span> <span class="info">▶</span> msopgen 生成算子工程骨架`,
+  `<span class="ts">[00:03]</span>   ccec 编译 AscendC kernel → .o`,
+  `<span class="ts">[00:05]</span>   <span class="ok">✓</span> op_proto / op_info / plugin 编译通过`,
+  `<span class="ts">[00:06]</span> <span class="info">▶</span> 打包 op_package_v2.run`,
+  `<span class="ts">[00:08]</span>   <span class="ok">✓</span> 安装到 opp/vendors/custom`,
+  `<span class="ts">[00:09]</span> <span class="info">▶</span> 向 GE 注册 FlashAttentionV2`,
+  `<span class="ts">[00:10]</span>   <span class="ok">✓</span> 原型 & 信息库已加载，GE 算子表更新`,
+  `<span class="ts">[00:11]</span> <span class="info">▶</span> 回归图 matmul→attn→add`,
+  `<span class="ts">[00:13]</span>   GE 选择 → <span class="ok">AI Core（未回退）</span>`,
+  `<span class="ts">[00:14]</span>   精度 max_rel=2.7e-3 &lt; 4e-3  <span class="ok">PASS</span>`,
+  `<span class="ts">[00:14]</span> <span class="ok">✓ 算子已成功入图</span>`,
+];
+
+const GRAPH_SVG = `
+<svg viewBox="0 0 720 210" width="100%" style="display:block">
+  <defs><marker id="arw" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+    <path d="M0,0 L6,3 L0,6" fill="none" stroke="var(--foreground-muted)" stroke-width="1.2"/></marker></defs>
+  <rect x="120" y="34" width="470" height="120" rx="12" fill="rgba(4,215,147,.05)" stroke="var(--success)" stroke-width="1" stroke-dasharray="5 5"/>
+  <text x="128" y="52" class="g-sub" fill="var(--success)">可融合边界 (UB Fusion)</text>
+  <line x1="88"  y1="100" x2="146" y2="100" stroke="var(--foreground-muted)" stroke-width="1.3" marker-end="url(#arw)"/>
+  <line x1="256" y1="100" x2="312" y2="100" stroke="var(--foreground-muted)" stroke-width="1.3" marker-end="url(#arw)"/>
+  <line x1="452" y1="100" x2="508" y2="100" stroke="var(--foreground-muted)" stroke-width="1.3" marker-end="url(#arw)"/>
+  <line x1="620" y1="100" x2="662" y2="100" stroke="var(--foreground-muted)" stroke-width="1.3" marker-end="url(#arw)"/>
+  <text x="270" y="93" class="g-edge-label">BF16 [B,N,S,D]</text>
+  <text x="466" y="93" class="g-edge-label">BF16 [B,N,S,D]</text>
+  <g><rect x="12" y="80" width="76" height="44" rx="8" fill="var(--surface-3)" stroke="var(--border-strong)"/>
+    <text x="50" y="100" text-anchor="middle" class="g-label">MatMul</text>
+    <text x="50" y="113" text-anchor="middle" class="g-sub">qkv proj</text></g>
+  <g><rect x="146" y="80" width="110" height="44" rx="8" fill="var(--surface-3)" stroke="var(--warning)" stroke-dasharray="3 3"/>
+    <text x="201" y="100" text-anchor="middle" class="g-label">Cast</text>
+    <text x="201" y="113" text-anchor="middle" class="g-sub">FP32→BF16 · 可融合</text></g>
+  <g><rect x="312" y="72" width="140" height="60" rx="9" fill="var(--primary)" stroke="var(--primary-hover)" stroke-width="1.5"/>
+    <text x="382" y="96" text-anchor="middle" class="g-label" fill="#fff" style="font-weight:600">FlashAttentionV2</text>
+    <text x="382" y="110" text-anchor="middle" class="g-sub" fill="rgba(255,255,255,.75)">AI Core · Cube+Vector</text>
+    <text x="382" y="122" text-anchor="middle" class="g-sub" fill="rgba(255,255,255,.75)">新入图节点</text></g>
+  <g><rect x="508" y="80" width="112" height="44" rx="8" fill="var(--surface-3)" stroke="var(--warning)" stroke-dasharray="3 3"/>
+    <text x="564" y="100" text-anchor="middle" class="g-label">Add</text>
+    <text x="564" y="113" text-anchor="middle" class="g-sub">residual · 可融合</text></g>
+  <g><rect x="662" y="80" width="44" height="44" rx="8" fill="var(--surface-3)" stroke="var(--border-strong)"/>
+    <text x="684" y="106" text-anchor="middle" class="g-label">…</text></g>
+  <text x="360" y="180" text-anchor="middle" class="g-sub" fill="var(--foreground-muted)">GE 将节点放置到 AI Core · shape 推导闭合 · 无 AICPU 回退</text>
+</svg>`;
+
+render();
+</script>
+</body>
+</html>
