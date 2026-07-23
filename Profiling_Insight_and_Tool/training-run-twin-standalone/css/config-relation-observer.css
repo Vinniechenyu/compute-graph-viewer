@@ -1,0 +1,1037 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   配置与关系观测（config-relation-observer）· 模块私有 layout
+   ------------------------------------------------------------------------
+   只包含布局与结构 class（.cro-*）。所有视觉（色彩/圆角/阴影/按钮/边框）一律
+   走 tokens 与 css/style.css 现成组件，不新造视觉语言。
+   T 型观察结构：
+     左竖笔 = 整网 3D deck（正视图）
+     中横笔 = 配置 stepper + Layer 导航 + 五段结构条
+     右    = MoE 专家（共享 SE + 路由 EP 分组）
+     底    = Cluster 集群图（DP × PP stage × EP rank）
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── 单 pane 的尺寸接管 ──────────────────────────────────────────────────
+   .pto-ide-frame__pane 默认是 flex: 0 0 auto —— 平时由 ide-frame 的 split JS
+   往 pane 上写内联尺寸。本页只有一个 pane、没有 split，没人给它高度，pane 就
+   会长到内容高度，而 .pto-ide-frame__workarea 是 overflow:hidden，超出部分
+   被直接裁到视口外且没有滚动条（整网图和集群图会「跑到屏幕外面」）。
+   这里只补尺寸，不动 pane 的填充/描边/阴影/模糊等 pattern 皮肤。 */
+.pto-ide-frame__workarea > .pto-ide-frame__pane[data-ide-pane="observer"] {
+  flex: 1 1 auto;
+}
+
+/* ── 单一面板 · 四个不可见网格区 ─────────────────────────────────────────
+   整页只有一个 ide-frame pane。T 型的 整网 / Model Architecture / MoE /
+   Cluster 是同一面板里的 grid area，彼此没有 pane 边界、gutter 或卡片描边，
+   只靠 grid 间距与大标题分区。 */
+.cro-board {
+  /* deck 语义色兜底：与 model-architecture-3d-deck-pattern.js 的 COLOR_FALLBACKS
+     同值。deck 挂载后 syncDeckPalette 会用 deck 根节点的实际值覆盖这些，
+     这里只保证 deck 未就绪时结构条不会没有颜色。 */
+  --pto-model-deck-embedding: #14B8A6;
+  --pto-model-deck-norm: #38BDF8;
+  --pto-model-deck-attention: #3B82F6;
+  --pto-model-deck-linear: #4F46E5;
+  --pto-model-deck-head: #7C3AED;
+  --pto-model-deck-mlp: #A855F7;
+  --pto-model-deck-act: #8B5CF6;
+  --pto-model-deck-gate: #F59E0B;
+  --pto-model-deck-moe: #EA580C;
+  --pto-model-deck-comm: #06B6D4;
+  --pto-model-deck-output: #38BDF8;
+  --pto-model-deck-decoder: #0D9488;
+  --pto-model-deck-input: #A855F7;
+  --pto-model-deck-parameter: #3B82F6;
+  --pto-model-deck-state: #8B5CF6;
+
+  display: grid;
+  grid-template-columns:
+    [net-start] minmax(220px, 0.85fr)
+    [net-end arch-start] minmax(420px, 1.9fr)
+    [arch-end moe-start] minmax(300px, 1.05fr) [moe-end];
+  /* 第 1 行不要设过大的 min：deck 有自己的 min-height，这里再加一道 420px
+     下限会和底部 Cluster 抢高度，把矩阵挤到滚动区之外。 */
+  grid-template-rows: minmax(0, 1fr) auto;
+  /* 四大模块之间的间距：--space-4(16px) 再加 16px */
+  column-gap: calc(var(--space-4) * 2);
+  row-gap: calc(var(--space-4) * 2);
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  overflow: auto;
+}
+
+/* T 型：arch 是横笔，cluster 是挂在它正下方的竖笔（只占 arch 一列）。
+   net 与 moe 都通栏两行 —— moe 只占第 1 行的话，右下角会空出一个没有内容的
+   格子，屏幕高度用不满。 */
+.cro-region--net     { grid-column: net-start / net-end;   grid-row: 1 / 3; }
+.cro-region--arch    { grid-column: arch-start / arch-end; grid-row: 1; }
+.cro-region--moe     { grid-column: moe-start / moe-end;   grid-row: 1 / 3; }
+.cro-region--cluster { grid-column: arch-start / arch-end; grid-row: 2; }
+
+/* Explorer rail 键折叠「整网」区：整列塌掉，其余区域自然吃掉宽度 */
+.cro-board.is-net-collapsed {
+  grid-template-columns:
+    [net-start net-end arch-start] minmax(420px, 1.9fr)
+    [arch-end moe-start] minmax(300px, 1.05fr) [moe-end];
+}
+
+.cro-board.is-net-collapsed .cro-region--net {
+  display: none;
+}
+
+.cro-region {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  min-height: 0;
+}
+
+/* 区域大标题：20px，不套卡片、不加下划线 */
+.cro-region__title {
+  margin: 0;
+  font-size: var(--font-size-title-md);
+  font-weight: var(--font-weight-semibold);
+  color: var(--foreground);
+  letter-spacing: -0.01em;
+}
+
+/* 窄窗口下解除各列的最小宽度，避免 220+420+300+间距+padding ≈ 1036px 的
+   下限把整块顶出视口。net 折叠态的模板单列，别被这里连带改回三列。 */
+@media (max-width: 1280px) {
+  .cro-board {
+    grid-template-columns:
+      [net-start] minmax(0, 1fr)
+      [net-end arch-start] minmax(0, 1.6fr)
+      [arch-end moe-start] minmax(0, 1fr) [moe-end];
+  }
+
+  .cro-board.is-net-collapsed {
+    grid-template-columns:
+      [net-start net-end arch-start] minmax(0, 1.6fr)
+      [arch-end moe-start] minmax(0, 1fr) [moe-end];
+  }
+}
+
+/* ── 通用：区块标题（复用 pane-header 语义，但用于 pane body 内的次级分区） ── */
+.cro-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-height: 0;
+}
+
+.cro-section__title {
+  font-size: var(--font-size-body-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--foreground);
+  letter-spacing: -0.01em;
+}
+
+.cro-section__subtitle {
+  font-size: var(--font-size-label-xs);
+  color: var(--foreground-muted);
+}
+
+/* ── 通用：内部滚动条 ────────────────────────────────────────────────────
+   典型层的算子栈与路由专家列表都是页面内部的密集滚动区，用系统默认滚动条
+   （Windows 上是 17px 实心灰槽）会在算子条右侧劈出一条硬边，比内容本身还
+   抢眼。这里统一压成 6px：轨道透明、滑块是 2px 透明边框 + background-clip
+   撑出的胶囊，静息态几乎看不见，指针进入容器才加深。
+   同时 overscroll-behavior:contain —— 滚到底不把滚动链传给 .cro-board，
+   免得再往下滚一格整块面板跟着位移。 */
+.cro-structure__stack,
+.cro-moe-groups {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--foreground) 14%, transparent) transparent;
+  overscroll-behavior: contain;
+}
+
+.cro-structure__stack::-webkit-scrollbar,
+.cro-moe-groups::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.cro-structure__stack::-webkit-scrollbar-track,
+.cro-moe-groups::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.cro-structure__stack::-webkit-scrollbar-thumb,
+.cro-moe-groups::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--foreground) 14%, transparent);
+  background-clip: content-box;
+}
+
+.cro-structure__stack:hover,
+.cro-moe-groups:hover {
+  scrollbar-color: color-mix(in srgb, var(--foreground) 30%, transparent) transparent;
+}
+
+.cro-structure__stack:hover::-webkit-scrollbar-thumb,
+.cro-moe-groups:hover::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--foreground) 30%, transparent);
+  background-clip: content-box;
+}
+
+.cro-structure__stack::-webkit-scrollbar-thumb:hover,
+.cro-moe-groups::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--foreground) 46%, transparent);
+  background-clip: content-box;
+}
+
+/* 两轴同时可滚时右下角那块方板，默认是不透明灰，一并抹平 */
+.cro-structure__stack::-webkit-scrollbar-corner,
+.cro-moe-groups::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* ── stepper 行：复用 .zoom-control-group / .zoom-control-readout / .btn ── */
+.cro-stepper-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: flex-start;
+}
+
+.cro-stepper {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.cro-stepper__label {
+  font-size: 10px;
+  color: var(--foreground-secondary);
+  white-space: nowrap;
+}
+
+/* .btn-icon 的宽度写死成 var(--button-height-md)=36px，.btn-sm 只改 min-height，
+   所以默认是 36+8+34+8+36 ≈ 126×30。这里只在本作用域覆盖尺寸 token 与
+   --zoom-control-gap，不改写 .btn / .zoom-control-group 的规则本身。 */
+.cro-stepper__control {
+  --button-height-md: 22px;
+  --button-height-sm: 22px;
+  --zoom-control-gap: 2px;
+  padding: 1px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+}
+
+.cro-stepper__control .btn svg {
+  width: 11px;
+  height: 11px;
+}
+
+.cro-stepper__control .zoom-control-readout {
+  min-width: 28px;
+  font-size: var(--font-size-label-xs);
+  color: var(--foreground);
+}
+
+/* MoE 的 4 个 stepper 要在约 300px 宽的一列里排成一行：
+   四者等分宽度一起收缩（而不是各自占固定宽再换行），控件本身也解除最小宽，
+   这样无论列宽怎么变都不会掉到第二行。 */
+.cro-region--moe .cro-stepper-row {
+  flex-wrap: nowrap;
+  gap: var(--space-2);
+}
+
+.cro-region--moe .cro-stepper {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.cro-region--moe .cro-stepper__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cro-region--moe .cro-stepper__control {
+  --button-height-md: 20px;
+  --button-height-sm: 20px;
+  min-width: 0;
+}
+
+.cro-region--moe .cro-stepper__control .zoom-control-readout {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+/* 校验失败时用 danger 描边提示，不新造 error 视觉 */
+.cro-stepper.is-invalid .cro-stepper__control {
+  box-shadow: inset 0 0 0 1px var(--danger);
+}
+
+/* 无错误时不占位（原来留了 min-height:1em 的空行） */
+.cro-config-error {
+  margin: 0;
+  font-size: var(--font-size-label-xs);
+  color: var(--danger);
+}
+
+.cro-config-error:empty {
+  display: none;
+}
+
+/* ── 模型下拉 ────────────────────────────────────────────────────────────
+   ⚠️ 设计系统当前没有 select / form-control 组件（css/style.css 无 .select）。
+   这里只用 tokens 拼一个最小实现，视觉与 .cro-stepper__control 对齐；
+   属于「缺失样式」，已在交付说明里向用户标出，待批准后应吸收进共享系统。 */
+.cro-select {
+  appearance: none;
+  width: 100%;
+  padding: 4px var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  color: var(--foreground);
+  font: inherit;
+  font-size: var(--font-size-body-sm);
+  cursor: pointer;
+}
+
+.cro-select:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* ── 关系连线 overlay（第 7 项）：覆盖全视口，不吃指针事件 ───────────────── */
+.cro-link-layer {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 40;
+}
+
+.cro-link {
+  fill: none;
+  stroke: var(--foreground);
+  stroke-width: 1.25;
+  stroke-opacity: 0.55;
+  stroke-linecap: round;
+}
+
+/* 连线指向的是一整组时，把该组的包围盒圈出来。
+   虚线取纯白，与 .cro-bar / .cro-expert / deck 节点的白描边选中态同色 ——
+   原来的 --foreground @0.4 在深色底上偏灰蓝，读起来像另一套弱提示。 */
+.cro-link-group {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 1.25;
+  stroke-opacity: 0.9;
+  stroke-dasharray: 3 3;
+}
+
+/* 标注块浮在整页信息之上，只靠 --border-subtle 描边会和底下的卡片/刻度糊成一片。
+   三层 drop-shadow 叠出「浮起来」的层次：贴边硬影定形状 + 中距投影 + 大范围暗场
+   （最后一层几乎不带位移，作用是把标注块四周的底图整体压暗一圈，等效挖空背景）。
+   透明度都高于 --shadow-* token，因为它压的是彩色 3D deck 和热力图，不是纯色页面底。
+   SVG 元素吃不到 box-shadow，故走 filter。描边同时提到 --border-strong 增加边界对比。 */
+.cro-link-label__box {
+  fill: var(--surface-1);
+  stroke: var(--border-strong);
+  stroke-width: 1;
+  filter:
+    drop-shadow(0 2px 4px rgba(0, 0, 0, 0.7))
+    drop-shadow(0 8px 16px rgba(0, 0, 0, 0.7))
+    drop-shadow(0 16px 40px rgba(0, 0, 0, 0.65));
+}
+
+.cro-link-label__text {
+  fill: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: var(--font-size-body-sm);
+}
+
+/* 有选中关系时，未被牵连的对象整体降噪；被牵连的保持原样。
+   只动 opacity，不改尺寸/线宽，避免选中时元素跳位。 */
+/* 刻度改成空心细描边后，0.12 会让整条带子直接消失（原来是实心块才压得住），
+   降噪到 0.4 就足以把选中项推到前景，同时保留刻度带的形状。 */
+.cro-board.is-focused .cro-tick:not(.is-selected):not(.is-related) { opacity: 0.4; }
+.cro-board.is-focused .cro-expert:not(.is-selected):not(.is-related) { opacity: 0.4; }
+/* Layer 导航上下两行分组名（PP / Dense / MoE / Emb / Norm / Head）同样降噪：
+   刻度都暗下去了、分组名还满亮，读起来像每一段都还在范围内。 */
+.cro-board.is-focused :is(.cro-pp-span, .cro-ffn-span):not(.is-selected):not(.is-related) {
+  opacity: 0.35;
+}
+.cro-board.is-focused .cro-bar:not(.is-selected) { opacity: 0.5; }
+.cro-board.is-focused .cro-structure__col.is-related .cro-bar { opacity: 1; }
+/* 列级去色：选到层 / stage / rank 这类粗粒度对象时一个 .cro-bar.is-selected
+   都没有，下面那条 :has(.cro-bar.is-selected) 去色规则整条不生效，五个典型层
+   之间就只剩 0.5 的透明度差 —— 点一个 MoE 层，Dense / Emb / Norm / Head 照旧
+   满色，读不出「这次与它们无关」。按列补一条，与算子粒度那条同一套观感。 */
+.cro-board.is-focused .cro-structure__col:not(.is-related) .cro-bar {
+  filter: grayscale(1) brightness(0.92);
+}
+.cro-board.is-focused .cro-structure__col:not(.is-related) .cro-bar:hover {
+  filter: brightness(1.04);
+  opacity: 1;
+}
+
+/* 整网同理：点 rank / stage / 层这类粗粒度对象时一个节点都没被选中，下面那条
+   :has(.is-selected) 规则整条不生效，可关系其实只覆盖流水线的一段（一个 rank
+   只持有它那个 PP stage 的层 + 一端的 Emb 或 Norm/Head），其余节点该退到背景。
+   :has(.is-related) 把规则锁在「确实标注过相关范围」时，静息态不无故变灰。 */
+.cro-board.is-focused #croDeckHost:has(.pto-model-deck__node.is-related, .pto-model-deck__experts.is-related)
+  :is(.pto-model-deck__node, .pto-model-deck__experts):not(.is-selected):not(.is-related) {
+  filter: grayscale(1) brightness(0.92);
+  opacity: 0.62;
+}
+.cro-board.is-focused #croDeckHost:has(.pto-model-deck__node.is-related, .pto-model-deck__experts.is-related)
+  :is(.pto-model-deck__node, .pto-model-deck__experts):not(.is-selected):not(.is-related):hover {
+  filter: brightness(1.04);
+  opacity: 1;
+}
+.cro-board.is-focused #croHeat .twin-heat-cell:not(.is-selected):not(.is-related) { opacity: 0.35; }
+
+/* 算子粒度的「保色」：点中某个算子后，整网 deck 与五个典型层里只有它留语义色，
+   其余节点整体去色，让选中项从一片灰底上跳出来（层/EP/rank 那些粗粒度选择
+   仍走上面的 opacity 降噪，不动色相）。
+   :has() 把规则锁在「确实有节点被选中」时 —— 只选到层时 rel.deckNode 为空，
+   一个 .is-selected 都没有，那时整幅图不该无缘无故变灰。
+   这里只在 .is-focused 状态下叠一层 filter，不改写 pattern 自身的节点样式。 */
+.cro-board.is-focused #croDeckHost:has(.pto-model-deck__node.is-selected, .pto-model-deck__experts.is-selected)
+  :is(.pto-model-deck__node, .pto-model-deck__experts):not(.is-selected),
+.cro-board.is-focused .cro-structure:has(.cro-bar.is-selected) .cro-bar:not(.is-selected) {
+  filter: grayscale(1) brightness(0.92);
+  opacity: 0.62;
+}
+/* 悬停时把本色放回来，方便在灰底上确认目标 */
+.cro-board.is-focused #croDeckHost:has(.pto-model-deck__node.is-selected, .pto-model-deck__experts.is-selected)
+  :is(.pto-model-deck__node, .pto-model-deck__experts):not(.is-selected):hover,
+.cro-board.is-focused .cro-structure:has(.cro-bar.is-selected) .cro-bar:not(.is-selected):hover {
+  filter: brightness(1.04);
+  opacity: 1;
+}
+.cro-board #croDeckHost :is(.pto-model-deck__node, .pto-model-deck__experts) {
+  transition: filter 140ms ease, opacity 140ms ease;
+}
+
+/* ── 左：整网 deck ───────────────────────────────────────────────────────── */
+/* deck 宿主。只保留正视图：视图切换 / 主题 / 适配工具栏由 pattern 自带的
+   options.showChrome === false 移除（pattern 支持的关法），不在这里 display:none，
+   也不覆写任何 .pto-model-deck__ 内部规则。 */
+/* 这个元素挂载后会被 pattern 加上 .pto-model-deck，那条规则带 height:100%
+   —— 在 flex 列里会解析成「整个 net 区的高度」，加上上方标题和下拉就溢出了。
+   这里显式改回 auto，高度交给 flex-grow 决定。 */
+.cro-deck-host {
+  position: relative;
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 300px;
+}
+
+/* ── 中：Layer 导航 ─────────────────────────────────────────────────────── */
+/* 严格照 default.png（几何逐像素量自参考图）：
+     一条连续刻度带 —— Emb 1 格 + 46 层 + Norm/Head 2 格，全带等宽等距，
+     刻度是空心细胶囊；带子按「PP 边界 ∪ Dense|MoE 起止」断开成组，
+     组间空当正中一条竖分隔线：
+       上分隔线（PP 边界 + 带子两端）从 PP 标签行顶画到刻度行下方；
+       下分隔线（Dense / MoE 起止）从刻度行顶画到底部标签行下方。
+     PP0…PPn 在上、Dense / MoE 在下，都是纯文字，不套底色、不加横向分割线。
+   flex-shrink 必须为 0：作为 flex 子项它默认会被压缩到内容高度以下，
+   而它没有 overflow，刻度就会溢出、盖到下面的结构条上。
+   arch 列的伸缩由 .cro-structure 独家承担。 */
+.cro-layer-nav {
+  /* 组间空当。JS 在刻度撞到宽度下限时会就地压缩它，故声明在本元素上 */
+  --cro-nav-split: 26px;
+  --cro-nav-pp-h: 16px;      /* PP 标签行 */
+  --cro-nav-ticks-h: 30px;   /* 刻度行 */
+  --cro-nav-rule-h: 46px;    /* 分隔线长度（两种分隔线等长） */
+  flex: 0 0 auto;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+  padding: 9px var(--space-4) 6px;
+}
+
+/* 三行叠在同一个定位上下文里：标签与分隔线全部绝对定位，x 由 layoutLayerNav
+   按实测组位置写入（PP 边界会落在 Dense|MoE 之间，比例硬算会错位）。 */
+.cro-layer-nav__band {
+  position: relative;
+  height: 63px;    /* 16（PP 行）+ 30（刻度行）+ 17（Dense/MoE 行） */
+}
+
+.cro-layer-nav__strip {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: var(--cro-nav-pp-h);
+  height: var(--cro-nav-ticks-h);
+  display: flex;
+  /* 两端各留半个空当：带子两端的分隔线正落在 padding-box 边上 */
+  padding: 0 calc(var(--cro-nav-split) / 2);
+  gap: var(--cro-nav-split);
+  overflow: hidden;
+}
+
+/* 组内刻度等距，间隙与刻度同宽 */
+.cro-layer-nav__group {
+  display: flex;
+  flex: 0 0 auto;
+  gap: var(--cro-tick-w, 4px);
+}
+
+/* 竖分隔线：1px，与 .cro-tick 的描边同色 —— 分割线和刻度是同一层视觉骨架，
+   用两种灰会让分组线看着比刻度"更重"，压过内容。 */
+.cro-nav-rule {
+  position: absolute;
+  width: 1px;
+  height: var(--cro-nav-rule-h);
+  visibility: hidden;          /* 实测定位写入前不闪 */
+  background: var(--border-default);
+}
+
+.cro-nav-rule--pp  { top: 0; }
+.cro-nav-rule--ffn { top: var(--cro-nav-pp-h); }
+
+/* 同理：标题、stepper 行、错误行都不参与伸缩 */
+.cro-region__title,
+.cro-stepper-row,
+.cro-config-error,
+.cro-section__title {
+  flex: 0 0 auto;
+}
+
+/* 包着 Layer 导航的 section 也不能被压 */
+.cro-region--arch > .cro-section {
+  flex: 0 0 auto;
+}
+
+/* 「典型 Layer」这一节例外：它替 .cro-structure 承担 arch 列的高度伸缩，
+   固定成 auto 会让结构条塌回内容高度、底部空出一大块。 */
+.cro-region--arch > .cro-section--structure {
+  flex: 1 1 auto;
+}
+
+/* ── 上下两行标签：纯文字，左右边界由 layoutLayerNav 实测写入。
+      参考图里它们没有底色、没有胶囊、没有描边，只是压在刻度带上下的注记。 ── */
+.cro-pp-span,
+.cro-ffn-span {
+  position: absolute;
+  visibility: hidden;         /* 实测定位写入前不闪 */
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--foreground);
+  font: inherit;
+  /* 有意脱离字号 token：设计系统最小档是 --font-size-label-xs (11px)，而这两行
+     是压在刻度带上下的次级注记，需要比任何正文都轻。9px 为本页局部例外。 */
+  font-size: 9px;
+  line-height: 12px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  transition: opacity 140ms ease;
+}
+
+.cro-pp-span {
+  top: 0;
+  cursor: pointer;
+  transition: color 120ms ease, opacity 140ms ease;
+}
+
+/* 刻度行下沿（16 + 30）再留 1px */
+.cro-ffn-span { top: 47px; }
+
+.cro-pp-span:hover { color: var(--primary); }
+
+.cro-pp-span:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-sm);
+}
+
+/* 只有「直接点了 PP 标签」才变蓝。选中某一层时 PP 会被牵连成 is-related，
+   那时整条 PP 名跟着变蓝，看着像 PP 也被选中了，抢掉刻度上真正的选中态。
+   牵连关系交给刻度的 is-related 和关系连线表达，标签保持静默。 */
+.cro-pp-span.is-selected {
+  color: var(--primary);
+}
+
+/* 每格一根空心刻度：等宽、等高、无填充，只有一圈细描边（参考图取色
+   rgb(51,51,51) on #161616 ≈ --border-default）。类型信息只进 title /
+   dataset，不进视觉，填充留给选中态和第 7 项的关系高亮。
+   --cro-tick-w 由 layoutLayerNav 解出，全带 49 格严格等宽等距。 */
+.cro-tick {
+  flex: 0 0 var(--cro-tick-w, 4px);
+  height: 100%;
+  padding: 0;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.cro-tick:hover { border-color: var(--foreground-secondary); }
+
+.cro-tick:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-color: var(--foreground-secondary);
+}
+
+.cro-tick.is-related { background: var(--border-strong); }
+
+/* 选中的层：蓝色实心 + 一圈白描边，和结构条 / 专家 / deck 节点的白描边同语言。
+   刻度只有 ~4px 宽，白圈走 border-color 而不是外扩 box-shadow，否则会盖住邻格。 */
+.cro-tick.is-selected {
+  border-color: #fff;
+  background: var(--primary);
+}
+
+/* 选中单个算子时（整网节点 / 典型层算子条），它覆盖的那一层或那一组层用与
+   算子条完全相同的渐变填充 —— 层刻度与算子条指的是同一件事，各用一套色
+   （灰/蓝刻度 vs 语义色条）会读成两条互不相干的高亮。--cro-bar-color 由
+   .cro-layer-nav[data-op] 解出，data-op 由 applyRelation 写入。
+   .is-selected 的白描边不覆盖，选中语言全局保持一致。 */
+.cro-layer-nav[data-op] .cro-tick.is-related,
+.cro-layer-nav[data-op] .cro-tick.is-selected {
+  background: linear-gradient(180deg,
+    var(--cro-bar-color) 0%,
+    color-mix(in srgb, var(--cro-bar-color) 75%, #000) 100%);
+}
+
+.cro-layer-nav[data-op] .cro-tick.is-related {
+  border-color: color-mix(in srgb, var(--cro-bar-color) 75%, #000);
+}
+
+/* Emb / Norm / Head 三个端点格与层刻度**同形同色** —— 参考图里两者取色
+   一致，它们的区分交给下方 Dense / MoE 标签所划出的层区范围。 */
+
+/* ── 中：五段结构条 ─────────────────────────────────────────────────────── */
+/* 结构条吃掉 arch 列的剩余高度：第 1 行的高度由 MoE 列（专家列表）主导，
+   arch 内容比它短，不让结构卡片长高就会在底部留一大块空挡。 */
+.cro-structure {
+  display: grid;
+  gap: var(--space-3);
+  align-items: stretch;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.cro-structure__col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  min-height: 0;
+}
+
+.cro-structure__name {
+  /* 不设 flex:0 0 auto 的话，它在 min-height:0 的列里会被压成 0 高，
+     被下面的卡片盖住（Dense / MoE 的列标题「被层盖住」） */
+  flex: 0 0 auto;
+  font-size: var(--font-size-label-xs);
+  color: var(--foreground-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cro-structure__stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px;
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+  flex: 1 1 auto;
+  min-height: 60px;
+  overflow-y: auto;
+}
+
+/* 结构条的每一段。色值与填充方式和整网 deck 的节点**逐位一致**：
+   --pto-model-deck-* 变量由 JS 从 deck 根节点原样搬到 .cro-board（见
+   syncDeckPalette），渐变与 inset 高光照抄 .pto-model-deck__node 的写法，
+   保证「同一个算子在两处是同一块颜色」。 */
+.cro-bar {
+  display: flex;
+  align-items: center;
+  /* 每列现在是整网 deck 的算子投影：注意力段就有 27 个节点，Dense 列约 30 条、
+     MoE 列约 32 条，条目必须压紧，靠 stack 自身滚动承载。 */
+  flex: 0 0 auto;
+  min-height: 9px;
+  padding: 0 3px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: linear-gradient(180deg,
+    var(--cro-bar-color) 0%,
+    color-mix(in srgb, var(--cro-bar-color) 75%, #000) 100%);
+  box-shadow:
+    inset 0 0 8px rgba(255, 255, 255, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15),
+    0 2px 5px rgba(0, 0, 0, 0.18);
+  color: #fff;
+  font-size: 8px;
+  line-height: 1;
+  font-weight: var(--font-weight-medium);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition: filter 140ms ease, opacity 140ms ease;
+}
+
+/* op → 色变量映射，与 model-architecture-3d-deck-pattern.css 的
+   .pto-model-deck__node[data-op="…"] 一一对应。
+   .cro-layer-nav 一并列在这里：选中单个算子时 applyRelation 会把它的 op 写到
+   导航上，层刻度据此取到和算子条同一个 --cro-bar-color（见 .cro-tick 的渐变
+   规则），色映射保持单一出处。 */
+.cro-bar[data-op="embedding"], .cro-layer-nav[data-op="embedding"] { --cro-bar-color: var(--pto-model-deck-embedding); }
+.cro-bar[data-op="norm"],      .cro-layer-nav[data-op="norm"]      { --cro-bar-color: var(--pto-model-deck-norm); }
+.cro-bar[data-op="attention"], .cro-layer-nav[data-op="attention"] { --cro-bar-color: var(--pto-model-deck-attention); }
+.cro-bar[data-op="linear"],    .cro-layer-nav[data-op="linear"]    { --cro-bar-color: var(--pto-model-deck-linear); }
+.cro-bar[data-op="head"],      .cro-layer-nav[data-op="head"]      { --cro-bar-color: var(--pto-model-deck-head); }
+.cro-bar[data-op="mlp"],       .cro-layer-nav[data-op="mlp"]       { --cro-bar-color: var(--pto-model-deck-mlp); }
+.cro-bar[data-op="act"],       .cro-layer-nav[data-op="act"]       { --cro-bar-color: var(--pto-model-deck-act); }
+.cro-bar[data-op="gate"],      .cro-layer-nav[data-op="gate"]      { --cro-bar-color: var(--pto-model-deck-gate); }
+.cro-bar[data-op="moe"],       .cro-layer-nav[data-op="moe"]       { --cro-bar-color: var(--pto-model-deck-moe); }
+.cro-bar[data-op="comm"],      .cro-layer-nav[data-op="comm"]      { --cro-bar-color: var(--pto-model-deck-comm); }
+.cro-bar[data-op="output"],    .cro-layer-nav[data-op="output"]    { --cro-bar-color: var(--pto-model-deck-output); }
+/* 下面这四个 op 原先漏在映射外，取不到 --cro-bar-color 只能落到默认灰：
+   MTP Decoder（decoder）在整网里是绿的，典型层里却是灰的就是这么来的。
+   syncDeckPalette 的 DECK_COLOR_VARS 一直搬着这四个变量，只是没人用。 */
+.cro-bar[data-op="decoder"],   .cro-layer-nav[data-op="decoder"]   { --cro-bar-color: var(--pto-model-deck-decoder); }
+.cro-bar[data-op="input"],     .cro-layer-nav[data-op="input"]     { --cro-bar-color: var(--pto-model-deck-input); }
+.cro-bar[data-op="parameter"], .cro-layer-nav[data-op="parameter"] { --cro-bar-color: var(--pto-model-deck-parameter); }
+.cro-bar[data-op="state"],     .cro-layer-nav[data-op="state"]     { --cro-bar-color: var(--pto-model-deck-state); }
+
+.cro-bar:hover { filter: brightness(1.04); }
+
+.cro-bar:focus-visible {
+  outline: none;
+  box-shadow:
+    var(--focus-ring),
+    inset 0 0 8px rgba(255, 255, 255, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+/* 选中态照抄 deck 节点的白描边写法 */
+.cro-bar.is-selected {
+  filter: brightness(1.04);
+  box-shadow:
+    0 0 0 3px #fff,
+    inset 0 0 8px rgba(255, 255, 255, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15),
+    0 2px 5px rgba(0, 0, 0, 0.18);
+}
+
+/* 选中某层时，对应的 Dense / MoE 结构列整体点亮 */
+.cro-structure__col.is-related .cro-structure__stack { background: var(--surface-3); }
+.cro-structure__col.is-related .cro-structure__name { color: var(--foreground); }
+
+/* ── 右：MoE ────────────────────────────────────────────────────────────── */
+/* MoE 列吃满整行高度：区块本身由 grid 拉伸，内部逐层把高度传下去，
+   最后由路由专家列表 flex:1 吃掉剩余空间并自己滚动。 */
+/* 除路由专家外的兄弟（stepper 行、共享专家段）都不许被压缩：
+   它们默认 flex-shrink:1，高度不够时会被压到比内容矮，而 .cro-expert 是
+   固定 15px，于是 SE 胶囊溢出自己的段落、压到「路由专家」标题上。 */
+.cro-region--moe > .cro-stepper-row,
+.cro-region--moe > .cro-section {
+  flex: 0 0 auto;
+}
+
+.cro-region--moe > .cro-section:last-child {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.cro-moe-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  align-content: start;
+  gap: 3px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* 2px 是整组选中时那圈 1.5px 白描边的让位，否则它会被滚动容器裁掉 */
+  padding: 2px var(--space-1) 2px 2px;
+}
+
+/* 组名一行、专家一行。padding 要留够，否则专家选中的 1.5px 白描边会被
+   卡片边缘裁掉。 */
+.cro-moe-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 3px 5px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  /* 整卡都是选中该 EP 组的热区（专家胶囊除外，见 renderMoe 的 click 处理） */
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.cro-moe-group:hover { background: var(--state-hover); }
+
+/* 被牵连的组：不铺蓝底。EP 组是一整块卡片，--state-selected 铺满后连同组内
+   专家一起变成一片蓝，粒度读不出来。改成一圈中性描边，与下面选中态的白描边
+   同一套语言，只是弱一档。 */
+.cro-moe-group.is-related {
+  background: var(--surface-2);
+  box-shadow: 0 0 0 1px var(--border-strong);
+}
+
+/* 整个 EP 组被选中：不铺 --state-selected 那层蓝，只给整组一圈白描边，
+   与 .cro-expert.is-selected 的单体白描边同一套语言、粗细一致。 */
+.cro-moe-group.is-selected {
+  background: var(--surface-2);
+  box-shadow: 0 0 0 1.5px #fff;
+}
+
+/* 整组被点亮（直接选中 or 被牵连）时，组内专家保留 is-related 供聚焦降噪
+   判断"未涉及"，但底色压回中性 —— 粒度是「组」，就由组卡片自己表达；
+   每张专家卡再各填一层蓝，整组会连人带框一起变蓝，组级的白描边／蓝底
+   反而读不出来。单独选中的专家（is-selected）不受影响。 */
+.cro-moe-group.is-selected .cro-expert.is-related,
+.cro-moe-group.is-related .cro-expert.is-related {
+  background: var(--surface-3);
+  color: var(--foreground-secondary);
+}
+
+.cro-moe-group__name {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--foreground-secondary);
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.cro-moe-group__name:hover { color: var(--foreground); }
+
+.cro-moe-group__name:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-sm);
+}
+
+.cro-moe-group.is-related .cro-moe-group__name,
+.cro-moe-group.is-selected .cro-moe-group__name { color: var(--foreground); }
+
+.cro-moe-group__experts {
+  display: flex;
+  flex-wrap: nowrap;   /* 一行排完 */
+  gap: 3px;
+  min-width: 0;
+}
+
+/* 专家胶囊。默认中性，只有选中/关联时才用 deck 的语义色填充 ——
+   默认状态不预选、不高亮，符合 ide-frame 的 architecture pane 基线。 */
+.cro-expert {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* flex:1 1 0 让同一行里的专家严格等宽，文字由 justify-content 居中；
+     min-width:0 允许它们一起收缩而不是溢出。 */
+  flex: 1 1 0;
+  min-width: 0;
+  height: 15px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--surface-3);
+  color: var(--foreground-secondary);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.cro-expert:hover {
+  background: var(--state-hover);
+  color: var(--foreground);
+}
+
+.cro-expert:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* 关联/选中都不用语义色（moe 是橙红，读起来像告警），
+   统一走中性态：关联=提亮底，选中=深底 + 白描边。 */
+.cro-expert.is-related {
+  background: var(--state-selected);
+  color: var(--foreground);
+}
+
+.cro-expert.is-selected {
+  background: var(--surface-4);
+  box-shadow: 0 0 0 1.5px #fff;
+  color: var(--foreground);
+}
+
+/* 共享专家通常只有一个，任何指向它的选中都只落成 is-related，铺满整行的
+   --state-selected 蓝在 MoE 列里比真正的选中态还抢眼。统一压回专家胶囊的
+   选中语言：中性底 + 白描边。 */
+.cro-expert--shared.is-related {
+  background: var(--surface-4);
+  box-shadow: 0 0 0 1.5px #fff;
+  color: var(--foreground);
+}
+
+/* 与结构条共用同一份 op → 色变量映射 */
+.cro-expert[data-op="moe"] { --cro-bar-color: var(--pto-model-deck-moe); }
+.cro-expert[data-op="mlp"] { --cro-bar-color: var(--pto-model-deck-mlp); }
+
+.cro-empty {
+  font-size: var(--font-size-body-sm);
+  color: var(--foreground-muted);
+}
+
+/* ── 底：Cluster（T 型的下竖笔，挂在 arch 列正下方）─────────────────────
+   左右排：标题 / stepper 在左，矩阵在右吃满剩余宽度。
+   纵向堆叠会多占约 80px 高度，容易把矩阵推到滚动区之外。 */
+.cro-cluster {
+  display: flex;
+  gap: var(--space-4);
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.cro-cluster__grid {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: hidden;   /* 要求密集显示完，不给横向滚动 */
+}
+
+.cro-cluster__side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+  max-width: 210px;
+}
+
+/* Total Rank / Node 纵向堆叠：侧栏本来就窄，左右排会把两个 label 挤到换行 */
+.cro-cluster__side .cro-stepper-row {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: var(--space-2);
+}
+
+/* 集群网格：几何全部由 JS 按 rank 编址算，这里只补 training-run-twin.css 里
+   原本由 training-run-twin.js 写成内联样式的那几条布局规则（列数除外）。
+   .twin-heat 基类自带 grid + 32 列，这里改成纵向堆叠 Stage标签 / DP组 / EP标签。 */
+#croHeat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  /* .twin-heat-dp-group::before 的 DP 标签绝对定位在组左外侧，给它留出位置 */
+  padding-left: 26px;
+  /* 不横向滚动：整张矩阵必须在本列宽度内显示完，格子随之收缩 */
+  width: 100%;
+  min-width: 0;
+}
+
+/* Stage 标签行 / stage 块容器 / EP 标签行三者用同一套 pp 列模板，左右对齐 */
+#croHeat .twin-heat-pp-labels,
+#croHeat .cro-heat-dp,
+#croHeat .cro-heat-ep-labels {
+  display: grid;
+  column-gap: var(--space-2);
+}
+
+/* 每个 DP 副本一个横贯全宽的分组盒（基类提供左侧 DP 标签与边框） */
+#croHeat .cro-heat-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+#croHeat .cro-heat-dp {
+  padding: 2px;
+  border-radius: 3px;
+}
+
+/* 组内每个 stage 一个小方阵：epRows × epCols（默认 4×16） */
+#croHeat .cro-heat-block {
+  display: grid;
+  gap: 1px;
+}
+
+#croHeat .twin-heat-ep-labels {
+  display: grid;
+  gap: 0;
+}
+
+#croHeat .twin-heat-pp-labels span {
+  text-align: center;
+  font-size: 9px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--foreground-muted);
+}
+
+#croHeat .cro-heat-ep-labels span {
+  text-align: center;
+  font-size: 9px;
+  font-weight: var(--font-weight-medium);
+  color: var(--foreground-muted);
+  overflow: hidden;
+}
+
+
+
+/* .twin-heat-cell 基类只有 aspect-ratio + 6% 的 .ep-tint-N 底色，本身没有
+   可见描边 —— 原页面是靠 training-run-twin.js 的 renderHeat() 给每格写
+   inset 0 0 0 2px var(--twin-util-*) 才看得见的。本页不做 util 着色，
+   所以在这里补一圈中性描边作为静息态，否则整张矩阵是空白的。
+   描边颜色走 --cro-cell-ring，让 stage 分隔 / 关联 / 选中三种状态叠加不打架。 */
+/* 折成 4×16 后格子约 10px 宽，1px 描边足够表达，不再填色 ——
+   .ep-tint-N 的 EP 列底色也就能透出来。 */
+#croHeat .twin-heat-cell {
+  --cro-cell-ring: color-mix(in srgb, var(--foreground-muted) 45%, transparent);
+  background: transparent;   /* 不要 .ep-tint-N 的 8 色循环底色 */
+  /* 基类是 aspect-ratio:1，格高会被列宽牵着走；这里显式定高、与宽度解耦 */
+  aspect-ratio: auto;
+  height: 4px;
+  max-height: none;
+  border-radius: 1px;
+  box-shadow: inset 0 0 0 1px var(--cro-cell-ring);
+  cursor: pointer;   /* 基类是 cursor:help（原页面格子只用于悬浮看数） */
+}
+
+/* 关系高亮：默认全中性，只有被关系引擎点亮时才着色 */
+#croHeat .twin-heat-cell:focus-visible {
+  outline: none;
+  --cro-cell-ring: var(--foreground);
+  z-index: 1;
+}
+
+/* 关联 / 选中都走白描边，与 .cro-bar / .cro-expert / .cro-moe-group / deck
+   节点的选中语言一致。原来关联用 --accent、选中用 --primary，选中一组 rank 时
+   组里每格都描一圈偏蓝的边，读起来像另一套和语义色无关的状态。
+   层级交给粗细：关联 1px，选中 2px + 外圈 1px。 */
+#croHeat .twin-heat-cell.is-related { --cro-cell-ring: #fff; }
+
+#croHeat .twin-heat-cell.is-selected {
+  --cro-cell-ring: #fff;
+  box-shadow: inset 0 0 0 2px #fff, 0 0 0 1px #fff;
+  z-index: 1;
+}
+
+
+/* ── 占位（第 1 项骨架期使用，后续各项落地后逐个移除） ─────────────────── */
+.cro-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 96px;
+  flex: 1;
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+  color: var(--foreground-muted);
+  font-size: var(--font-size-body-sm);
+}
+

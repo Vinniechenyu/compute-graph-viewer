@@ -48,6 +48,9 @@
 
   /* 侧栏 explorer pane-body：pane-header/nav-item 已去掉，改由 pane-body 自身承担 4 周内边距 +
      顶部「任务对比」静态标题（纯文字，不承担返回首页交互，故无 hover 变色/指针样式）。 */
+  /* 左侧任务栏宽度上限 300px：拖拽分隔条最多只能把它拉到 300px，再宽会挤占图表/媒体卡片的栅格宽度
+     （任务名本身已做中间省略，不靠加宽来读全名） */
+  .pto-ide-frame__explorer { max-width: 300px; }
   .cmp-explorer-body { padding: var(--space-3); }
   .cmp-explorer-title { display: flex; align-items: center; width: 100%; margin: 0 0 10px; padding: 0 0 0 12px; border: 0;
     background: transparent; font: var(--ide-frame-title-font); color: var(--foreground); text-align: left; }
@@ -314,13 +317,52 @@
   .lane-anchor:hover { color: var(--primary); }
   .lane-anchor.is-selected { color: var(--primary); font-weight: 700; background: color-mix(in srgb, var(--primary) 12%, transparent); }
 
+  /* ===== Media 对比栏：多模态（视频）产出效果对比 =====
+     结构复用 .cmp-group / .cmp-grid（同一套折叠交互与栅格），只在 .cmp-media-grid 上改列宽策略：
+     图表是 3 等分定列，媒体卡要跟着封面缩略图的可读下限走，故用 auto-fill + minmax 自适应列数。
+     卡片数量 = 左侧勾选的任务数，一一对应。 */
+  /* 300px 下限：宽屏下自然落成 3 列，与上方图表分区的 3 等分栅格对齐；窄屏再依次降到 2 / 1 列 */
+  .cmp-media-grid { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+  .cmp-media-card { display: flex; flex-direction: column; gap: 10px; padding: 14px; min-width: 0; }
+  .cmp-media-head { display: flex; align-items: center; gap: 7px; min-width: 0; }
+  .cmp-media-name { flex: 1; min-width: 0; font-size: 12.5px; font-weight: 600; letter-spacing: -.01em;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* 封面：16:10 定比容器 + overflow 裁切，保证各卡片封面高度一致、不因原图尺寸差异而参差；
+     圆角按要求施加在容器上（img 自身圆角在 object-fit:cover 缩放下会被裁切边缘吃掉） */
+  .cmp-media-cover { position: relative; aspect-ratio: 16 / 10; border-radius: var(--radius-lg);
+    overflow: hidden; background: var(--surface-3); }
+  .cmp-media-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  /* 封面角标：时长（右下）/ 分辨率帧率（左下），叠在图上用半透明深底保证任何画面下都可读 */
+  .cmp-media-chip { position: absolute; bottom: 7px; font-size: 10px; font-family: var(--font-mono);
+    color: #fff; background: rgba(0,0,0,.58); border-radius: 999px; padding: 2px 7px; white-space: nowrap; }
+  .cmp-media-chip.spec { left: 7px; }
+  .cmp-media-chip.dur { right: 7px; }
+  /* 综合评分角标：与「最佳任务」榜单里参与排名的 media 分同源，放在封面上让两处口径对得上 */
+  .cmp-media-chip.score { top: 7px; right: 7px; bottom: auto; }
+  .cmp-media-prompt { font-size: 11px; font-family: var(--font-mono); color: var(--foreground-muted);
+    line-height: 1.5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cmp-media-prompt b { color: var(--foreground-secondary); font-weight: 500; }
+  /* 产出质量指标：2 列固定栅格，key 靠左 value 靠右，保证同列在各卡片间纵向对齐 */
+  .cmp-media-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 14px; }
+  .cmp-media-metric { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+  .cmp-media-metric-k { font-size: 10.5px; font-family: var(--font-mono); color: var(--foreground-muted); white-space: nowrap; }
+  .cmp-media-metric-v { font: var(--button-font); font-size: 11.5px; font-weight: 600; letter-spacing: -.02em;
+    color: var(--foreground); margin-left: auto; white-space: nowrap; }
+  .cmp-media-metric-v.best { color: var(--success); }
+  .cmp-media-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding-top: 8px; border-top: 1px solid var(--border-subtle); font-size: 10px;
+    font-family: var(--font-mono); color: var(--foreground-muted); white-space: nowrap; }
+  .cmp-media-foot span { overflow: hidden; text-overflow: ellipsis; }
+
   /* 细滚动条（沿用旧版观感，token 化） */
   ::-webkit-scrollbar { width: 10px; height: 10px; }
   ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
   ::-webkit-scrollbar-thumb:hover { background: var(--foreground-muted); border: 2px solid transparent; background-clip: padding-box; }
 
   @media (max-width: 980px) {
-    .cmp-grid { grid-template-columns: 1fr 1fr; }
+    /* :not(.cmp-media-grid) —— 媒体栏自己用 auto-fill minmax 自适应列数，窄屏下应能降到 1 列，
+       不该被这条固定 2 列的规则（在后、同特异度）覆盖 */
+    .cmp-grid:not(.cmp-media-grid) { grid-template-columns: 1fr 1fr; }
   }
 </style>
 </head>
@@ -383,6 +425,16 @@
           <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true">
             <rect x="3" y="3" width="18" height="18" rx="2"></rect>
             <path d="M12 3v18"></path>
+          </svg>
+        </button>
+        <!-- 「配置关系」（节点连线样式），跳转 Config & Relation Observer，三页互跳 -->
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" id="navConfigRelation" aria-label="配置关系" title="配置关系">
+          <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="18" cy="5" r="3"></circle>
+            <circle cx="6" cy="12" r="3"></circle>
+            <circle cx="18" cy="19" r="3"></circle>
+            <path d="m8.6 13.5 6.8 4"></path>
+            <path d="m15.4 6.5-6.8 4"></path>
           </svg>
         </button>
       </nav>
@@ -1213,12 +1265,77 @@ const CMP_METRICS = [
   { id:'lr',        label:'学习率',       dir:'flat', group:'optim' },
   { id:'kl',        label:'KL 散度',     dir:'flat', group:'optim' },
 ];
-// 最佳任务栏（renderBestRankCard）只比这 3 个最关键指标，按此顺序展示
-const BEST_RANK_METRIC_IDS = ['loss', 'grad_norm', 'mfu'];
+// ── Media 对比：各任务 checkpoint 的多模态（文生视频）产出效果 ──
+// 训练指标只说明「训得稳不稳」，多模态实验还要看「出片好不好」，故按任务给出同一 prompt 下的
+// 抽样产出：封面取自 ./pic，指标为视频生成常用的客观口径。dir 决定该指标越高/越低越好（用于
+// 「标记最优」开关下的绿色高亮），与 CMP_METRICS 同口径。
+const MEDIA_METRICS = [
+  { id:'clipT',     label:'CLIP-T',   dir:'up',   fmt:v=> v.toFixed(3) },
+  { id:'temporal',  label:'时序一致', dir:'up',   fmt:v=> (v*100).toFixed(0)+'%' },
+  { id:'aesthetic', label:'美学评分', dir:'up',   fmt:v=> v.toFixed(2) },
+  { id:'fvd',       label:'FVD ↓',    dir:'down', fmt:v=> v.toFixed(0) },
+];
+const MEDIA = {
+  // deepseek32r 是 cloneDeepseek32() 生成的 v1 副本任务，同样参与 Media 对比
+  deepseek32r: { pic:'6.png', res:'1280×720', fps:24, dur:'00:05', cost:'8.1s',
+    ckpt:'ckpt-300', step:520, prompt:'未来都市夜景，环形光轨自下而上盘旋，镜头缓慢上摇',
+    clipT:0.253, temporal:0.66, aesthetic:5.11, fvd:574,
+    note:'spike 前抽样，主体尚可但运动漂移' },
+  deepseek32: { pic:'1.png', res:'1280×720', fps:24, dur:'00:05', cost:'8.4s',
+    ckpt:'ckpt-500', step:580, prompt:'未来都市夜景，环形光轨自下而上盘旋，镜头缓慢上摇',
+    clipT:0.241, temporal:0.62, aesthetic:4.98, fvd:612,
+    note:'spike 后抽样，画面闪烁明显' },
+  qwen: { pic:'2.png', res:'1280×720', fps:24, dur:'00:08', cost:'6.2s',
+    ckpt:'ckpt-800', step:1230, prompt:'未来都市夜景，环形光轨自下而上盘旋，镜头缓慢上摇',
+    clipT:0.312, temporal:0.87, aesthetic:6.12, fvd:288,
+    note:'主体结构稳定，光轨连贯' },
+  pythia: { pic:'3.png', res:'960×544', fps:16, dur:'00:06', cost:'4.8s',
+    ckpt:'ckpt-1200', step:1600, prompt:'未来都市夜景，环形光轨自下而上盘旋，镜头缓慢上摇',
+    clipT:0.298, temporal:0.83, aesthetic:5.87, fvd:331,
+    note:'低分辨率抽样，细节偏软' },
+  dpo: { pic:'4.png', res:'1280×720', fps:24, dur:'00:08', cost:'6.9s',
+    ckpt:'ckpt-900', step:1450, prompt:'未来都市夜景，环形光轨自下而上盘旋，镜头缓慢上摇',
+    clipT:0.305, temporal:0.85, aesthetic:6.02, fvd:302,
+    note:'偏好对齐后构图更集中' },
+  gpt2sent: { pic:'5.png', res:'1024×576', fps:20, dur:'00:06', cost:'5.5s',
+    ckpt:'ckpt-700', step:980, prompt:'未来都市夜景，环形光轨自下而上盘旋，镜头缓慢上摇',
+    clipT:0.287, temporal:0.79, aesthetic:5.64, fvd:358,
+    note:'色调偏暖，运动幅度偏小' },
+};
+
+// media 综合评分（0–100，越高越好）：对 MEDIA 四项客观指标的加权归一，作为一个可直接跨任务比较
+// 的标量存在卡片数据里——不在选中集合内做即时归一化，否则同一任务的分数会随勾选谁而变。
+const MEDIA_SCORE = {
+  deepseek32r: 63.5, deepseek32: 58.2, qwen: 86.9, pythia: 84.1, dpo: 82.4, gpt2sent: 76.8,
+};
+// 最佳任务栏（renderBestRankCard）只比这 3 个最关键指标，按此顺序展示：
+// 收敛信号 loss + 多模态产出 media + 算力效率 mfu
+const BEST_RANK_METRIC_IDS = ['loss', 'media', 'mfu'];
+// media 不是时序指标，CMP_METRICS 里没有它，故单独给一个同形描述符：media:true 表示取值走
+// MEDIA_SCORE 而非 cmpSeries 的稳态均值
+const BEST_RANK_MEDIA_METRIC = { id:'media', label:'media', dir:'up', media:true };
+function bestRankMetric(id){
+  if(id === 'media') return BEST_RANK_MEDIA_METRIC;
+  return CMP_METRICS.find(function(m){ return m.id===id; });
+}
+// 该任务在该指标上是否有数据（决定是否参与该指标排名 / 是否显示奖牌）
+function bestRankHas(taskId, m){
+  return m.media ? MEDIA_SCORE[taskId] != null : !!cmpSeries(taskId, m);
+}
+// 该任务在该指标上的可比数值（时序指标取稳态均值，media 取综合评分）
+function bestRankValue(taskId, m){
+  if(m.media) return MEDIA_SCORE[taskId] != null ? MEDIA_SCORE[taskId] : null;
+  const s = cmpSeries(taskId, m);
+  return s ? stableMean(s) : null;
+}
+// 列标题：时序指标是「稳态 X 均值」，media 是一次性综合评分，措辞需区分
+function bestRankMetricLabel(m){
+  return m.media ? 'media 综合评分' : ('稳态 ' + m.label + ' 均值');
+}
 // 每个指标列各自的固定宽度（而非 3 列统一取最宽的那个），让 key/value 间距贴合各自 label 长度，
 // 不会因为跟「grad_norm」这种长 label 共用一个列宽而空出一大截；同一指标在所有行里仍是同一列宽，
 // 保证跨行对齐——只是「每列多宽」不再强行取齐
-const BEST_RANK_METRIC_WIDTH = { loss: 194, grad_norm: 230, mfu: 188 };
+const BEST_RANK_METRIC_WIDTH = { loss: 194, media: 224, mfu: 188 };
 function cmpSeries(id, m){
   const key = (m.alias && m.alias[id]) || m.id;
   return TASKS[id].series[key] || null;
@@ -1314,12 +1431,12 @@ function stableMean(series, n){
 // 返回排好序数组 [{ id, rankSum, metricRanks:{metricId→rank}, metricVals:{metricId→val} }, ...]
 // rankSum 越小越好（即排名越靠前）
 function computeRankings(sel){
-  const dm = BEST_RANK_METRIC_IDS.map(function(id){ return CMP_METRICS.find(function(m){ return m.id===id; }); })
+  const dm = BEST_RANK_METRIC_IDS.map(bestRankMetric)
                         .filter(function(m){ return m && (m.dir==='up'||m.dir==='down'); });
   const vals = {};
   sel.forEach(function(id){
     vals[id] = {};
-    dm.forEach(function(m){ const s=cmpSeries(id,m); vals[id][m.id] = s ? stableMean(s) : null; });
+    dm.forEach(function(m){ vals[id][m.id] = bestRankValue(id, m); });
   });
   const metricRanks = {};
   sel.forEach(function(id){ metricRanks[id]={}; });
@@ -1340,11 +1457,11 @@ let bestRankExpanded = false;
 // 生成最佳任务排名卡片 HTML
 function renderBestRankCard(rankings, sel){
   if(!rankings||!rankings.length) return '';
-  // 最佳任务栏只固定展示 3 个最关键指标（收敛信号 loss/grad_norm + 算力效率信号 MFU），
+  // 最佳任务栏只固定展示 3 个最关键指标（收敛信号 loss + 多模态产出 media + 算力效率 MFU），
   // 而非把全部可比指标都塞进来——那样每行只能挤 3 个还会被迫换行，反而稀释了重点
-  const dm = BEST_RANK_METRIC_IDS.map(function(id){ return CMP_METRICS.find(function(m){ return m.id===id; }); })
+  const dm = BEST_RANK_METRIC_IDS.map(bestRankMetric)
                         .filter(function(m){ return m && (m.dir==='up'||m.dir==='down'); })
-                        .filter(function(m){ return sel.some(function(id){ return !!cmpSeries(id,m); }); });
+                        .filter(function(m){ return sel.some(function(id){ return bestRankHas(id,m); }); });
   // 按实际展示的指标顺序拼出对应列宽，而非统一 repeat(3, 固定值)
   const metricsColStyle = 'grid-template-columns:'+dm.map(function(m){ return (BEST_RANK_METRIC_WIDTH[m.id]||200)+'px'; }).join(' ')+';';
   function rowHtml(entry, rank){
@@ -1353,11 +1470,11 @@ function renderBestRankCard(rankings, sel){
     const metricsHtml = dm.map(function(m){
       const v = entry.metricVals[m.id];
       const r = entry.metricRanks[m.id];
-      const dataCount = sel.filter(function(id){ return !!cmpSeries(id,m); }).length;
+      const dataCount = sel.filter(function(id){ return bestRankHas(id,m); }).length;
       const isFirst = dataCount>1 && r===1;
-      const valStr = v!=null ? fmtNum(v) : '—';
+      const valStr = v!=null ? (m.media ? v.toFixed(1) : fmtNum(v)) : '—';
       return '<div class="best-rank-metric">'
-        +'<span class="best-rank-metric-label">稳态 '+m.label+' 均值</span>'
+        +'<span class="best-rank-metric-label">'+bestRankMetricLabel(m)+'</span>'
         +(isFirst?'<span class="best-rank-trophy">🥇</span>':'<span style="display:inline-block;width:19px"></span>')
         +'<span class="best-rank-metric-val">'+valStr+'</span>'
         +'</div>';
@@ -1425,6 +1542,10 @@ let dragId = null;
 const navMonitoringBtn = document.getElementById('navMonitoring');
 if(navMonitoringBtn) navMonitoringBtn.addEventListener('click', ()=>{
   window.location.href = './training-monitoring-v2.html';
+});
+const navConfigRelationBtn = document.getElementById('navConfigRelation');
+if(navConfigRelationBtn) navConfigRelationBtn.addEventListener('click', ()=>{
+  window.location.href = './config-relation-observer.html';
 });
 function enterCompare(){
   compareMode = true;
@@ -1501,6 +1622,60 @@ function renderCompare(){
   }));
   if(compareTab==='param') renderParamCompare();
   else renderCompareChart();
+}
+
+// Media 对比栏：勾几个任务就出几张卡（与左侧勾选一一对应），卡片自上而下＝任务名 / 视频封面 /
+// 生成 prompt / 产出质量指标 / 来源 checkpoint。整体沿用 .cmp-group 外壳，可与其它分区一样折叠。
+function renderMediaCompare(sel, hasBase){
+  const ids = sel.filter(id=> MEDIA[id]);
+  if(!ids.length) return '';
+  // 「标记最优」开启且有 2 个以上可比任务时，逐指标算出最优任务用于绿色高亮（与图表口径一致：
+  // 全部相等则不标）
+  const bestOf = {};
+  if(markBest && ids.length > 1){
+    MEDIA_METRICS.forEach(m=>{
+      const vals = ids.map(id=> MEDIA[id][m.id]);
+      if(new Set(vals).size === 1) return;
+      const t = m.dir==='up' ? Math.max(...vals) : Math.min(...vals);
+      bestOf[m.id] = ids.find(id=> MEDIA[id][m.id] === t);
+    });
+  }
+  const cards = ids.map(id=>{
+    const t = TASKS[id], d = MEDIA[id], isBase = id===baselineKey && hasBase;
+    const metrics = MEDIA_METRICS.map(m=>`
+      <span class="cmp-media-metric">
+        <span class="cmp-media-metric-k">${m.label}</span>
+        <span class="cmp-media-metric-v${bestOf[m.id]===id?' best':''}">${m.fmt(d[m.id])}</span>
+      </span>`).join('');
+    return `<div class="card cmp-media-card">
+      <div class="cmp-media-head">
+        <span class="dot ${t.dot}"></span>
+        <span class="cmp-media-name" title="${t.name}">${t.name}</span>
+        ${isBase?'<span class="cmp-legend-base-tag">基线</span>':''}
+      </div>
+      <div class="cmp-media-cover">
+        <img src="./pic/${d.pic}" alt="${t.name} 产出视频封面" loading="lazy">
+        <span class="cmp-media-chip score" title="media 综合评分，参与「最佳任务」排名">综合 ${MEDIA_SCORE[id].toFixed(1)}</span>
+        <span class="cmp-media-chip spec">${d.res} · ${d.fps}fps</span>
+        <span class="cmp-media-chip dur">${d.dur}</span>
+      </div>
+      <div class="cmp-media-prompt" title="${d.prompt}"><b>Prompt</b> ${d.prompt}</div>
+      <div class="cmp-media-metrics">${metrics}</div>
+      <div class="cmp-media-foot">
+        <span title="${d.note}">${d.ckpt} · step ${d.step}</span>
+        <span>单条生成 ${d.cost}</span>
+      </div>
+    </div>`;
+  }).join('');
+  const collapsed = collapsedGroups.has('media');
+  return `<div class="cmp-group${collapsed?' collapsed':''}" data-group="media">
+    <div class="cmp-group-head" data-group="media">
+      <span class="cmp-group-chevron">›</span>
+      <span class="cmp-group-title">Media 对比</span>
+      <span class="cmp-group-hint">视频产出 / CLIP-T / 时序一致性 / FVD</span>
+    </div>
+    <div class="cmp-grid cmp-media-grid">${cards}</div>
+  </div>`;
 }
 
 function renderCompareChart(){
@@ -1584,7 +1759,7 @@ function renderCompareChart(){
   }).filter(Boolean).join('');
 
   const rankings = computeRankings(sel);
-  body.innerHTML = renderBestRankCard(rankings, sel) + groupsHtml;
+  body.innerHTML = renderBestRankCard(rankings, sel) + groupsHtml + renderMediaCompare(sel, hasBase);
   const _brt = document.getElementById('bestRankToggle');
   if(_brt) _brt.addEventListener('click', function(){
     bestRankExpanded = !bestRankExpanded;
