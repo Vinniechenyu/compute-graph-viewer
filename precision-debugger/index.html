@@ -196,8 +196,8 @@ header{display:flex;align-items:center;gap:var(--space-3);height:52px;flex:0 0 5
 /* 可拖动分隔条：静止透明、悬停/拖动显示高亮线（不占多余间距，命中区 8px） */
 .splitter{flex:0 0 8px;align-self:stretch;position:relative;cursor:col-resize;z-index:6;touch-action:none}
 .splitter[hidden]{display:none}
-.splitter::after{content:"";position:absolute;top:9px;bottom:9px;left:50%;width:2px;transform:translateX(-50%);border-radius:2px;background:transparent;transition:background var(--duration-fast) var(--easing-default),box-shadow var(--duration-fast)}
-.splitter:hover::after,.splitter.dragging::after{background:var(--primary);box-shadow:0 0 7px color-mix(in srgb,var(--primary) 55%,transparent)}
+.splitter::after{content:"";position:absolute;top:0;bottom:0;left:50%;width:1.5px;transform:translateX(-50%);background:linear-gradient(180deg,transparent,color-mix(in srgb,var(--foreground) 18%,transparent) 8%,color-mix(in srgb,var(--foreground) 18%,transparent) 92%,transparent);transition:background var(--duration-fast) var(--easing-default),filter var(--duration-fast)}
+.splitter:hover::after,.splitter.dragging::after{background:linear-gradient(180deg,transparent,var(--primary) 6%,var(--primary) 94%,transparent);filter:drop-shadow(0 0 4px color-mix(in srgb,var(--primary) 55%,transparent))}
 body.col-resizing{cursor:col-resize;user-select:none}
 .workmain{position:relative;flex:1 1 auto;min-width:0;min-height:0;display:flex;gap:0}
 .center{position:relative;flex:1 1 auto;display:flex;flex-direction:column;min-width:0;min-height:0;gap:8px}
@@ -1119,8 +1119,8 @@ body.wm-opdev #precMode,body.wm-opdev #precModeLbl,body.wm-opdev .graph-pane > .
   border:1px solid var(--border-subtle);border-radius:var(--radius-xl);background:var(--ide-pane-bg);overflow:hidden}
 .mig-bento[hidden]{display:none}
 .mb-rs{position:absolute;top:0;left:0;right:0;height:8px;cursor:ns-resize;z-index:4}
-.mb-rs::after{content:'';position:absolute;left:50%;top:3px;transform:translateX(-50%);width:46px;height:3px;border-radius:2px;background:color-mix(in srgb,var(--foreground) 18%,transparent);transition:background .14s ease}
-.mb-rs:hover::after,.mig-bento.resizing .mb-rs::after{background:var(--primary)}
+.mb-rs::after{content:'';position:absolute;left:0;right:0;top:50%;height:1.5px;transform:translateY(-50%);background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--foreground) 20%,transparent) 15%,color-mix(in srgb,var(--foreground) 20%,transparent) 85%,transparent);transition:background .16s ease,filter .16s ease}
+.mb-rs:hover::after,.mig-bento.resizing .mb-rs::after{background:linear-gradient(90deg,transparent,var(--primary) 12%,var(--primary) 88%,transparent);filter:drop-shadow(0 0 4px color-mix(in srgb,var(--primary) 55%,transparent))}
 .mb-head{flex:0 0 auto;display:flex;align-items:center;gap:12px;padding:11px 16px 8px;border-bottom:1px solid var(--border-subtle)}
 .mb-tabs{display:flex;gap:2px}
 .mb-tab{position:relative;padding:6px 12px;border:0;background:transparent;cursor:pointer;font:600 11.5px/1 var(--font-sans);color:var(--foreground-muted);border-bottom:2px solid transparent}
@@ -1288,6 +1288,7 @@ body.wm-opdev #precMode,body.wm-opdev #precModeLbl,body.wm-opdev .graph-pane > .
 .cm-i .cap-tag{margin-left:0;cursor:default;justify-self:start}
 .cm-ik{font:var(--text-body-sm);font-size:12px;color:var(--foreground)}
 .cm-in{grid-column:2;font:var(--text-body-sm);font-size:10.5px;line-height:1.55;color:var(--foreground-muted)}
+#capMask{z-index:140}
 /* ══ 用例覆盖度 · 边界诊断 ══ */
 .op-covbar{display:flex;gap:2px;margin-top:8px}
 .op-covbar .opc-seg{flex:1;height:6px;border-radius:2px;background:var(--surface-4)}
@@ -1394,8 +1395,8 @@ body.wm-opdev #precMode,body.wm-opdev #precModeLbl,body.wm-opdev .graph-pane > .
   border-top:1px solid var(--border-default);background:var(--surface-1);z-index:6}
 .op-drawer2[hidden]{display:none}
 .op-rs{position:absolute;top:-3px;left:0;right:0;height:7px;cursor:ns-resize;z-index:3}
-.op-rs::after{content:'';position:absolute;left:50%;top:2px;transform:translateX(-50%);width:46px;height:3px;border-radius:2px;background:color-mix(in srgb,var(--foreground) 18%,transparent);transition:background .14s ease}
-.op-rs:hover::after,.op-drawer2.resizing .op-rs::after{background:var(--primary)}
+.op-rs::after{content:'';position:absolute;left:0;right:0;top:50%;height:1.5px;transform:translateY(-50%);background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--foreground) 20%,transparent) 15%,color-mix(in srgb,var(--foreground) 20%,transparent) 85%,transparent);transition:background .16s ease,filter .16s ease}
+.op-rs:hover::after,.op-drawer2.resizing .op-rs::after{background:linear-gradient(90deg,transparent,var(--primary) 12%,var(--primary) 88%,transparent);filter:drop-shadow(0 0 4px color-mix(in srgb,var(--primary) 55%,transparent))}
 .op-drawer2 .opd-h{flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:9px 16px;border-bottom:1px solid var(--border-subtle)}
 .op-drawer2 .opd-k{font:600 12px/1 var(--font-sans);color:var(--foreground)}
 .op-drawer2 .opd-s{font:500 10.5px/1.4 var(--font-mono);color:var(--foreground-muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -1404,8 +1405,8 @@ body.wm-opdev #precMode,body.wm-opdev #precModeLbl,body.wm-opdev .graph-pane > .
 /* ── 终端高度可拖动，上方 graph-card 自适应缩小（.center 已是 flex column） ── */
 .term-panel{height:var(--term-h,230px)}
 .term-rs{position:absolute;top:-3px;left:0;right:0;height:7px;cursor:ns-resize;z-index:5}
-.term-rs::after{content:'';position:absolute;left:50%;top:2px;transform:translateX(-50%);width:46px;height:3px;border-radius:2px;background:color-mix(in srgb,var(--foreground) 18%,transparent);transition:background .14s ease}
-.term-rs:hover::after,.term-panel.resizing .term-rs::after{background:var(--primary)}
+.term-rs::after{content:'';position:absolute;left:0;right:0;top:50%;height:1.5px;transform:translateY(-50%);background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--foreground) 20%,transparent) 15%,color-mix(in srgb,var(--foreground) 20%,transparent) 85%,transparent);transition:background .16s ease,filter .16s ease}
+.term-rs:hover::after,.term-panel.resizing .term-rs::after{background:linear-gradient(90deg,transparent,var(--primary) 12%,var(--primary) 88%,transparent);filter:drop-shadow(0 0 4px color-mix(in srgb,var(--primary) 55%,transparent))}
 .term-panel{position:relative}
 
 .insp-body .op-chain .oc-lv{grid-template-columns:88px auto;padding:6px 9px}
@@ -1463,7 +1464,8 @@ body.wm-opdev .insp-body .isec{margin-bottom:18px}
 .op-tl-note{margin-top:9px;font:var(--text-body-sm);font-size:10.5px;line-height:1.55;color:var(--foreground-muted)}
 .op-tl-note b{color:var(--foreground-secondary)}
 /* 左栏 · 算子任务配置只读行 */
-.op-side .side-sec{border-top:1px solid var(--border-subtle)}
+.op-side .side-sec{border-top:1px solid var(--border-subtle);padding-top:15px;margin-top:3px}
+.op-side .side-sec:first-child{border-top:0;padding-top:0;margin-top:0}
 .op-krow{display:flex;justify-content:space-between;gap:10px;padding:4px 0;font:var(--text-body-sm);font-size:11.5px;color:var(--foreground-secondary)}
 .op-krow .ok-v{font:500 11px/1.4 var(--font-mono);color:var(--foreground);text-align:right;word-break:break-all}
 .op-cover{margin-top:8px;display:flex;gap:3px}
@@ -1735,8 +1737,8 @@ body.arch-h .mig-arch-gpu{border-right:0;border-bottom:1px solid var(--border-su
 .algo-drawer{position:relative;flex:0 0 auto;width:100%;border-top:1px solid var(--border-default);background:var(--surface-1);z-index:20}
 .algo-drawer.open{height:var(--algo-drawer-h,460px);display:flex;flex-direction:column;min-height:0}
 .algo-rs{position:absolute;top:-3px;left:0;right:0;height:7px;cursor:ns-resize;z-index:3}
-.algo-rs::after{content:'';position:absolute;left:50%;top:2px;transform:translateX(-50%);width:46px;height:3px;border-radius:2px;background:color-mix(in srgb,var(--foreground) 18%,transparent);transition:background .14s ease}
-.algo-rs:hover::after,.algo-drawer.resizing .algo-rs::after{background:var(--primary)}
+.algo-rs::after{content:'';position:absolute;left:0;right:0;top:50%;height:1.5px;transform:translateY(-50%);background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--foreground) 20%,transparent) 15%,color-mix(in srgb,var(--foreground) 20%,transparent) 85%,transparent);transition:background .16s ease,filter .16s ease}
+.algo-rs:hover::after,.algo-drawer.resizing .algo-rs::after{background:linear-gradient(90deg,transparent,var(--primary) 12%,var(--primary) 88%,transparent);filter:drop-shadow(0 0 4px color-mix(in srgb,var(--primary) 55%,transparent))}
 .algo-drawer-h{flex:0 0 auto;display:flex;align-items:center;gap:9px;width:100%;padding:9px 22px;border:0;background:transparent;color:var(--foreground);font:700 12px/1 var(--font-sans);cursor:pointer;text-align:left}
 .algo-drawer-h span{font:500 9.5px/1 var(--font-mono);color:var(--foreground-muted)}
 .algo-drawer-h:hover{background:color-mix(in srgb,var(--foreground) 4%,transparent)}
@@ -1828,8 +1830,8 @@ body.arch-h .mig-arch-gpu{border-right:0;border-bottom:1px solid var(--border-su
 .algo-drawer{position:relative;flex:0 0 auto;width:100%;border-top:1px solid var(--border-default);background:var(--surface-1);z-index:20}
 .algo-drawer.open{height:var(--algo-drawer-h,460px);display:flex;flex-direction:column;min-height:0}
 .algo-rs{position:absolute;top:-3px;left:0;right:0;height:7px;cursor:ns-resize;z-index:3}
-.algo-rs::after{content:'';position:absolute;left:50%;top:2px;transform:translateX(-50%);width:46px;height:3px;border-radius:2px;background:color-mix(in srgb,var(--foreground) 18%,transparent);transition:background .14s ease}
-.algo-rs:hover::after,.algo-drawer.resizing .algo-rs::after{background:var(--primary)}
+.algo-rs::after{content:'';position:absolute;left:0;right:0;top:50%;height:1.5px;transform:translateY(-50%);background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--foreground) 20%,transparent) 15%,color-mix(in srgb,var(--foreground) 20%,transparent) 85%,transparent);transition:background .16s ease,filter .16s ease}
+.algo-rs:hover::after,.algo-drawer.resizing .algo-rs::after{background:linear-gradient(90deg,transparent,var(--primary) 12%,var(--primary) 88%,transparent);filter:drop-shadow(0 0 4px color-mix(in srgb,var(--primary) 55%,transparent))}
 .algo-drawer-h{flex:0 0 auto;display:flex;align-items:center;gap:9px;width:100%;padding:9px 22px;border:0;background:transparent;color:var(--foreground);font:700 12px/1 var(--font-sans);cursor:pointer;text-align:left}
 .algo-drawer-h span{font:500 9.5px/1 var(--font-mono);color:var(--foreground-muted)}
 .algo-drawer-h:hover{background:color-mix(in srgb,var(--foreground) 4%,transparent)}
@@ -1922,8 +1924,8 @@ body.arch-h .mig-arch-gpu{border-right:0;border-bottom:1px solid var(--border-su
 .algo-drawer.open{height:var(--algo-drawer-h,320px);display:flex;flex-direction:column;min-height:0}
 /* 顶边拖拽条：改抽屉高度，上面的矩阵区跟着自适应 */
 .algo-rs{position:absolute;top:-3px;left:0;right:0;height:7px;cursor:ns-resize;z-index:3}
-.algo-rs::after{content:'';position:absolute;left:50%;top:2px;transform:translateX(-50%);width:46px;height:3px;border-radius:2px;background:color-mix(in srgb,var(--foreground) 18%,transparent);transition:background .14s ease}
-.algo-rs:hover::after,.algo-drawer.resizing .algo-rs::after{background:var(--primary)}
+.algo-rs::after{content:'';position:absolute;left:0;right:0;top:50%;height:1.5px;transform:translateY(-50%);background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--foreground) 20%,transparent) 15%,color-mix(in srgb,var(--foreground) 20%,transparent) 85%,transparent);transition:background .16s ease,filter .16s ease}
+.algo-rs:hover::after,.algo-drawer.resizing .algo-rs::after{background:linear-gradient(90deg,transparent,var(--primary) 12%,var(--primary) 88%,transparent);filter:drop-shadow(0 0 4px color-mix(in srgb,var(--primary) 55%,transparent))}
 .algo-drawer-h{flex:0 0 auto;display:flex;align-items:center;gap:9px;width:100%;padding:9px 22px;border:0;background:transparent;color:var(--foreground);font:700 11.5px/1 var(--font-sans);cursor:pointer;text-align:left}
 .algo-drawer-h span{font:500 9.5px/1 var(--font-mono);color:var(--foreground-muted)}
 .algo-drawer-h:hover{background:color-mix(in srgb,var(--foreground) 4%,transparent)}
@@ -2602,6 +2604,12 @@ select.cfg-in{font-family:var(--font-sans);cursor:pointer}
               <button class="segbtn on" data-v="all" onclick="opSetView('all')" title="查看完整执行过程">全部步骤</button>
               <button class="segbtn" data-v="anchor" onclick="opSetView('anchor')" title="只看有可靠基线的 checkpoint">仅可对标点</button>
               <button class="segbtn" data-v="focus" onclick="opSetView('focus')" title="只展示最后达标点至第一个越界点">聚焦首次差异</button>
+            </span>
+            <span class="tsep"></span>
+            <span class="seg-lbl">算子染色</span>
+            <span class="seg" id="opdevSemSeg" title="关掉更聚焦精度红/黄（首次差异=红 · 传播=琥珀）">
+              <button class="segbtn on" data-so="off" onclick="opSetSem(false)">关</button>
+              <button class="segbtn" data-so="on" onclick="opSetSem(true)">类别</button>
             </span>
             <span class="tsep"></span>
           </span>
@@ -4704,9 +4712,9 @@ function decorateArch() {
     if (p.st === 'crit') n.classList.add('prec-crit'); else n.classList.add('prec-high');
     const rect = n.querySelector('rect'); if (!rect) return;
     const rw = parseFloat(rect.getAttribute('width') || 0), rx = parseFloat(rect.getAttribute('x') || 0), ry = parseFloat(rect.getAttribute('y') || 0), cx = rx + rw / 2;
-    const g = doc.createElementNS(NS, 'g'); g.setAttribute('class', 'prec-cosbadge c-' + p.st); g.setAttribute('transform', 'translate(' + (rx + rw - 6) + ',' + (ry - 16) + ')');
-    const bw = 84, bg = doc.createElementNS(NS, 'rect'); bg.setAttribute('x', -bw); bg.setAttribute('y', -14); bg.setAttribute('width', bw); bg.setAttribute('height', 26); bg.setAttribute('rx', 13);
-    const tx = doc.createElementNS(NS, 'text'); tx.setAttribute('x', -bw / 2); tx.setAttribute('y', 5); tx.setAttribute('text-anchor', 'middle'); tx.textContent = p.cos.toFixed(3);
+    const g = doc.createElementNS(NS, 'g'); g.setAttribute('class', 'prec-cosbadge c-' + p.st); g.setAttribute('transform', 'translate(' + (rx + rw - 8) + ',' + (ry + parseFloat(rect.getAttribute('height')||44)/2) + ')');
+    const bw = 58, bg = doc.createElementNS(NS, 'rect'); bg.setAttribute('x', -bw); bg.setAttribute('y', -11); bg.setAttribute('width', bw); bg.setAttribute('height', 22); bg.setAttribute('rx', 11);
+    const tx = doc.createElementNS(NS, 'text'); tx.setAttribute('x', -bw / 2); tx.setAttribute('y', 4); tx.setAttribute('text-anchor', 'middle'); tx.textContent = p.cos.toFixed(3);
     g.appendChild(bg); g.appendChild(tx); n.appendChild(g);
     if (p.root) {
       const tag = doc.createElementNS(NS, 'g'); tag.setAttribute('class', 'prec-tag c-' + p.st); tag.setAttribute('transform', 'translate(' + cx + ',' + (ry - 26) + ')');
@@ -7011,9 +7019,9 @@ function migDecorateArch() {
     if (p.st === 'crit') n.classList.add('prec-crit'); else n.classList.add('prec-high');
     const rect = n.querySelector('rect'); if (!rect) return;
     const rw = parseFloat(rect.getAttribute('width') || 0), rx = parseFloat(rect.getAttribute('x') || 0), ry = parseFloat(rect.getAttribute('y') || 0), cx = rx + rw / 2;
-    const g = doc.createElementNS(NS, 'g'); g.setAttribute('class', 'prec-cosbadge c-' + p.st); g.setAttribute('transform', 'translate(' + (rx + rw - 6) + ',' + (ry - 16) + ')');
-    const bw = 84, bg = doc.createElementNS(NS, 'rect'); bg.setAttribute('x', -bw); bg.setAttribute('y', -14); bg.setAttribute('width', bw); bg.setAttribute('height', 26); bg.setAttribute('rx', 13);
-    const tx = doc.createElementNS(NS, 'text'); tx.setAttribute('x', -bw / 2); tx.setAttribute('y', 5); tx.setAttribute('text-anchor', 'middle'); tx.textContent = p.cos.toFixed(3);
+    const g = doc.createElementNS(NS, 'g'); g.setAttribute('class', 'prec-cosbadge c-' + p.st); g.setAttribute('transform', 'translate(' + (rx + rw - 8) + ',' + (ry + parseFloat(rect.getAttribute('height')||44)/2) + ')');
+    const bw = 58, bg = doc.createElementNS(NS, 'rect'); bg.setAttribute('x', -bw); bg.setAttribute('y', -11); bg.setAttribute('width', bw); bg.setAttribute('height', 22); bg.setAttribute('rx', 11);
+    const tx = doc.createElementNS(NS, 'text'); tx.setAttribute('x', -bw / 2); tx.setAttribute('y', 4); tx.setAttribute('text-anchor', 'middle'); tx.textContent = p.cos.toFixed(3);
     g.appendChild(bg); g.appendChild(tx); n.appendChild(g);
     if (p.root) {
       const tag = doc.createElementNS(NS, 'g'); tag.setAttribute('class', 'prec-tag c-' + p.st); tag.setAttribute('transform', 'translate(' + cx + ',' + (ry - 26) + ')');
@@ -7390,9 +7398,9 @@ function archDecorateLayerFrame() {
     if (p.st === 'crit') n.classList.add('prec-crit'); else n.classList.add('prec-high');
     const rect = n.querySelector('rect'); if (!rect) return;
     const rw = parseFloat(rect.getAttribute('width') || 0), rx = parseFloat(rect.getAttribute('x') || 0), ry = parseFloat(rect.getAttribute('y') || 0), cx = rx + rw / 2;
-    const g = doc.createElementNS(NS, 'g'); g.setAttribute('class', 'prec-cosbadge c-' + p.st); g.setAttribute('transform', 'translate(' + (rx + rw - 6) + ',' + (ry - 16) + ')');
-    const bw = 84, bg = doc.createElementNS(NS, 'rect'); bg.setAttribute('x', -bw); bg.setAttribute('y', -14); bg.setAttribute('width', bw); bg.setAttribute('height', 26); bg.setAttribute('rx', 13);
-    const tx = doc.createElementNS(NS, 'text'); tx.setAttribute('x', -bw / 2); tx.setAttribute('y', 5); tx.setAttribute('text-anchor', 'middle'); tx.textContent = p.cos.toFixed(3);
+    const g = doc.createElementNS(NS, 'g'); g.setAttribute('class', 'prec-cosbadge c-' + p.st); g.setAttribute('transform', 'translate(' + (rx + rw - 8) + ',' + (ry + parseFloat(rect.getAttribute('height')||44)/2) + ')');
+    const bw = 58, bg = doc.createElementNS(NS, 'rect'); bg.setAttribute('x', -bw); bg.setAttribute('y', -11); bg.setAttribute('width', bw); bg.setAttribute('height', 22); bg.setAttribute('rx', 11);
+    const tx = doc.createElementNS(NS, 'text'); tx.setAttribute('x', -bw / 2); tx.setAttribute('y', 4); tx.setAttribute('text-anchor', 'middle'); tx.textContent = p.cos.toFixed(3);
     g.appendChild(bg); g.appendChild(tx); n.appendChild(g);
     if (p.root) {
       const tag = doc.createElementNS(NS, 'g'); tag.setAttribute('class', 'prec-tag c-' + p.st); tag.setAttribute('transform', 'translate(' + cx + ',' + (ry - 26) + ')');
@@ -8547,12 +8555,7 @@ function taskCardsHtml() {
       <p class="tcard-say">${esc(c.say)}</p>
       <div class="tcard-flow">${flow}</div>
       <ul class="tcard-when">${c.when.map((w) => `<li>${esc(w)}</li>`).join('')}</ul>
-      <div class="tcard-io">
-        <div><div class="tio-k">输入</div><ul class="tio-list">${c.inputs.map((i) => `<li>${esc(i)}</li>`).join('')}</ul></div>
-        <div><div class="tio-k">输出</div><ul class="tio-list">${c.outputs.map((o) => `<li>${esc(o)}</li>`).join('')}</ul></div>
-      </div>
       <button class="tcard-cta" tabindex="-1">${esc(c.cta)}<svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
-      <p class="tcard-hint">${esc(c.hint)}</p>
     </div>`;
   }).join('');
 }
@@ -10293,7 +10296,7 @@ const OPDEV = {
   ],
 };
 /* view: all=全部步骤 / anchor=仅可对标点 / focus=聚焦首次差异 */
-let opdevState = { block: 4, loop: 11, sel: null, sim: false, view: 'all',
+let opdevState = { block: 4, loop: 11, sel: null, sim: false, view: 'all', semOn: false,
   elem: 0,                       /* 当前定位的差异元素（尾块 4×4 内序号，§10.2 三级坐标链） */
   cfg: false, cfgGran: 'step', cfgScope: 'current', cfgSub: true };   /* 采样配置面板（§P2-4） */
 
@@ -10464,8 +10467,9 @@ function renderOpdevView() {
       const ring = notCap ? { s: 'var(--foreground-muted)', w: 1, dash: '4 3' }
         : isFail ? { s: 'var(--danger)', w: 2.4 } : stk === 'PROP' ? { s: 'var(--warning)', w: 1.8 }
           : sel ? { s: 'var(--foreground)', w: 1.6 } : { s: 'rgba(0,0,0,.24)', w: 1 };
+      const fillKey = opdevState.semOn ? stp.sem : (isFail ? 'crit' : stk === 'PROP' ? 'warn' : 'neutral');
       s += `<g class="op-node" onclick="opSelectStep('${row.id}','${esc(stp.name)}')">`
-        + opCapsule(C3, sy, C3W, STEPH, stp.sem, esc(stp.name), notCap ? '— 未采集' : (row.anchor && row.map !== 'risk' ? '◆ 可对标' : '◇ 无基线'), { ring, dim: notCap || !row.anchor ? '.62' : null })
+        + opCapsule(C3, sy, C3W, STEPH, fillKey, esc(stp.name), notCap ? '— 未采集' : (row.anchor && row.map !== 'risk' ? '◆ 可对标' : '◇ 无基线'), { ring, dim: notCap || !row.anchor ? '.62' : null })
         + `<text x="${C3 + 10}" y="${sy + STEPH + 12}" class="op-below">${esc(stp.api)} · MEM_${esc(stp.mem)} · ${esc(OPDEV.kernel)}:${stp.line}${stp.captured === false ? ' · 未采集' : ''}</text></g>`;
       sy += STEPH + STEPSUB + STEPGAP;
     });
@@ -10484,7 +10488,7 @@ function renderOpdevView() {
   renderOpdevLayoutDrawer();
 }
 function opGradDefs() {
-  const acc = {};
+  const acc = { neutral: '#6d6d73', crit: '#ff4b7b', warn: '#ffaa3b' };
   OPDEV.rows.forEach((r) => r.steps.forEach((st) => { acc[st.sem] = SEM[st.sem] || SEM.io; }));
   /* 与内嵌引擎 `.op-pill` 同配方：180deg 竖向、起点纯 accent、底部压 75% 黑 */
   return '<defs>' + Object.entries(acc).map(([k, c]) => `<linearGradient id="opg-${k}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${c}"/><stop offset="100%" stop-color="color-mix(in srgb,${c} 75%,#000000)"/></linearGradient>`).join('') + '</defs>';
@@ -10534,8 +10538,10 @@ function opJumpEarliest() {
   toast(`已跳到最早异常执行坐标 block${e.block} · loop${e.loop}`);
 }
 function opSetView(v) { opdevState.view = v; syncOpdevTools(); renderOpdevView(); }
+function opSetSem(on) { opdevState.semOn = !!on; syncOpdevTools(); renderOpdevView(); }
 function syncOpdevTools() {
   document.querySelectorAll('#opdevViewSeg .segbtn').forEach((b) => b.classList.toggle('on', b.dataset.v === opdevState.view));
+  document.querySelectorAll('#opdevSemSeg .segbtn').forEach((b) => b.classList.toggle('on', (b.dataset.so === 'on') === opdevState.semOn));
 }
 function opSelectStep(rowId, stepName) {
   const key = rowId + ':' + stepName;
