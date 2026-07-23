@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Config &amp; Relation Observer</title>
+  <script>
+    (() => {
+      const theme = new URLSearchParams(window.location.search).get("theme");
+      if (theme === "dark" || theme === "light") document.documentElement.dataset.theme = theme;
+    })();
+  </script>
+
+  <!-- 设计系统 tokens + 组件（本目录 vendored 副本，与 training-monitoring-v2.html 同源） -->
+  <link rel="stylesheet" href="./css/foundation.css">
+  <link rel="stylesheet" href="./css/semantic.css">
+  <link rel="stylesheet" href="./css/components.css">
+  <link rel="stylesheet" href="./css/style.css">
+  <!-- IDE frame shell（patterns/ide-frame + patterns/workbench-shell） -->
+  <link rel="stylesheet" href="./css/workbench-shell-pattern.css">
+  <link rel="stylesheet" href="./css/ide-frame-pattern.css">
+  <!-- 整网图（patterns/model-graphviz 提供 colormap，model-architecture-3d-deck 提供 deck） -->
+  <link rel="stylesheet" href="./css/model-graphviz-pattern.css">
+  <link rel="stylesheet" href="./css/model-architecture-3d-deck-pattern.css">
+  <!-- 集群热力图样式（复用 training-monitoring-v2 的 .twin-heat* 视觉） -->
+  <link rel="stylesheet" href="./css/training-run-twin.css">
+  <!-- 本页模块私有 layout -->
+  <link rel="stylesheet" href="./css/config-relation-observer.css">
+</head>
+<body data-theme="dark">
+  <section class="pto-ide-frame" data-ide-frame data-host="standalone" aria-label="Config and Relation Observer">
+
+    <header class="pto-ide-frame__topbar pto-ide-frame__standalone-chrome">
+      <div class="pto-ide-frame__topbar-left">
+        <div class="pto-ide-frame__host-chip" data-ide-slot="host-chip">
+          <svg class="pto-ide-frame__host-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3" y="4" width="18" height="16" rx="2"></rect>
+            <path d="m7 9 3 3-3 3"></path>
+            <path d="M12 15h5"></path>
+          </svg>
+        </div>
+        <div class="pto-ide-frame__workspace" data-ide-slot="workspace-switcher">
+          <span>训练监控</span>
+        </div>
+      </div>
+      <div class="pto-ide-frame__topbar-center"></div>
+      <div class="pto-ide-frame__topbar-right">
+        <div class="pto-ide-frame__window-actions" data-ide-slot="window-controls" aria-label="Window controls">
+          <button class="pto-ide-frame__window-action" id="themeToggle" type="button" aria-pressed="false" title="切换主题" aria-label="切换主题">
+            <svg class="pto-ide-frame__window-icon" id="themeToggleIcon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 3a6.5 6.5 0 0 0 7.8 8.8A8 8 0 1 1 12 3z"></path>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <div class="pto-ide-frame__body">
+      <nav class="pto-ide-frame__activity-rail pto-ide-frame__standalone-chrome" data-ide-slot="activity-rail" aria-label="Activity rail">
+        <!-- 首键与 TaskCompare.html 同款：文件夹图标 = 跳转训练监控大盘。本页选中态归属末位的
+             「配置关系」，故首键不带 is-selected。 -->
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" id="navMonitoring" aria-label="训练监控" title="训练监控">
+          <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9l-.81-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"></path>
+          </svg>
+        </button>
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" aria-label="Search" title="Search">
+          <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="11" cy="11" r="8"></circle>
+            <path d="m21 21-4.3-4.3"></path>
+          </svg>
+        </button>
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" aria-label="Source control" title="Source control">
+          <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="18" cy="18" r="3"></circle>
+            <circle cx="6" cy="6" r="3"></circle>
+            <path d="M13 6h3a2 2 0 0 1 2 2v7"></path>
+            <path d="M6 9v12"></path>
+          </svg>
+        </button>
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" aria-label="Terminal" title="Terminal">
+          <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3" y="5" width="18" height="14" rx="2"></rect>
+            <path d="m7 9 3 3-3 3"></path>
+            <path d="M12 15h5"></path>
+          </svg>
+        </button>
+        <!-- 互跳组：对比 / 配置关系，三页同款同序（训练监控即首键），当前页保持 is-selected 不绑定跳转。 -->
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" id="navTaskCompare" aria-label="对比" title="对比">
+          <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+            <path d="M12 3v18"></path>
+          </svg>
+        </button>
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button is-selected" type="button" aria-label="配置关系" title="配置关系" aria-pressed="true">
+          <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="18" cy="5" r="3"></circle>
+            <circle cx="6" cy="12" r="3"></circle>
+            <circle cx="18" cy="19" r="3"></circle>
+            <path d="m8.6 13.5 6.8 4"></path>
+            <path d="m15.4 6.5-6.8 4"></path>
+          </svg>
+        </button>
+      </nav>
+
+      <div class="pto-ide-frame__workarea">
+        <!-- 单一 pane：T 型的四个区域全部是同一面板内的不可见网格区（.cro-board），
+             区域之间没有 pane 边界、没有 gutter、没有卡片描边，只靠 grid 间距与大标题分区。
+             grid-areas:  net | arch | moe
+                          net | cluster cluster                                    -->
+        <section class="pto-ide-frame__pane" data-ide-pane="observer" aria-label="配置与关系观测">
+          <div class="pto-ide-frame__pane-body cro-board" id="croBoard">
+
+            <!-- ═══ 区域 A · 整网（3D deck · 正视图） ═══ -->
+            <section class="cro-region cro-region--net" id="croNetRegion" aria-label="整网">
+              <h2 class="cro-region__title">整网</h2>
+              <div class="cro-stepper">
+                <label class="cro-stepper__label" for="croModelSelect">模型</label>
+                <select class="cro-select" id="croModelSelect">
+                  <option value="openpangu-flash">openPangu 2.0 flash 92B</option>
+                </select>
+              </div>
+              <div class="cro-deck-host" id="croDeckHost">
+                <div class="cro-placeholder">整网 3D deck（正视图）· 第 3 项接入</div>
+              </div>
+            </section>
+
+            <!-- ═══ 区域 B · Model Architecture（配置 + Layer 导航 + 结构条） ═══ -->
+            <section class="cro-region cro-region--arch" aria-label="Model Architecture">
+              <h2 class="cro-region__title">Model Architecture</h2>
+
+              <div class="cro-stepper-row" id="croParallelSteppers">
+                <div class="cro-placeholder">Total Layer / DP / PP / TP / CP stepper · 第 2 项接入</div>
+              </div>
+              <p class="cro-config-error" id="croConfigError" role="status" aria-live="polite"></p>
+
+              <div class="cro-section">
+                <div class="cro-section__title">Layer 导航</div>
+                <div class="cro-layer-nav" id="croLayerNav">
+                  <div class="cro-placeholder">46 层刻度 · PP 分段 · Dense/MoE 分区 · 第 4 项接入</div>
+                </div>
+              </div>
+
+              <div class="cro-section cro-section--structure">
+                <div class="cro-section__title">典型 Layer</div>
+                <div class="cro-structure" id="croStructure">
+                  <div class="cro-placeholder">Emb / Dense×2 / MoE×44 / Norm / Head 结构条 · 第 4 项接入</div>
+                </div>
+              </div>
+            </section>
+
+            <!-- ═══ 区域 C · MoE ═══ -->
+            <section class="cro-region cro-region--moe" aria-label="MoE">
+              <h2 class="cro-region__title">MoE</h2>
+
+              <div class="cro-stepper-row" id="croMoeSteppers">
+                <div class="cro-placeholder">Routed Expert / Top-K / Share Expert / EP stepper · 第 2 项接入</div>
+              </div>
+
+              <div class="cro-section">
+                <div class="cro-section__title">共享专家</div>
+                <div class="cro-moe-group__experts" id="croSharedExperts">
+                  <div class="cro-placeholder">SE · 第 5 项接入</div>
+                </div>
+              </div>
+
+              <div class="cro-section">
+                <div class="cro-section__title">路由专家</div>
+                <div class="cro-moe-groups" id="croRoutedExperts">
+                  <div class="cro-placeholder">EP 分组 · 第 5 项接入</div>
+                </div>
+              </div>
+            </section>
+
+            <!-- ═══ 区域 D · Cluster ═══ -->
+            <section class="cro-region cro-region--cluster" aria-label="Cluster">
+              <div class="cro-cluster">
+                <!-- Cluster 标题与 stepper 在左，矩阵在右吃满剩余宽度。
+                     纵向堆叠会多吃 ~80px 高度，把矩阵顶到滚动区外面。 -->
+                <div class="cro-cluster__side">
+                  <h2 class="cro-region__title">Cluster</h2>
+                  <div class="cro-stepper-row" id="croClusterSteppers"></div>
+                </div>
+                <div class="cro-cluster__grid">
+                  <div class="twin-heat" id="croHeat"></div>
+                </div>
+              </div>
+            </section>
+
+          </div>
+        </section>
+      </div>
+    </div>
+  </section>
+
+  <!-- 关系连线 overlay 宿主（第 7 项接入），置于 frame 之上、pointer-events:none -->
+  <svg class="cro-link-layer" id="croLinkLayer" aria-hidden="true"></svg>
+
+  <script src="./js/workbench-shell-pattern.js"></script>
+  <script src="./js/ide-frame-pattern.js"></script>
+  <script src="./js/model-graphviz-pattern.js"></script>
+  <script src="./js/model-architecture-3d-deck-pattern.js"></script>
+  <script src="./js/config-relation-observer.js"></script>
+  <script>
+    // 主题切换：与 training-monitoring-v2.html 同款单图标按钮，只改 data-theme。
+    (() => {
+      const btn = document.getElementById("themeToggle");
+      const icon = document.getElementById("themeToggleIcon");
+      const MOON = "M12 3a6.5 6.5 0 0 0 7.8 8.8A8 8 0 1 1 12 3z";
+      const SUN = "M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zM12 1v3M12 20v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M1 12h3M20 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1";
+      const apply = (theme) => {
+        document.documentElement.dataset.theme = theme;
+        document.body.dataset.theme = theme;
+        btn.setAttribute("aria-pressed", String(theme === "light"));
+        icon.querySelector("path").setAttribute("d", theme === "light" ? SUN : MOON);
+        window.croDeckController?.setTheme(theme);
+        // deck 重算了 --pto-model-deck-* 调色板，通知结构条重新取色
+        document.dispatchEvent(new CustomEvent("cro:theme", { detail: { theme } }));
+      };
+      btn.addEventListener("click", () => {
+        apply(document.documentElement.dataset.theme === "light" ? "dark" : "light");
+      });
+    })();
+
+    // rail 底部互跳组：跳转另两页（本页「配置关系」键即当前页，不绑定）。
+    (() => {
+      const go = (id, href) => {
+        const btn = document.getElementById(id);
+        if (btn) btn.addEventListener("click", () => { window.location.href = href; });
+      };
+      go("navMonitoring", "./training-monitoring-v2.html");
+      go("navTaskCompare", "./TaskCompare.html");
+    })();
+  </script>
+</body>
+</html>

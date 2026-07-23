@@ -1,13 +1,12 @@
 <!doctype html>
 <!--
-  PyPTO 泳道分析器 — Mix 子图核间同步可视化原型
+  PyPTO 泳道分析器 — Mix 子图核间同步稳定演示版
   课题: 04-uxdesign/02-swimlane-profiler/ux-analysis.md (Issue #1121)
 
   数据等级: L2 / schema-generated / share-safe
     - task literal、schema 与数量级来自登记 L1 来源；组合关系与诊断异常为可追溯 L2 构造。
-    - 已植入「瓶颈剧本」: Attention Score 子图 Wrap 07 的 AIC 跑超大 BMM,
-      配对 AIV 长时间停等; 同组其他 Wrap 早完空转 (负载不均)。
-    - 待 Codex 补 merged_swimlane.json 真实样本后替换 buildModel()。
+    - 三条 run 分别由同步竞争、调度空泡、FFN 流水失衡构造器生成；
+      每条 run 只承载该场景需要验证的性能特征，不把全部问题拼成一次伪运行。
   分享级别: exploration-only (不可外发)
 
   设计系统: 复用 compute-graph-viewer/vendor/pto-design-system bundle
@@ -82,10 +81,22 @@ body {
   font: 500 11px / 1.2 var(--font-sans); color: var(--foreground-muted);
   text-transform: uppercase; letter-spacing: var(--letter-spacing-label);
 }
-.sl-axis-wrap { overflow: hidden; border-bottom: 1px solid var(--border-default); }
+.sl-axis-wrap { position: relative; overflow: hidden; border-bottom: 1px solid var(--border-default); }
 .sl-lane-wrap { overflow: hidden; border-right: 1px solid var(--border-subtle); }
-.sl-body-wrap { overflow: auto; }
+.sl-body-wrap { position: relative; overflow: auto; }
 .sl-axis-wrap canvas, .sl-lane-wrap canvas, .sl-body-wrap canvas { display: block; }
+.sl-body-crisp-canvas {
+  position: absolute;
+  inset: 0 auto auto 0;
+  z-index: 3;
+  pointer-events: none;
+}
+.sl-axis-crisp-canvas {
+  position: absolute;
+  inset: 0 auto auto 0;
+  z-index: 2;
+  pointer-events: none;
+}
 .sl-body-wrap::-webkit-scrollbar { width: 12px; height: 12px; }
 .sl-body-wrap::-webkit-scrollbar-thumb { background: var(--surface-4); border-radius: var(--radius-md); border: 3px solid var(--surface-3); }
 .sl-body-wrap::-webkit-scrollbar-corner { background: var(--surface-3); }
@@ -243,7 +254,7 @@ body {
 .sl-title-stack strong {
   overflow: hidden;
   color: var(--foreground);
-  font: var(--text-title-2);
+  font: var(--ide-frame-title-font);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -264,10 +275,6 @@ body {
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.sl-frame .pto-ide-frame__pane-title {
-  font: var(--text-title-2);
 }
 
 .sl-frame .stat-chip {
@@ -346,6 +353,10 @@ body {
   background: transparent;
   color: var(--foreground);
   font: var(--text-body-sm);
+}
+
+.sl-searchbox:focus-within {
+  box-shadow: 0 0 0 2px var(--focus-ring);
 }
 
 .sl-searchbox input::placeholder {
@@ -657,6 +668,36 @@ body {
   margin-top: var(--space-2);
 }
 
+.sl-task-connection-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.sl-task-connection-control__copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sl-task-connection-control__title {
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: var(--font-size-label-xs);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-label);
+  letter-spacing: var(--letter-spacing-label);
+}
+
+.sl-task-connection-control__hint {
+  color: var(--foreground-muted);
+  font: var(--text-body-sm);
+}
+
 .sl-object-path {
   display: flex;
   align-items: center;
@@ -927,6 +968,7 @@ body {
 }
 
 .sl-timeline-right {
+  position: relative;
   min-width: 0;
 }
 
@@ -938,7 +980,7 @@ body {
 .sl-overview-wrap {
   position: relative;
   z-index: 30;
-  overflow: visible;
+  overflow: hidden;
 }
 
 .sl-overview {
@@ -956,11 +998,11 @@ body {
   height: 100%;
 }
 
-.sl-overview-marker {
+.sl-task-time-projection {
   position: absolute;
-  top: 0;
+  top: 27px;
   bottom: 0;
-  z-index: 2;
+  z-index: 40;
   pointer-events: none;
   background: color-mix(in srgb, var(--warning) 14%, transparent);
   border-left: 1px solid color-mix(in srgb, var(--warning) 84%, transparent);
@@ -979,7 +1021,7 @@ body {
 
 .sl-overview-tooltip {
   position: absolute;
-  top: 6px;
+  top: 67px;
   z-index: 60;
   min-width: 214px;
   pointer-events: none;
@@ -1045,6 +1087,21 @@ body {
   color: inherit;
   cursor: pointer;
   text-align: left;
+}
+
+.sl-run-card__identity {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.sl-run-scenario {
+  overflow: hidden;
+  color: var(--foreground-muted);
+  font: 500 11px / 1.2 var(--font-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sl-run-card__toggle {
@@ -1184,6 +1241,7 @@ body {
 .sl-history-artifact-more {
   position: absolute;
   right: 0;
+  z-index: 2;
   display: inline-flex;
   width: 24px;
   min-width: 24px;
@@ -1192,7 +1250,7 @@ body {
   padding: 0;
   border-radius: var(--radius-md);
   opacity: 0;
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .sl-history-artifact-more svg {
@@ -1209,7 +1267,6 @@ body {
 .sl-history-artifact:hover .sl-history-artifact-more,
 .sl-history-artifact.is-menu-open .sl-history-artifact-more {
   opacity: 1;
-  pointer-events: auto;
 }
 
 .sl-history-artifact-menu {
@@ -1411,10 +1468,10 @@ body {
                               <button class="btn btn-sm" id="mixModeBtn" type="button" aria-pressed="false" title="按 1C2V Wrap 重排泳道">Mix模式</button>
                               <button class="btn btn-sm" id="syncPathBtn" type="button" aria-pressed="false" title="弱化无同步边的任务，聚焦核间协作">同步路径</button>
                               <span class="sl-tool-spacer"></span>
-                              <span class="sl-zoom-control" title="泳道图缩放控制滑杆，控制时间轴可见区">
+                              <span class="sl-zoom-control" title="泳道图缩放控制滑杆，支持 100%–1600% 时间轴缩放">
                                 <span class="sl-zoom-label">缩放</span>
                                 <button class="btn btn-icon btn-ghost" id="zoomOut" aria-label="缩小">−</button>
-                                <input class="sl-zoom-slider" id="zoomSlider" type="range" min="100" max="480" step="5" value="100" />
+                                <input class="sl-zoom-slider" id="zoomSlider" type="range" min="100" max="1600" step="5" value="100" />
                                 <button class="btn btn-icon btn-ghost" id="zoomIn" aria-label="放大">+</button>
                                 <span class="sl-zoom-readout" id="zoomReadout">100%</span>
                               </span>
@@ -1423,21 +1480,29 @@ body {
                               <div class="sl-timeline-head">
                                 <div class="sl-timeline-band">
                                   <div class="sl-timeline-corner">
-                                    <span class="sl-corner-title" title="Attention Score">Attention Score</span>
+                                    <span class="sl-corner-title" id="swimlaneObjectTitle"></span>
                                   </div>
                                   <div class="sl-timeline-right">
                                     <div class="sl-global-ruler" id="globalRulerScale" aria-label="全局时间尺">
                                       <div id="globalRulerTicks"></div>
                                       <div class="sl-global-ruler__brush" id="globalRulerBrush"></div>
                                     </div>
-                                    <div class="sl-axis-wrap" id="axisWrap"><canvas id="axisCanvas"></canvas></div>
+                                    <div class="sl-axis-wrap" id="axisWrap">
+                                      <canvas id="axisCanvas"></canvas>
+                                      <canvas class="sl-axis-crisp-canvas" id="axisCrispCanvas" aria-hidden="true"></canvas>
+                                    </div>
                                     <div class="sl-overview-wrap" id="overviewWrap"><div class="sl-overview" id="overviewBand"></div></div>
+                                    <div class="sl-task-time-projection" id="selectedTaskProjection" hidden aria-hidden="true"></div>
+                                    <div class="sl-overview-tooltip pto-swimlane-task-tooltip" id="overviewTooltip" hidden aria-hidden="true"></div>
                                   </div>
                                 </div>
                               </div>
                               <div class="sl-grid" id="grid">
                                 <div class="sl-lane-wrap" id="laneWrap"><canvas id="laneCanvas"></canvas></div>
-                                <div class="sl-body-wrap" id="bodyWrap"><canvas id="bodyCanvas"></canvas></div>
+                                <div class="sl-body-wrap" id="bodyWrap">
+                                  <canvas id="bodyCanvas"></canvas>
+                                  <canvas class="sl-body-crisp-canvas" id="bodyCrispCanvas" aria-hidden="true"></canvas>
+                                </div>
                               </div>
                               <div class="sl-timestamp-guide" id="timestampGuide" aria-hidden="true" hidden></div>
                             </div>
@@ -1473,7 +1538,10 @@ body {
                         <div class="sl-compare-swimlane-view" id="compareSwimlaneView" hidden aria-hidden="true">
                           <div class="sl-grid sl-compare-grid" id="compareGrid">
                             <div class="sl-lane-wrap" id="compareLaneWrap"><canvas id="compareLaneCanvas"></canvas></div>
-                            <div class="sl-body-wrap" id="compareBodyWrap"><canvas id="compareBodyCanvas"></canvas></div>
+                            <div class="sl-body-wrap" id="compareBodyWrap">
+                              <canvas id="compareBodyCanvas"></canvas>
+                              <canvas class="sl-body-crisp-canvas" id="compareBodyCrispCanvas" aria-hidden="true"></canvas>
+                            </div>
                             <div class="sl-timestamp-guide sl-compare-timestamp-guide" id="compareTimestampGuide" aria-hidden="true" hidden></div>
                           </div>
                         </div>
@@ -1510,7 +1578,7 @@ body {
                   </div>
                   <div class="pto-ide-frame__terminal-body">
                     <p class="pto-ide-frame__terminal-line"><span class="sl-terminal-prompt">pypto@swimlane-profiler %</span> 终端面板默认关闭，打开后用于承载执行日志与诊断输出。</p>
-                    <p class="pto-ide-frame__terminal-line">当前 demo 使用 L2 schema-generated / share-safe 数据；不是一次真实模型运行的原始导出。</p>
+                    <p class="pto-ide-frame__terminal-line">当前运行已加载 <span class="mono">merged_swimlane.json</span>，可从任务和关系下钻性能详情。</p>
                   </div>
                 </div>
               </section>
@@ -1839,19 +1907,24 @@ function runList() {
   return DATASET.runs.map((run) => ({
     id: run.id,
     operator: run.operator,
+    scenarioTitle: run.scenario?.title || '通用性能场景',
+    scenarioFocus: run.scenario?.focus || 'baseline',
+    characteristics: run.scenario?.characteristics || [],
+    builderId: run.dataConstructor?.id || 'legacy-single-builder',
     dur: Math.round(run.model.timelineEnd),
     tasks: run.model.tasks.length,
-    completeness: run.completeness,
     timestamp: run.timestamp,
     current: run.id === state?.selectedRunId,
   }));
 }
 
 const ROW_H = 21, SUB_ROW_H = 17, CORE_GAP_H = 6, BAR_PAD = 3, SUB_BAR_PAD = 3, BAR_H = ROW_H - 2 * BAR_PAD, SUB_BAR_H = SUB_ROW_H - 2 * SUB_BAR_PAD;
-const AXIS_H = 34, ZOOM_MIN = 100, ZOOM_MAX = 480;
+const AXIS_H = 34, ZOOM_MIN = 100, ZOOM_MAX = 1600, ZOOM_BUTTON_STEP = 50;
+const MAX_CANVAS_SIDE = 8192, MAX_CANVAS_PIXELS = 14_000_000, MIN_CANVAS_RENDER_SCALE = 0.25;
+const TOPOLOGY_HUB_MIN_WIDTH = 4;
 const LOW_UTILIZATION_THRESHOLD = 0.4;
 const KIND_ACCENT = Object.fromEntries(
-  ['host', 'memory', 'cpu', 'aic', 'aiv', 'mte'].map((kind) => [kind, TASK_COLORMAP.colorForLaneKind(kind)]),
+  ['host', 'memory', 'cpu', 'hub', 'aic', 'aiv', 'mte'].map((kind) => [kind, TASK_COLORMAP.colorForLaneKind(kind)]),
 );
 KIND_ACCENT.worker = KIND_ACCENT.aic;
 const AIC_SUBLANES = ['Scalar', 'MTE_2', 'MTE_1', 'Cube', 'FixPipe'];
@@ -1870,6 +1943,7 @@ const state = {
   reportTab: 'overview',
   taskReportTab: 'overview',
   pmuGroup: 2,
+  taskConnectionDepth: -1,
   level: 'overview',      // overview | group | wrap | task
   selGroup: null, selWrap: null, selTask: null, selSubtask: null,
   selectedRunId: CURRENT_RUN_ID,
@@ -1884,7 +1958,8 @@ const state = {
 const LANE_GROUPS = [
   { id: 'host', label: 'Host' },
   { id: 'ai_cpu', label: 'AI CPU' },
-  { id: 'ai_core_worker_phases', label: 'AI Core Worker Phases' },
+  { id: 'ai_core_worker_phases', label: 'AI Core 工作阶段' },
+  { id: 'ai_core_topology', label: 'AI Core 拓扑枢纽' },
   { id: 'die0', label: 'AI Core Die 0' },
   { id: 'die1', label: 'AI Core Die 1' },
 ];
@@ -2019,13 +2094,17 @@ function coreParticipates(coreIdx, group = null, wrap = null) {
 }
 
 const bodyCanvas = document.getElementById('bodyCanvas');
+const bodyCrispCanvas = document.getElementById('bodyCrispCanvas');
 const axisCanvas = document.getElementById('axisCanvas');
+const axisCrispCanvas = document.getElementById('axisCrispCanvas');
 const laneCanvas = document.getElementById('laneCanvas');
 const bodyWrap = document.getElementById('bodyWrap');
 const axisWrap = document.getElementById('axisWrap');
 const laneWrap = document.getElementById('laneWrap');
 const overviewWrap = document.getElementById('overviewWrap');
 const overviewBand = document.getElementById('overviewBand');
+const overviewTooltip = document.getElementById('overviewTooltip');
+const selectedTaskProjection = document.getElementById('selectedTaskProjection');
 const swimlaneScrollShell = document.querySelector('.sl-swimlane-scroll-shell');
 const timestampGuide = document.getElementById('timestampGuide');
 const globalRulerScale = document.getElementById('globalRulerScale');
@@ -2037,6 +2116,7 @@ const mixModeBtn = document.getElementById('mixModeBtn');
 const syncPathBtn = document.getElementById('syncPathBtn');
 const runHistoryBody = document.getElementById('runHistoryBody');
 const swimlanePaneTitle = document.getElementById('swimlanePaneTitle');
+const swimlaneObjectTitle = document.getElementById('swimlaneObjectTitle');
 const tooltip = document.getElementById('tooltip');
 const frameEl = document.querySelector('[data-ide-frame]');
 const canvasPane = document.getElementById('canvasPane');
@@ -2055,22 +2135,28 @@ const compareLaneWrap = document.getElementById('compareLaneWrap');
 const compareBodyWrap = document.getElementById('compareBodyWrap');
 const compareLaneCanvas = document.getElementById('compareLaneCanvas');
 const compareBodyCanvas = document.getElementById('compareBodyCanvas');
+const compareBodyCrispCanvas = document.getElementById('compareBodyCrispCanvas');
 const compareTimestampGuide = document.getElementById('compareTimestampGuide');
 const blockGraphZoomOut = document.getElementById('blockGraphZoomOut');
 const blockGraphZoomIn = document.getElementById('blockGraphZoomIn');
 const blockGraphFit = document.getElementById('blockGraphFit');
 const closeBlockGraph = document.getElementById('closeBlockGraph');
-let bctx, actx, lctx;
+let bctx, actx, lctx, crispCtx;
 let frameController = null;
 let canvasTooltipController = null;
 let canvasResizeObserver = null;
 let frameResizeObserver = null;
 let graphResizeObserver = null;
+let zoomRenderFrame = 0;
+let crispRenderFrame = 0;
+let renderedWrapBandSpecs = [];
+let pendingZoomAnchorTime = 0;
 let panelActions = null;
 let responsivePaneMode = null;
 let autoCollapsedExplorer = false;
 let autoCollapsedInspector = false;
 let overviewMetricSeries = [];
+const overviewMetricCache = new Map();
 let syncingComparisonScroll = false;
 const blockGraphViewState = {
   x: 0,
@@ -2092,7 +2178,41 @@ function visibleTrackW() {
 function bodyW() {
   return Math.ceil(visibleTrackW() * (state.zoomPct / 100));
 }
-function pxPerUs() { return Math.max(0.1, (bodyW() - 8) / MODEL.timelineEnd); }
+function timeTrackW() {
+  return Math.max(1, bodyW() - 8);
+}
+function pxPerUs() {
+  return Math.max(0.1, timeTrackW() / MODEL.timelineEnd);
+}
+function clampTimelineTime(time) {
+  return Math.max(0, Math.min(MODEL.timelineEnd, Number(time) || 0));
+}
+function timeToContentX(time) {
+  return clampTimelineTime(time) * pxPerUs();
+}
+function contentXToTime(x) {
+  return clampTimelineTime((Number(x) || 0) / pxPerUs());
+}
+function localTimeAtClientX(clientX) {
+  const rect = bodyWrap.getBoundingClientRect();
+  const viewportX = Math.max(0, Math.min(rect.width, clientX - rect.left));
+  return contentXToTime(bodyWrap.scrollLeft + viewportX);
+}
+function globalTimeAtClientX(clientX) {
+  const rect = globalRulerScale.getBoundingClientRect();
+  const f = Math.max(0, Math.min(1, (clientX - rect.left) / Math.max(1, rect.width)));
+  return f * MODEL.timelineEnd;
+}
+function taskBarGeometry(task, start, end, scale) {
+  let x = start * scale;
+  let width = Math.max(0, end - start) * scale;
+  if (task.phase === 'TOPOLOGY_HUB' && width < TOPOLOGY_HUB_MIN_WIDTH) {
+    const center = ((start + end) / 2) * scale;
+    width = TOPOLOGY_HUB_MIN_WIDTH;
+    x = Math.max(0, center - width / 2);
+  }
+  return { x, width };
+}
 function bodyH() { return rowItems.reduce((sum, item) => sum + item.h, 0); }
 function rowTop(row) { return rowItems[row]?.y ?? 0; }
 function rowHeight(row) { return rowItems[row]?.h ?? ROW_H; }
@@ -2128,7 +2248,7 @@ function hexToRgba(hex, a) {
   return `rgba(${v >> 16},${(v >> 8) & 0xff},${v & 0xff},${a})`;
 }
 function laneDieLabel(core) {
-  return core?.die != null ? `DIE ${core.die - 1}` : '';
+  return core?.die != null ? `DIE ${core.die}` : '';
 }
 function laneDisplayLabel(core) {
   const die = laneDieLabel(core);
@@ -2321,13 +2441,26 @@ function taskMatchesQuery(t) {
 }
 function setupCanvas(canvas, wCss, hCss) {
   const dpr = window.devicePixelRatio || 1;
-  canvas.width = Math.round(wCss * dpr);
-  canvas.height = Math.round(hCss * dpr);
+  const sideScale = Math.min(MAX_CANVAS_SIDE / Math.max(1, wCss), MAX_CANVAS_SIDE / Math.max(1, hCss));
+  const pixelScale = Math.sqrt(MAX_CANVAS_PIXELS / Math.max(1, wCss * hCss));
+  const renderScale = Math.max(MIN_CANVAS_RENDER_SCALE, Math.min(dpr, sideScale, pixelScale));
+  canvas.width = Math.max(1, Math.round(wCss * renderScale));
+  canvas.height = Math.max(1, Math.round(hCss * renderScale));
   canvas.style.width = wCss + 'px';
   canvas.style.height = hCss + 'px';
+  canvas.dataset.renderScale = renderScale.toFixed(3);
   const ctx = canvas.getContext('2d');
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
   return ctx;
+}
+
+function setupCanvasSpacer(canvas, wCss, hCss) {
+  canvas.width = 1;
+  canvas.height = 1;
+  canvas.style.width = wCss + 'px';
+  canvas.style.height = hCss + 'px';
+  canvas.dataset.renderScale = 'spacer';
+  return canvas.getContext('2d');
 }
 
 function copyCanvasPixels(source, target) {
@@ -2360,28 +2493,7 @@ function renderComparisonBody() {
     ctx.fillStyle = 'rgba(255,255,255,0.026)';
     ctx.fillRect(0, rowTop(row), width, rowHeight(row));
   });
-  model.layerMarks.forEach((mark) => {
-    const x = Math.round(mark.t * scale) + 0.5;
-    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
-    ctx.setLineDash([4, 4]);
-    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke();
-    ctx.setLineDash([]);
-  });
-  for (const task of model.tasks) {
-    const row = rowOf[task.coreIdx];
-    if (!Number.isFinite(row)) continue;
-    const bar = barMetricsForRow(row);
-    const x = task.start * scale;
-    const y = rowTop(row) + bar.pad;
-    const taskWidth = Math.max(0, task.end - task.start) * scale;
-    if (taskWidth < 1) continue;
-    const group = task.group != null ? model.groups[task.group] : null;
-    window.PtoSwimlaneTaskPattern.drawTaskBar(ctx, {
-      x, y, width: taskWidth, height: bar.height,
-      baseColor: group?.color || KIND_ACCENT[task.kind],
-      fontFamily: "'Inter', sans-serif", task,
-    });
-  }
+  scheduleCrispTaskLayer();
 }
 
 function syncComparisonCanvases() {
@@ -2407,22 +2519,26 @@ function focusInfo() {
   let crossLayerMode = null;
   let dependencyMode = Boolean(state.selTask);
   if (state.selTask) {
-    const dep = dependencyClosure(state.selTask);
+    const dep = dependencyClosure(state.selTask, state.taskConnectionDepth);
     dep.tasks.forEach((id) => relTasks.add(id));
     dep.edges.forEach((id) => relEdges.add(id));
-    const crossLayer = crossLayerClosure(state.selTask);
-    crossLayer.tasks.forEach((id) => relTasks.add(id));
-    crossLayerMode = crossLayer.mode;
-    if (crossLayerMode) {
-      dimGroup = null;
-      dimWrap = null;
+    if (state.taskConnectionDepth === -1) {
+      const crossLayer = crossLayerClosure(state.selTask);
+      crossLayer.tasks.forEach((id) => relTasks.add(id));
+      crossLayerMode = crossLayer.mode;
+      if (crossLayerMode) {
+        dimGroup = null;
+        dimWrap = null;
+      }
     }
   } else if (focusTask) {
     const crossLayer = crossLayerClosure(focusTask);
     if (crossLayer.mode) {
-      const dep = dependencyClosure(focusTask);
-      dep.tasks.forEach((id) => relTasks.add(id));
-      dep.edges.forEach((id) => relEdges.add(id));
+      if (!isAiCoreDieTask(focusTask)) {
+        const dep = dependencyClosure(focusTask);
+        dep.tasks.forEach((id) => relTasks.add(id));
+        dep.edges.forEach((id) => relEdges.add(id));
+      }
       crossLayer.tasks.forEach((id) => relTasks.add(id));
       crossLayerMode = crossLayer.mode;
       dimGroup = null;
@@ -2448,14 +2564,25 @@ function edgeVisibleInCurrentMode(edge) {
   return state.mixMode || edge.relation !== 'sync';
 }
 
-function dependencyClosure(rootTask) {
+function taskHasSyncRelation(task) {
+  return task.syncIn.concat(task.syncOut).some((edgeId) => edgeById[edgeId]?.relation === 'sync');
+}
+
+function isAiCoreDieTask(task) {
+  const laneGroup = MODEL.cores[task?.coreIdx]?.laneGroup;
+  return laneGroup === 'die0' || laneGroup === 'die1';
+}
+
+function dependencyClosure(rootTask, maxDepth = -1) {
   const tasks = new Set([rootTask.id]);
   const edges = new Set();
+  if (maxDepth === 0) return { tasks, edges };
   const visit = (seed, edgeKey, nextKey) => {
-    const queue = [seed];
+    const queue = [{ task: seed, depth: 0 }];
     const seen = new Set([seed.id]);
     while (queue.length) {
-      const cur = queue.shift();
+      const { task: cur, depth } = queue.shift();
+      if (maxDepth >= 0 && depth >= maxDepth) continue;
       cur[edgeKey].forEach((eid) => {
         const e = edgeById[eid];
         if (!e || !edgeVisibleInCurrentMode(e)) return;
@@ -2465,7 +2592,7 @@ function dependencyClosure(rootTask) {
         tasks.add(next.id);
         if (!seen.has(next.id)) {
           seen.add(next.id);
-          queue.push(next);
+          queue.push({ task: next, depth: depth + 1 });
         }
       });
     }
@@ -2555,8 +2682,237 @@ function crossLayerClosure(rootTask) {
   return { tasks, mode: null };
 }
 
+function taskVisualState(t, fi) {
+  const related = !fi.dependencyMode || fi.relTasks.has(t.id);
+  const baseColor = related ? taskBaseColor(t) : '#6F7480';
+  let alpha = 1;
+  if (state.syncPathOnly && !taskHasSyncRelation(t)) alpha = 0.16;
+  if (fi.dependencyMode) {
+    if (!related) alpha = Math.min(alpha, 0.24);
+  } else {
+    if (fi.dimWrap != null) { if (t.wrap !== fi.dimWrap) alpha = Math.min(alpha, 0.2); }
+    else if (fi.dimGroup != null) { if (t.group !== fi.dimGroup) alpha = Math.min(alpha, 0.2); }
+    if (fi.focusTask && !fi.relTasks.has(t.id)) alpha = Math.min(alpha, 0.34);
+  }
+  if (!taskMatchesQuery(t)) alpha = Math.min(alpha, 0.15);
+  const core = MODEL.cores[t.coreIdx];
+  const expanded = state.expandedLaneCores.has(core.idx);
+  const sourceSegments = expanded
+    ? (t.pipelineSegments || [])
+    : (state.mixMode && t.microSegments?.length ? t.microSegments : [
+      { kind: 'compute', start: t.start, end: t.end },
+    ]);
+  return { related, baseColor, alpha, core, expanded, sourceSegments };
+}
+
+function drawForegroundLayerMarks(ctx, marks, scale, height, viewport) {
+  let rendered = 0;
+  for (const mark of marks) {
+    const x = Math.round(mark.t * scale) + 0.5;
+    if (x < viewport.left - 1 || x > viewport.right + 1) continue;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, height);
+    ctx.stroke();
+    ctx.restore();
+    rendered += 1;
+  }
+  return rendered;
+}
+
+function drawSetMarker(ctx, x, y, height) {
+  const markerX = Math.round(x) + 0.5;
+  ctx.fillStyle = '#1FB6C9';
+  ctx.fillRect(markerX - 0.5, y - 1, 1, height + 2);
+  ctx.beginPath();
+  ctx.arc(markerX, y - 1, 2.2, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawWaitPointMarker(ctx, x, y, height) {
+  const markerX = Math.round(x) + 0.5;
+  ctx.fillStyle = '#FFAA3B';
+  ctx.fillRect(markerX - 0.5, y - 1, 1, height + 2);
+  ctx.beginPath();
+  ctx.moveTo(markerX - 3, y - 2);
+  ctx.lineTo(markerX + 3, y - 2);
+  ctx.lineTo(markerX, y + 2.5);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawCrispTaskLayer() {
+  if (!bodyCrispCanvas || !bodyWrap.clientWidth || !bodyWrap.clientHeight) return;
+  const viewportWidth = bodyWrap.clientWidth;
+  const viewportHeight = bodyWrap.clientHeight;
+  const scrollLeft = bodyWrap.scrollLeft;
+  const scrollTop = bodyWrap.scrollTop;
+  const dpr = window.devicePixelRatio || 1;
+  const pixelWidth = Math.max(1, Math.round(viewportWidth * dpr));
+  const pixelHeight = Math.max(1, Math.round(viewportHeight * dpr));
+  if (bodyCrispCanvas.width !== pixelWidth) bodyCrispCanvas.width = pixelWidth;
+  if (bodyCrispCanvas.height !== pixelHeight) bodyCrispCanvas.height = pixelHeight;
+  bodyCrispCanvas.style.width = viewportWidth + 'px';
+  bodyCrispCanvas.style.height = viewportHeight + 'px';
+  bodyCrispCanvas.style.transform = `translate3d(${scrollLeft}px, ${scrollTop}px, 0)`;
+  bodyCrispCanvas.dataset.renderScale = dpr.toFixed(3);
+  crispCtx = bodyCrispCanvas.getContext('2d');
+  crispCtx.setTransform(1, 0, 0, 1, 0, 0);
+  crispCtx.clearRect(0, 0, pixelWidth, pixelHeight);
+  crispCtx.setTransform(dpr, 0, 0, dpr, -scrollLeft * dpr, -scrollTop * dpr);
+
+  const fi = focusInfo();
+  const scale = pxPerUs();
+  const viewportRight = scrollLeft + viewportWidth;
+  const viewportBottom = scrollTop + viewportHeight;
+  const viewport = {
+    left: scrollLeft,
+    top: scrollTop,
+    right: viewportRight,
+    bottom: viewportBottom,
+  };
+  const fontFamily = "'Inter', sans-serif";
+  const renderedWrapLabels = state.mixMode
+    ? drawCrispWrapLabels(crispCtx, fi, renderedWrapBandSpecs, viewport)
+    : 0;
+  const renderedLayerMarks = drawForegroundLayerMarks(
+    crispCtx, MODEL.layerMarks, scale, bodyH(), viewport,
+  );
+  drawSeparators(crispCtx, bodyW());
+  let renderedTaskBars = 0;
+  let renderedWaitSegments = 0;
+  let renderedSetMarkers = 0;
+  let renderedWaitPointMarkers = 0;
+  for (const t of MODEL.tasks) {
+    const row = taskRow(t);
+    if (!Number.isFinite(row)) continue;
+    const visual = taskVisualState(t, fi);
+    visual.sourceSegments.forEach((segment) => {
+      const segmentRow = visual.expanded ? subRowOf[visual.core.idx]?.[segment.sublane] : row;
+      if (!Number.isFinite(segmentRow)) return;
+      const bar = barMetricsForRow(segmentRow);
+      const geometry = taskBarGeometry(t, segment.start, segment.end, scale);
+      const x = geometry.x;
+      const width = geometry.width;
+      const y = rowTop(segmentRow) + bar.pad;
+      const isPointMarker = segment.kind === 'set' || segment.kind === 'wait-point';
+      const visibleWidth = isPointMarker ? 7 : width;
+      if ((!isPointMarker && width < 1) || x + visibleWidth < scrollLeft || x > viewportRight
+          || y + bar.height < scrollTop || y > viewportBottom) return;
+      const segmentSelected = segment.id
+        ? state.selSubtask?.id === segment.id
+        : Boolean(state.selTask?.id === t.id && !state.selSubtask);
+      const segmentHovered = segment.id
+        ? state.hoverSubtask?.id === segment.id
+        : Boolean(state.hoverTask?.id === t.id && !state.hoverSubtask);
+      const renderTask = segment.id ? subtaskView(t, segment) : t;
+      crispCtx.globalAlpha = visual.alpha;
+      if (segment.kind === 'wait') {
+        drawWaitSegment(crispCtx, x, y, width, bar.height, fi.dependencyMode && !visual.related);
+        drawSubtaskFocus(crispCtx, x, y, width, bar.height, segmentSelected, segmentHovered);
+        renderedWaitSegments += 1;
+      } else if (segment.kind === 'set') {
+        drawSetMarker(crispCtx, x, y, bar.height);
+        renderedSetMarkers += 1;
+      } else if (segment.kind === 'wait-point') {
+        drawWaitPointMarker(crispCtx, x, y, bar.height);
+        renderedWaitPointMarkers += 1;
+      } else {
+        window.PtoSwimlaneTaskPattern.drawTaskBar(crispCtx, {
+          x, y, width, height: bar.height, baseColor: visual.baseColor, fontFamily, task: renderTask,
+          isSelected: segmentSelected,
+          isRelated: fi.relTasks.has(t.id) && fi.focusTask && fi.focusTask.id !== t.id,
+          isEmphasized: segmentHovered,
+        });
+        renderedTaskBars += 1;
+      }
+    });
+  }
+  crispCtx.globalAlpha = 1;
+  if (fi.showDependencyCurves) drawDependencyCurves(crispCtx, fi);
+  else if (state.mixMode) drawSyncCurves(crispCtx, fi);
+  bodyCrispCanvas.dataset.renderedTaskBars = String(renderedTaskBars);
+  bodyCrispCanvas.dataset.renderedWaitSegments = String(renderedWaitSegments);
+  bodyCrispCanvas.dataset.renderedSetMarkers = String(renderedSetMarkers);
+  bodyCrispCanvas.dataset.renderedWaitPointMarkers = String(renderedWaitPointMarkers);
+  bodyCrispCanvas.dataset.renderedLayerMarks = String(renderedLayerMarks);
+  bodyCrispCanvas.dataset.renderedWrapLabels = String(renderedWrapLabels);
+}
+
+function drawCrispComparisonLayer() {
+  if (state.secondaryViewMode !== 'comparison' || !compareBodyCrispCanvas
+      || !compareBodyWrap?.clientWidth || !compareBodyWrap.clientHeight) return;
+  const run = RUN_BY_ID[state.comparisonRunId];
+  if (!run) return;
+  const model = run.model;
+  const viewportWidth = compareBodyWrap.clientWidth;
+  const viewportHeight = compareBodyWrap.clientHeight;
+  const scrollLeft = compareBodyWrap.scrollLeft;
+  const scrollTop = compareBodyWrap.scrollTop;
+  const dpr = window.devicePixelRatio || 1;
+  const pixelWidth = Math.max(1, Math.round(viewportWidth * dpr));
+  const pixelHeight = Math.max(1, Math.round(viewportHeight * dpr));
+  if (compareBodyCrispCanvas.width !== pixelWidth) compareBodyCrispCanvas.width = pixelWidth;
+  if (compareBodyCrispCanvas.height !== pixelHeight) compareBodyCrispCanvas.height = pixelHeight;
+  compareBodyCrispCanvas.style.width = viewportWidth + 'px';
+  compareBodyCrispCanvas.style.height = viewportHeight + 'px';
+  compareBodyCrispCanvas.style.transform = `translate3d(${scrollLeft}px, ${scrollTop}px, 0)`;
+  compareBodyCrispCanvas.dataset.renderScale = dpr.toFixed(3);
+  const ctx = compareBodyCrispCanvas.getContext('2d');
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, pixelWidth, pixelHeight);
+  ctx.setTransform(dpr, 0, 0, dpr, -scrollLeft * dpr, -scrollTop * dpr);
+  const scale = pxPerUs();
+  const viewportRight = scrollLeft + viewportWidth;
+  const viewportBottom = scrollTop + viewportHeight;
+  const viewport = {
+    left: scrollLeft,
+    top: scrollTop,
+    right: viewportRight,
+    bottom: viewportBottom,
+  };
+  const renderedLayerMarks = drawForegroundLayerMarks(
+    ctx, model.layerMarks, scale, bodyH(), viewport,
+  );
+  drawSeparators(ctx, Math.max(bodyW(), Math.ceil(model.timelineEnd * scale + 8)));
+  let renderedTaskBars = 0;
+  for (const task of model.tasks) {
+    const row = rowOf[task.coreIdx];
+    if (!Number.isFinite(row)) continue;
+    const bar = barMetricsForRow(row);
+    const geometry = taskBarGeometry(task, task.start, task.end, scale);
+    const x = geometry.x;
+    const y = rowTop(row) + bar.pad;
+    if (geometry.width < 1 || x + geometry.width < scrollLeft || x > viewportRight
+        || y + bar.height < scrollTop || y > viewportBottom) continue;
+    const group = task.group != null ? model.groups[task.group] : null;
+    window.PtoSwimlaneTaskPattern.drawTaskBar(ctx, {
+      x, y, width: geometry.width, height: bar.height,
+      baseColor: group?.color || KIND_ACCENT[task.kind],
+      fontFamily: "'Inter', sans-serif", task,
+    });
+    renderedTaskBars += 1;
+  }
+  compareBodyCrispCanvas.dataset.renderedTaskBars = String(renderedTaskBars);
+  compareBodyCrispCanvas.dataset.renderedLayerMarks = String(renderedLayerMarks);
+}
+
+function scheduleCrispTaskLayer() {
+  if (crispRenderFrame) return;
+  crispRenderFrame = window.requestAnimationFrame(() => {
+    crispRenderFrame = 0;
+    drawCrispTaskLayer();
+    drawCrispComparisonLayer();
+    drawCrispAxisLayer();
+  });
+}
+
 function drawBody() {
-  const w = bodyW(), h = bodyH(), scale = pxPerUs();
+  const w = bodyW(), h = bodyH();
   bctx.clearRect(0, 0, w, h);
   const fi = focusInfo();
 
@@ -2577,82 +2933,9 @@ function drawBody() {
 
   /* Mix 模式按单个 Wrap instance 框选 1C2V / 1C1V，不合并多个 Wrap。 */
   if (state.mixMode) drawWrapBands(fi);
-
-  /* 调用范围 barrier：任务区只保留虚线，不延伸局部时间刻度实线。 */
-  MODEL.layerMarks.forEach((m) => {
-    const x = Math.round(m.t * scale) + 0.5;
-    bctx.strokeStyle = 'rgba(255,255,255,0.15)'; bctx.setLineDash([4, 4]);
-    bctx.beginPath(); bctx.moveTo(x, 0); bctx.lineTo(x, h); bctx.stroke();
-    bctx.setLineDash([]);
-  });
-
-  /* section / wrap / group 分隔线 */
-  drawSeparators(bctx, w);
-
-  /* task bars */
-  const fontFamily = "'Inter', sans-serif";
-  for (const t of MODEL.tasks) {
-    const row = taskRow(t);
-    if (!Number.isFinite(row)) continue;
-    const related = !fi.dependencyMode || fi.relTasks.has(t.id);
-    const baseColor = related ? taskBaseColor(t) : '#6F7480';
-
-    let alpha = 1;
-    if (state.syncPathOnly && t.syncIn.length === 0 && t.syncOut.length === 0) alpha = 0.16;
-    if (fi.dependencyMode) {
-      if (!related) alpha = Math.min(alpha, 0.24);
-    } else {
-      if (fi.dimWrap != null) { if (t.wrap !== fi.dimWrap) alpha = Math.min(alpha, 0.2); }
-      else if (fi.dimGroup != null) { if (t.group !== fi.dimGroup) alpha = Math.min(alpha, 0.2); }
-      if (fi.focusTask && !fi.relTasks.has(t.id)) alpha = Math.min(alpha, 0.34);
-    }
-    if (!taskMatchesQuery(t)) alpha = Math.min(alpha, 0.15);
-
-    const core = MODEL.cores[t.coreIdx];
-    const expanded = state.expandedLaneCores.has(core.idx);
-    const sourceSegments = expanded
-      ? (t.pipelineSegments || [])
-      : (state.mixMode && t.microSegments?.length ? t.microSegments : [
-        { kind: 'compute', start: t.start, end: t.end },
-      ]);
-    sourceSegments.forEach((segment) => {
-      const segmentRow = expanded ? subRowOf[core.idx]?.[segment.sublane] : row;
-      if (!Number.isFinite(segmentRow)) return;
-      const bar = barMetricsForRow(segmentRow);
-      const x = segment.start * scale;
-      const width = Math.max(0, segment.end - segment.start) * scale;
-      const y = rowTop(segmentRow) + bar.pad;
-      const segmentSelected = segment.id
-        ? state.selSubtask?.id === segment.id
-        : Boolean(state.selTask?.id === t.id && !state.selSubtask);
-      const segmentHovered = segment.id
-        ? state.hoverSubtask?.id === segment.id
-        : Boolean(state.hoverTask?.id === t.id && !state.hoverSubtask);
-      bctx.globalAlpha = alpha;
-      if (segment.kind === 'wait') {
-        if (width >= 1) {
-          drawWaitSegment(x, y, width, bar.height, fi.dependencyMode && !related);
-          drawSubtaskFocus(x, y, width, bar.height, segmentSelected, segmentHovered);
-        }
-      } else if (segment.kind === 'set') {
-        bctx.fillStyle = '#1FB6C9';
-        bctx.fillRect(Math.round(x), y - 1, 2, bar.height + 2);
-      } else if (width >= 1) {
-        const renderTask = segment.id ? subtaskView(t, segment) : t;
-        window.PtoSwimlaneTaskPattern.drawTaskBar(bctx, {
-          x, y, width, height: bar.height, baseColor, fontFamily, task: renderTask,
-          isSelected: segmentSelected,
-          isRelated: fi.relTasks.has(t.id) && fi.focusTask && fi.focusTask.id !== t.id,
-          isEmphasized: segmentHovered,
-        });
-      }
-    });
-    bctx.globalAlpha = 1;
-  }
-
-  if (fi.showDependencyCurves) drawDependencyCurves(fi);
-  else if (state.mixMode) drawSyncCurves(fi);
+  else renderedWrapBandSpecs = [];
   copyCanvasPixels(bodyCanvas, compareBodyCanvas);
+  scheduleCrispTaskLayer();
 }
 
 function wrapBandKey(wrapId, iteration) {
@@ -2687,30 +2970,65 @@ function wrapBandSpecs() {
   return specs;
 }
 
+function wrapBandVisualState(spec, fi) {
+  const grp = MODEL.groups[spec.groupId];
+  const isFocus = fi.dimWrap === spec.wrapId;
+  const isHovered = state.hoverWrapBandKey === spec.key;
+  const groupFocus = fi.dimWrap == null && fi.dimGroup === spec.groupId;
+  const faded = !isHovered && ((fi.dimWrap != null && !isFocus)
+    || (fi.dimWrap == null && fi.dimGroup != null && !groupFocus));
+  return { grp, faded, bright: isHovered || isFocus };
+}
+
+function drawCrispWrapLabels(ctx, fi, specs, viewport) {
+  let rendered = 0;
+  ctx.save();
+  ctx.font = "600 8px 'JetBrains Mono', monospace";
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  for (const spec of specs) {
+    const { grp, faded, bright } = wrapBandVisualState(spec, fi);
+    const borderVisible = spec.x + spec.width >= viewport.left
+      && spec.x <= viewport.right
+      && spec.y + spec.height >= viewport.top
+      && spec.y <= viewport.bottom;
+    if (borderVisible) {
+      ctx.save();
+      ctx.strokeStyle = hexToRgba(grp.color, faded ? 0.12 : (bright ? 0.94 : 0.34));
+      ctx.lineWidth = bright ? 1.4 : 1;
+      ctx.setLineDash([5, 3]);
+      ctx.beginPath();
+      ctx.roundRect(
+        spec.x + 0.5,
+        spec.y + 1.5,
+        Math.max(0, spec.width - 1),
+        Math.max(0, spec.height - 3),
+        8,
+      );
+      ctx.stroke();
+      ctx.restore();
+    }
+    const label = `Wrap ${wrapInstanceDisplayId(spec.wrapId, spec.iteration)}`;
+    const x = spec.x + 1;
+    const y = Math.max(8, spec.y - 2);
+    const labelWidth = ctx.measureText(label).width;
+    if (x > viewport.right || x + labelWidth < viewport.left
+        || y < viewport.top || y - 10 > viewport.bottom) continue;
+    ctx.fillStyle = hexToRgba(grp.color, faded ? 0.2 : (bright ? 0.96 : 0.5));
+    ctx.fillText(label, x, y);
+    rendered += 1;
+  }
+  ctx.restore();
+  return rendered;
+}
+
 function drawWrapBands(fi) {
-  for (const spec of wrapBandSpecs()) {
-    const grp = MODEL.groups[spec.groupId];
-    const isFocus = fi.dimWrap === spec.wrapId;
-    const isHovered = state.hoverWrapBandKey === spec.key;
-    const groupFocus = fi.dimWrap == null && fi.dimGroup === spec.groupId;
-    const faded = !isHovered && ((fi.dimWrap != null && !isFocus)
-      || (fi.dimWrap == null && fi.dimGroup != null && !groupFocus));
-    const bright = isHovered || isFocus;
+  renderedWrapBandSpecs = wrapBandSpecs();
+  for (const spec of renderedWrapBandSpecs) {
+    const { grp, faded, bright } = wrapBandVisualState(spec, fi);
     bctx.save();
     bctx.fillStyle = hexToRgba(grp.color, faded ? 0.018 : (bright ? 0.11 : 0.04));
     bctx.fillRect(spec.x, spec.y, spec.width, spec.height);
-    bctx.strokeStyle = hexToRgba(grp.color, faded ? 0.12 : (bright ? 0.94 : 0.34));
-    bctx.lineWidth = bright ? 1.4 : 1;
-    bctx.setLineDash([5, 3]);
-    bctx.beginPath();
-    bctx.roundRect(spec.x + 0.5, spec.y + 1.5, spec.width - 1, spec.height - 3, 8);
-    bctx.stroke();
-    bctx.setLineDash([]);
-    bctx.font = "600 8px 'JetBrains Mono', monospace";
-    bctx.textAlign = 'left';
-    bctx.textBaseline = 'alphabetic';
-    bctx.fillStyle = hexToRgba(grp.color, faded ? 0.2 : (bright ? 0.96 : 0.5));
-    bctx.fillText(`Wrap ${wrapInstanceDisplayId(spec.wrapId, spec.iteration)}`, spec.x + 1, Math.max(8, spec.y - 2));
     bctx.restore();
   }
 }
@@ -2737,49 +3055,49 @@ function drawSeparators(ctx, w) {
   copyCanvasPixels(laneCanvas, compareLaneCanvas);
 }
 
-function drawWaitSegment(x, y, w, h, muted = false) {
+function drawWaitSegment(ctx, x, y, w, h, muted = false) {
   const waitColor = muted ? '#6F7480' : '#FFAA3B';
-  bctx.save();
-  bctx.beginPath(); bctx.roundRect(x, y, w, h, 2); bctx.clip();
-  bctx.fillStyle = hexToRgba(waitColor, muted ? 0.18 : 0.14);
-  bctx.fillRect(x, y, w, h);
-  bctx.strokeStyle = muted ? 'rgba(111,116,128,0.48)' : 'rgba(255,170,59,0.5)';
-  bctx.lineWidth = 1;
+  ctx.save();
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, 2); ctx.clip();
+  ctx.fillStyle = hexToRgba(waitColor, muted ? 0.18 : 0.14);
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = muted ? 'rgba(111,116,128,0.48)' : 'rgba(255,170,59,0.5)';
+  ctx.lineWidth = 1;
   for (let i = -h; i < w + h; i += 5) {
-    bctx.beginPath(); bctx.moveTo(x + i, y + h); bctx.lineTo(x + i + h, y); bctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x + i, y + h); ctx.lineTo(x + i + h, y); ctx.stroke();
   }
-  bctx.restore();
-  bctx.strokeStyle = muted ? 'rgba(111,116,128,0.44)' : 'rgba(255,170,59,0.4)';
-  bctx.lineWidth = 1;
-  bctx.beginPath(); bctx.roundRect(x + 0.5, y + 0.5, Math.max(0, w - 1), h - 1, 2); bctx.stroke();
+  ctx.restore();
+  ctx.strokeStyle = muted ? 'rgba(111,116,128,0.44)' : 'rgba(255,170,59,0.4)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.roundRect(x + 0.5, y + 0.5, Math.max(0, w - 1), h - 1, 2); ctx.stroke();
   if (w >= 6) {
-    bctx.fillStyle = waitColor;
-    bctx.beginPath();
-    bctx.moveTo(x, y - 1); bctx.lineTo(x + 5, y - 1); bctx.lineTo(x + 2.5, y + 3.5);
-    bctx.closePath(); bctx.fill();
+    ctx.fillStyle = waitColor;
+    ctx.beginPath();
+    ctx.moveTo(x, y - 1); ctx.lineTo(x + 5, y - 1); ctx.lineTo(x + 2.5, y + 3.5);
+    ctx.closePath(); ctx.fill();
   }
 }
 
-function drawSubtaskFocus(x, y, w, h, selected, hovered) {
+function drawSubtaskFocus(ctx, x, y, w, h, selected, hovered) {
   if (!selected && !hovered) return;
-  bctx.save();
-  bctx.strokeStyle = selected ? 'rgba(255,255,255,0.96)' : 'rgba(255,255,255,0.72)';
-  bctx.lineWidth = selected ? 1.5 : 1;
-  bctx.beginPath();
-  bctx.roundRect(x + 0.5, y + 0.5, Math.max(0, w - 1), Math.max(0, h - 1), 2);
-  bctx.stroke();
-  bctx.restore();
+  ctx.save();
+  ctx.strokeStyle = selected ? 'rgba(255,255,255,0.96)' : 'rgba(255,255,255,0.72)';
+  ctx.lineWidth = selected ? 1.5 : 1;
+  ctx.beginPath();
+  ctx.roundRect(x + 0.5, y + 0.5, Math.max(0, w - 1), Math.max(0, h - 1), 2);
+  ctx.stroke();
+  ctx.restore();
 }
 
 /* 依赖贝塞尔曲线：渐进显示
    overview -> 不画; group -> 该子图弧线中等; wrap -> 该 wrap 弧线强;
    任务 -> 选中任务弧线最强, 同 Wrap 其余弱 */
-function drawDependencyCurves(fi) {
+function drawDependencyCurves(ctx, fi) {
   const edges = MODEL.edges.filter((e) => fi.relEdges.has(e.id) && edgeVisibleInCurrentMode(e));
-  edges.forEach((e) => drawDependencyCurve(e, true));
+  edges.forEach((e) => drawDependencyCurve(ctx, e, true));
 }
 
-function drawSyncCurves(fi) {
+function drawSyncCurves(ctx, fi) {
   let visible, strongPred;
   if (fi.focusTask) {
     visible = MODEL.edges.filter((e) => e.wrap === fi.focusTask.wrap);
@@ -2794,21 +3112,21 @@ function drawSyncCurves(fi) {
     return; /* overview: 保持干净, 不画弧线 */
   }
   /* 先弱后强, 保证强线在上层 */
-  visible.filter((e) => !strongPred(e)).forEach((e) => drawDependencyCurve(e, false));
-  visible.filter((e) => strongPred(e)).forEach((e) => drawDependencyCurve(e, true));
+  visible.filter((e) => !strongPred(e)).forEach((e) => drawDependencyCurve(ctx, e, false));
+  visible.filter((e) => strongPred(e)).forEach((e) => drawDependencyCurve(ctx, e, true));
   /* 选中 task 的同步点 barrier 竖线 */
   if (fi.focusTask) {
     fi.focusTask.syncIn.concat(fi.focusTask.syncOut).forEach((eid) => {
       const e = edgeById[eid];
       if (!e || e.relation !== 'sync') return;
       const color = MODEL.groups[e.group]?.color || KIND_ACCENT.aic;
-      drawBarrier(e.fromT, color);
-      drawBarrier(e.toT, color);
+      drawBarrier(ctx, e.fromT, color);
+      drawBarrier(ctx, e.toT, color);
     });
   }
 }
 
-function drawDependencyCurve(e, strong) {
+function drawDependencyCurve(ctx, e, strong) {
   const scale = pxPerUs();
   const fromRow = taskRow(taskById[e.fromTask]), toRow = taskRow(taskById[e.toTask]);
   if (!Number.isFinite(fromRow) || !Number.isFinite(toRow)) return;
@@ -2816,77 +3134,105 @@ function drawDependencyCurve(e, strong) {
   const x2 = e.toT * scale, y2 = rowMidY(toRow);
   const fromColor = taskBaseColor(taskById[e.fromTask]);
   const toColor = taskBaseColor(taskById[e.toTask]);
-  const grad = bctx.createLinearGradient(x1, y1, x2, y2);
+  const grad = ctx.createLinearGradient(x1, y1, x2, y2);
   grad.addColorStop(0, hexToRgba(fromColor, strong ? 0.98 : 0.32));
   grad.addColorStop(1, hexToRgba(toColor, strong ? 0.98 : 0.32));
   const midX = x1 + (x2 - x1) * 0.5;
-  bctx.save();
-  bctx.strokeStyle = grad;
-  bctx.lineWidth = strong ? 1.7 : 1;
+  ctx.save();
+  ctx.strokeStyle = grad;
+  ctx.lineWidth = strong ? 1.7 : 1;
   /* 任务依赖为实线；AI Core 内部同步/等待为虚线。 */
-  bctx.setLineDash(e.relation === 'sync' ? (strong ? [6, 4] : [4, 4]) : []);
-  bctx.beginPath();
-  bctx.moveTo(x1, y1);
-  bctx.bezierCurveTo(midX, y1, midX, y2, x2, y2);
-  bctx.stroke();
-  bctx.setLineDash([]);
-  bctx.fillStyle = hexToRgba(fromColor, strong ? 1 : 0.5);
-  bctx.beginPath(); bctx.arc(x1, y1, strong ? 2.6 : 1.8, 0, Math.PI * 2); bctx.fill();
-  bctx.fillStyle = hexToRgba(toColor, strong ? 1 : 0.5);
+  ctx.setLineDash(e.relation === 'sync' ? (strong ? [6, 4] : [4, 4]) : []);
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.bezierCurveTo(midX, y1, midX, y2, x2, y2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = hexToRgba(fromColor, strong ? 1 : 0.5);
+  ctx.beginPath(); ctx.arc(x1, y1, strong ? 2.6 : 1.8, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = hexToRgba(toColor, strong ? 1 : 0.5);
   const arrow = strong ? 5.2 : 4.2;
   const direction = Math.sign(x2 - x1) || 1;
-  bctx.beginPath();
-  bctx.moveTo(x2, y2);
-  bctx.lineTo(x2 - direction * arrow, y2 - arrow * 0.72);
-  bctx.lineTo(x2 - direction * arrow, y2 + arrow * 0.72);
-  bctx.closePath();
-  bctx.fill();
-  bctx.restore();
+  ctx.beginPath();
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - direction * arrow, y2 - arrow * 0.72);
+  ctx.lineTo(x2 - direction * arrow, y2 + arrow * 0.72);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
 }
 
-function drawBarrier(tUs, color) {
+function drawBarrier(ctx, tUs, color) {
   const x = Math.round(tUs * pxPerUs()) + 0.5;
-  bctx.save();
-  bctx.strokeStyle = hexToRgba(color, 0.45);
-  bctx.lineWidth = 1; bctx.setLineDash([2, 3]);
-  bctx.beginPath(); bctx.moveTo(x, 0); bctx.lineTo(x, bodyH()); bctx.stroke();
-  bctx.restore();
+  ctx.save();
+  ctx.strokeStyle = hexToRgba(color, 0.45);
+  ctx.lineWidth = 1; ctx.setLineDash([2, 3]);
+  ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, bodyH()); ctx.stroke();
+  ctx.restore();
 }
 
 /* ---- 时间轴 ---- */
-function drawAxis() {
+function drawCrispAxisLayer() {
+  if (!axisCrispCanvas || !axisWrap.clientWidth) return;
   const w = bodyW(), scale = pxPerUs();
-  actx.clearRect(0, 0, w, AXIS_H);
-  actx.fillStyle = 'rgba(255,255,255,0.40)';
-  actx.font = "500 10px 'JetBrains Mono', monospace";
-  actx.textBaseline = 'middle';
+  const viewportWidth = axisWrap.clientWidth;
+  const scrollLeft = axisWrap.scrollLeft;
+  const viewportRight = scrollLeft + viewportWidth;
+  const dpr = window.devicePixelRatio || 1;
+  const pixelWidth = Math.max(1, Math.round(viewportWidth * dpr));
+  const pixelHeight = Math.max(1, Math.round(AXIS_H * dpr));
+  if (axisCrispCanvas.width !== pixelWidth) axisCrispCanvas.width = pixelWidth;
+  if (axisCrispCanvas.height !== pixelHeight) axisCrispCanvas.height = pixelHeight;
+  axisCrispCanvas.style.width = viewportWidth + 'px';
+  axisCrispCanvas.style.height = AXIS_H + 'px';
+  axisCrispCanvas.style.transform = `translate3d(${scrollLeft}px, 0, 0)`;
+  axisCrispCanvas.dataset.renderScale = dpr.toFixed(3);
+  const ctx = axisCrispCanvas.getContext('2d');
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, pixelWidth, pixelHeight);
+  ctx.setTransform(dpr, 0, 0, dpr, -scrollLeft * dpr, 0);
+  ctx.fillStyle = 'rgba(255,255,255,0.40)';
+  ctx.font = "500 10px 'JetBrains Mono', monospace";
+  ctx.textBaseline = 'middle';
   const { majorStep, minorStep } = adaptiveTimeSteps(MODEL.timelineEnd, w, 54);
+  let renderedTicks = 0;
   for (let t = 0; t <= MODEL.timelineEnd + minorStep * 0.25; t += minorStep) {
     const x = Math.round(t * scale) + 0.5;
+    if (x < scrollLeft - 48 || x > viewportRight + 1) continue;
     const major = Math.abs(t / majorStep - Math.round(t / majorStep)) < 1e-6;
-    actx.strokeStyle = major ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.10)';
-    actx.beginPath();
-    actx.moveTo(x, major ? AXIS_H - 11 : AXIS_H - 6); actx.lineTo(x, AXIS_H); actx.stroke();
-    if (major) { actx.textAlign = 'left'; actx.fillText(formatTimeTick(t) + 'μs', x + 3, 9); }
+    ctx.strokeStyle = major ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.10)';
+    ctx.beginPath();
+    ctx.moveTo(x, major ? AXIS_H - 11 : AXIS_H - 6); ctx.lineTo(x, AXIS_H); ctx.stroke();
+    if (major) { ctx.textAlign = 'left'; ctx.fillText(formatTimeTick(t) + 'μs', x + 3, 9); }
+    renderedTicks += 1;
   }
+  let renderedLayerLabels = 0;
   MODEL.layerMarks.forEach((m) => {
     const x = m.t * scale;
+    if (x + 62 < scrollLeft || x > viewportRight) return;
     const hovered = state.hoverLayer === m.layer;
     if (hovered) {
-      actx.fillStyle = 'rgba(255,255,255,0.10)';
-      actx.beginPath();
-      actx.roundRect(x + 1, 12, 52, 18, 4);
-      actx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.10)';
+      ctx.beginPath();
+      ctx.roundRect(x + 1, 12, 52, 18, 4);
+      ctx.fill();
     }
-    actx.fillStyle = hovered ? 'rgba(255,255,255,0.94)' : 'rgba(255,255,255,0.62)';
-    actx.font = "600 10px 'Inter', sans-serif";
-    actx.textAlign = 'left';
-    actx.fillText('Stitch ' + m.label, x + 4, 22);
+    ctx.fillStyle = hovered ? 'rgba(255,255,255,0.94)' : 'rgba(255,255,255,0.62)';
+    ctx.font = "600 10px 'Inter', sans-serif";
+    ctx.textAlign = 'left';
+    ctx.fillText('DevTask ' + m.label, x + 4, 22);
     if (hovered) {
-      actx.fillStyle = 'rgba(255,255,255,0.78)';
-      actx.fillRect(x + 4, 29, 44, 1);
+      ctx.fillStyle = 'rgba(255,255,255,0.78)';
+      ctx.fillRect(x + 4, 29, 44, 1);
     }
+    renderedLayerLabels += 1;
   });
+  axisCrispCanvas.dataset.renderedTicks = String(renderedTicks);
+  axisCrispCanvas.dataset.renderedLayerLabels = String(renderedLayerLabels);
+}
+
+function drawAxis() {
+  drawCrispAxisLayer();
 }
 
 function adaptiveTimeSteps(total, pixelWidth, targetLabelPx = 58) {
@@ -2924,6 +3270,7 @@ function fitLayer(layer) {
     axisWrap.scrollLeft = bodyWrap.scrollLeft;
     overviewWrap.scrollLeft = bodyWrap.scrollLeft;
     syncGlobalRulerBrush();
+    renderSelectedTaskProjection();
   });
 }
 
@@ -3144,6 +3491,8 @@ function physicalAiCoreKey(core) {
 }
 
 function buildOverviewMetrics() {
+  const cacheKey = state.selectedRunId;
+  if (overviewMetricCache.has(cacheKey)) return overviewMetricCache.get(cacheKey);
   const samples = 72;
   const metricDefs = [
     { key: 'hostQueue', label: 'Host CPU 队列', unit: '', max: 8, color: '#7C8DB8' },
@@ -3180,42 +3529,64 @@ function buildOverviewMetrics() {
     series[3].values.push(clampMetric(34 + aiCompute * 0.72 + mteActive * 8 + 18 * bottleneck + 8 * pulse, 0, 100));
     series[4].values.push(clampMetric(120 + mteActive * 230 + 90 * pulse + 140 * Math.max(0, Math.sin(f * Math.PI * 6)), 0, 900));
   }
+  overviewMetricCache.set(cacheKey, series);
   return series;
 }
 
 function renderOverviewBand() {
   const w = bodyW();
+  const trackW = timeTrackW();
   const h = 62;
   const top = 7;
   const bottom = 9;
   overviewMetricSeries = buildOverviewMetrics();
   const grid = [0.25, 0.5, 0.75].map((p) => {
     const y = top + (h - top - bottom) * p;
-    return `<path d="M0 ${y.toFixed(2)} H${w}" stroke="rgba(255,255,255,0.055)" stroke-width="1"></path>`;
+    return `<path d="M0 ${y.toFixed(2)} H${trackW}" stroke="rgba(255,255,255,0.055)" stroke-width="1"></path>`;
   }).join('');
   const layerGuides = MODEL.layerMarks.map((mark) => {
-    const x = mark.t * pxPerUs();
+    const x = timeToContentX(mark.t);
     return `<path d="M${x.toFixed(2)} 0 V${h}" stroke="rgba(255,255,255,0.24)" stroke-width="1" stroke-dasharray="4 4"></path>`;
   }).join('');
   const paths = overviewMetricSeries.map((metric) => {
     const points = metric.values.map((value, i) => {
       const f = i / Math.max(1, metric.values.length - 1);
       const y = top + (1 - value / metric.max) * (h - top - bottom);
-      return { x: f * w, y };
+      return { x: f * trackW, y };
     });
     const line = smoothPath(points);
-    const area = `${line} L${w.toFixed(2)},${(h - bottom).toFixed(2)} L0,${(h - bottom).toFixed(2)} Z`;
+    const area = `${line} L${trackW.toFixed(2)},${(h - bottom).toFixed(2)} L0,${(h - bottom).toFixed(2)} Z`;
     return `<path d="${area}" fill="${metric.color}" opacity="0.10"></path><path d="${line}" fill="none" stroke="${metric.color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"></path>`;
   }).join('');
-  let marker = '';
-  if (state.selTask) {
-    const selected = selectedTaskView();
-    const x = selected.start * pxPerUs();
-    const mw = Math.max(2, (selected.end - selected.start) * pxPerUs());
-    marker = `<div class="sl-overview-marker" style="left:${x}px;width:${mw}px"></div>`;
-  }
   overviewBand.style.width = w + 'px';
-  overviewBand.innerHTML = `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">${grid}${layerGuides}${paths}</svg>${marker}<div class="sl-overview-tooltip pto-swimlane-task-tooltip" id="overviewTooltip" hidden aria-hidden="true"></div>`;
+  overviewBand.innerHTML = `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">${grid}${layerGuides}${paths}</svg>`;
+  renderSelectedTaskProjection();
+}
+
+function renderSelectedTaskProjection() {
+  if (!selectedTaskProjection) return;
+  const selected = selectedTaskView();
+  if (!selected) {
+    selectedTaskProjection.hidden = true;
+    selectedTaskProjection.setAttribute('aria-hidden', 'true');
+    return;
+  }
+  const viewportWidth = bodyWrap.clientWidth || visibleTrackW();
+  const startX = timeToContentX(selected.start) - bodyWrap.scrollLeft;
+  const endX = timeToContentX(selected.end) - bodyWrap.scrollLeft;
+  const visibleLeft = Math.max(0, startX);
+  const visibleRight = Math.min(viewportWidth, Math.max(startX + 2, endX));
+  if (visibleRight <= visibleLeft || startX > viewportWidth || endX < 0) {
+    selectedTaskProjection.hidden = true;
+    selectedTaskProjection.setAttribute('aria-hidden', 'true');
+    return;
+  }
+  selectedTaskProjection.style.left = visibleLeft + 'px';
+  selectedTaskProjection.style.width = Math.max(2, visibleRight - visibleLeft) + 'px';
+  selectedTaskProjection.dataset.startTime = selected.start.toFixed(3);
+  selectedTaskProjection.dataset.endTime = selected.end.toFixed(3);
+  selectedTaskProjection.hidden = false;
+  selectedTaskProjection.setAttribute('aria-hidden', 'false');
 }
 
 function renderGlobalRuler() {
@@ -3234,7 +3605,7 @@ function renderGlobalRuler() {
 
 function syncGlobalRulerBrush() {
   if (!globalRulerBrush) return;
-  const w = bodyW();
+  const w = timeTrackW();
   const visible = Math.max(1, bodyWrap.clientWidth || visibleTrackW());
   const leftF = Math.max(0, Math.min(1, bodyWrap.scrollLeft / w));
   const widthF = Math.max(0.01, Math.min(1 - leftF, visible / w));
@@ -3251,19 +3622,32 @@ function formatMetricValue(metric, value) {
   return value.toFixed(1) + metric.unit;
 }
 
-function showTimestampGuideAt(clientX) {
+function showTimestampGuideAtTime(time) {
   if (!timestampGuide || !swimlaneScrollShell) return;
+  const clampedTime = clampTimelineTime(time);
   const shellRect = swimlaneScrollShell.getBoundingClientRect();
-  const left = Math.max(LABEL_W, Math.min(shellRect.width - 1, clientX - shellRect.left));
+  const bodyRect = bodyWrap.getBoundingClientRect();
+  const viewportX = timeToContentX(clampedTime) - bodyWrap.scrollLeft;
+  if (viewportX < 0 || viewportX > bodyRect.width) {
+    hideTimestampGuide();
+    return;
+  }
+  const left = bodyRect.left - shellRect.left + viewportX;
   timestampGuide.style.left = left + 'px';
   timestampGuide.hidden = false;
   timestampGuide.setAttribute('aria-hidden', 'false');
   if (state.secondaryViewMode === 'comparison' && compareTimestampGuide && compareGrid) {
     const compareRect = compareGrid.getBoundingClientRect();
-    const compareLeft = Math.max(LABEL_W, Math.min(compareRect.width - 1, clientX - compareRect.left));
-    compareTimestampGuide.style.left = compareLeft + 'px';
-    compareTimestampGuide.hidden = false;
-    compareTimestampGuide.setAttribute('aria-hidden', 'false');
+    const compareViewportX = timeToContentX(clampedTime) - compareBodyWrap.scrollLeft;
+    const compareTrackWidth = Math.max(0, compareRect.width - LABEL_W);
+    if (compareViewportX >= 0 && compareViewportX <= compareTrackWidth) {
+      compareTimestampGuide.style.left = LABEL_W + compareViewportX + 'px';
+      compareTimestampGuide.hidden = false;
+      compareTimestampGuide.setAttribute('aria-hidden', 'false');
+    } else {
+      compareTimestampGuide.hidden = true;
+      compareTimestampGuide.setAttribute('aria-hidden', 'true');
+    }
   }
 }
 
@@ -3278,37 +3662,42 @@ function hideTimestampGuide() {
   }
 }
 
-function showOverviewTooltip(e) {
+function showPerformanceTooltipAtTime(time, clientX) {
   if (!overviewMetricSeries.length) return;
-  const rect = overviewBand.getBoundingClientRect();
+  const rect = overviewWrap.getBoundingClientRect();
   if (!rect.width) return;
-  const x = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
-  const f = x / rect.width;
-  const idx = Math.max(0, Math.min(overviewMetricSeries[0].values.length - 1, Math.round(f * (overviewMetricSeries[0].values.length - 1))));
-  const t = f * MODEL.timelineEnd;
-  const tip = document.getElementById('overviewTooltip');
-  if (!tip) return;
-  showTimestampGuideAt(e.clientX);
+  const t = clampTimelineTime(time);
+  const f = t / Math.max(Number.EPSILON, MODEL.timelineEnd);
+  const idx = Math.max(0, Math.min(
+    overviewMetricSeries[0].values.length - 1,
+    Math.round(f * (overviewMetricSeries[0].values.length - 1)),
+  ));
+  if (!overviewTooltip) return;
+  showTimestampGuideAtTime(t);
   const rows = overviewMetricSeries.map((metric) => (
     `<div class="pto-swimlane-task-tooltip__row"><span class="pto-swimlane-task-tooltip__key"><span class="sl-overview-tip-swatch" style="background:${metric.color}"></span>${metric.label}</span><span class="pto-swimlane-task-tooltip__value">${formatMetricValue(metric, metric.values[idx])}</span></div>`
   )).join('');
-  tip.innerHTML = `<div class="pto-swimlane-task-tooltip__title">时间戳 ${t.toFixed(1)}μs</div>${rows}`;
-  tip.hidden = false;
-  tip.classList.add('is-visible');
-  tip.setAttribute('aria-hidden', 'false');
-  const tw = tip.offsetWidth || 214;
-  const left = x + 12 + tw > rect.width ? x - tw - 12 : x + 12;
-  tip.style.left = Math.max(2, Math.min(rect.width - tw - 2, left)) + 'px';
-  tip.style.top = '6px';
+  overviewTooltip.innerHTML = `<div class="pto-swimlane-task-tooltip__title">时间戳 ${t.toFixed(1)}μs</div>${rows}`;
+  overviewTooltip.hidden = false;
+  overviewTooltip.classList.add('is-visible');
+  overviewTooltip.setAttribute('aria-hidden', 'false');
+  overviewTooltip.dataset.timestamp = t.toFixed(3);
+  const tw = overviewTooltip.offsetWidth || 214;
+  const anchorX = Math.max(0, Math.min(rect.width, clientX - rect.left));
+  const left = anchorX + 12 + tw > rect.width ? anchorX - tw - 12 : anchorX + 12;
+  overviewTooltip.style.left = Math.max(2, Math.min(rect.width - tw - 2, left)) + 'px';
+}
+
+function showOverviewTooltip(event) {
+  showPerformanceTooltipAtTime(localTimeAtClientX(event.clientX), event.clientX);
 }
 
 function hideOverviewTooltip() {
-  const tip = document.getElementById('overviewTooltip');
   hideTimestampGuide();
-  if (tip) {
-    tip.classList.remove('is-visible');
-    tip.setAttribute('aria-hidden', 'true');
-    tip.hidden = true;
+  if (overviewTooltip) {
+    overviewTooltip.classList.remove('is-visible');
+    overviewTooltip.setAttribute('aria-hidden', 'true');
+    overviewTooltip.hidden = true;
   }
 }
 
@@ -3330,7 +3719,7 @@ function artifactRowHtml(runId, artifact) {
   </div>` : '';
   return `<div class="sl-history-artifact ${selected ? 'is-selected' : ''} ${menuOpen ? 'is-menu-open' : ''}" data-artifact-name="${escapeHtml(artifact.name)}">
     <button class="sl-history-artifact-select" type="button" data-artifact-select="${escapeHtml(artifact.name)}" data-run-id="${escapeHtml(runId)}"
-      ${available ? '' : 'disabled aria-disabled="true" title="当前 demo 尚未接入该产物数据"'}>
+      ${available ? '' : 'disabled aria-disabled="true" title="该运行记录未包含可加载的产物数据"'}>
       <span class="nm" title="${escapeHtml(artifact.name)}">${escapeHtml(artifact.name)}</span>
       <span class="rl">${escapeHtml(ARTIFACT_ZH[artifact.role] || artifact.role || '')}</span>
     </button>
@@ -3352,8 +3741,8 @@ function runCardHtml(r) {
         <dt>算子</dt><dd class="sl-history-sm">${escapeHtml(r.operator)}</dd>
         <dt>总耗时</dt><dd>${escapeHtml(r.dur)}μs</dd>
         <dt>任务数</dt><dd>${escapeHtml(r.tasks)}</dd>
-        <dt>完整性</dt><dd style="color:var(--success)">${escapeHtml(r.completeness)}</dd>
         <dt>运行时间</dt><dd class="sl-history-sm">${escapeHtml(r.timestamp)}</dd>
+        <dt>特征</dt><dd class="sl-history-sm">${escapeHtml(r.characteristics.join(' · '))}</dd>
       </dl>
       <hr class="sl-history-divider">
       ${artifactHtml}`
@@ -3364,7 +3753,10 @@ function runCardHtml(r) {
       </dl>`;
   return `<section class="sl-run-card ${selected ? 'is-selected' : 'sl-run-card--past'} ${expanded ? 'is-expanded' : ''}">
     <button class="sl-run-card__head" type="button" data-run-id="${escapeHtml(r.id)}" aria-expanded="${String(expanded)}">
-      <span class="sl-run-id">${escapeHtml(r.id)}</span>
+      <span class="sl-run-card__identity">
+        <span class="sl-run-id">${escapeHtml(r.id)}</span>
+        <span class="sl-run-scenario">${escapeHtml(r.scenarioTitle)}</span>
+      </span>
       <svg class="sl-run-card__toggle ${expanded ? 'is-open' : ''}" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>
     </button>
     ${detail}
@@ -3374,6 +3766,11 @@ function runCardHtml(r) {
 function renderRunHistory() {
   if (!runHistoryBody) return;
   if (swimlanePaneTitle) swimlanePaneTitle.textContent = `${state.selectedRunId} · merged_swimlane`;
+  if (swimlaneObjectTitle) {
+    const runObject = CURRENT_RUN.operator || CURRENT_RUN.projectName || CURRENT_RUN.modelName || '运行对象';
+    swimlaneObjectTitle.textContent = runObject;
+    swimlaneObjectTitle.title = `运行对象：${runObject}`;
+  }
   runHistoryBody.innerHTML = `<div class="sl-history-stack">${runList().map(runCardHtml).join('')}</div>`;
   runHistoryBody.querySelectorAll('.sl-run-card__head[data-run-id]').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -3464,14 +3861,16 @@ function bindRunHistoryDismiss() {
   });
 }
 
-function layout() {
+function layout({ reuseLaneCanvas = false } = {}) {
   const w = bodyW(), h = bodyH();
   bctx = setupCanvas(bodyCanvas, w, h);
-  actx = setupCanvas(axisCanvas, w, AXIS_H);
-  lctx = setupCanvas(laneCanvas, LABEL_W, h);
+  actx = setupCanvasSpacer(axisCanvas, w, AXIS_H);
+  if (!reuseLaneCanvas || !lctx) lctx = setupCanvas(laneCanvas, LABEL_W, h);
   renderGlobalRuler();
   renderOverviewBand();
-  drawAxis(); drawLanes(); drawBody();
+  drawAxis();
+  if (!reuseLaneCanvas) drawLanes();
+  drawBody();
 }
 function refresh() { renderGlobalRuler(); renderOverviewBand(); drawLanes(); drawBody(); }
 
@@ -3487,9 +3886,13 @@ function hitTest(px, py) {
       const expanded = state.expandedLaneCores.has(coreIdx);
       const sublane = expanded ? rowItems[row]?.sublane : null;
       const segments = expanded ? (t.pipelineSegments || []) : t.microSegments;
-      const segment = segments.find((candidate) => candidate.id
+      const eligible = (candidate) => candidate.id
         && (!expanded || candidate.sublane === sublane)
-        && (expanded || taskRow(t) === row)
+        && (expanded || taskRow(t) === row);
+      const marker = !expanded ? segments.find((candidate) => eligible(candidate)
+        && (candidate.kind === 'set' || candidate.kind === 'wait-point')
+        && Math.abs(px - candidate.start * scale) <= 3) : null;
+      const segment = marker || segments.find((candidate) => eligible(candidate)
         && px >= candidate.start * scale - 1 && px <= candidate.end * scale + 1);
       if (segment) return { task: t, segment };
     }
@@ -3500,7 +3903,10 @@ function hitTest(px, py) {
       if (hit) return { task: t, segment: null };
       continue;
     }
-    if (taskRow(t) === row && px >= t.start * scale - 1 && px <= t.end * scale + 1) return { task: t, segment: null };
+    const geometry = taskBarGeometry(t, t.start, t.end, scale);
+    if (taskRow(t) === row && px >= geometry.x - 1 && px <= geometry.x + geometry.width + 1) {
+      return { task: t, segment: null };
+    }
   }
   return null;
 }
@@ -3518,7 +3924,9 @@ bodyWrap.addEventListener('scroll', () => {
     syncingComparisonScroll = false;
   }
   syncGlobalRulerBrush();
-  hideTimestampGuide();
+  renderSelectedTaskProjection();
+  hideOverviewTooltip();
+  scheduleCrispTaskLayer();
 });
 function forwardLaneWheel(event, targetWrap) {
   if (!targetWrap) return;
@@ -3542,8 +3950,10 @@ compareBodyWrap?.addEventListener('scroll', () => {
     overviewWrap.scrollLeft = compareBodyWrap.scrollLeft;
     syncingComparisonScroll = false;
     syncGlobalRulerBrush();
+    renderSelectedTaskProjection();
   }
-  hideTimestampGuide();
+  hideOverviewTooltip();
+  scheduleCrispTaskLayer();
 });
 overviewBand.addEventListener('mousemove', showOverviewTooltip);
 overviewBand.addEventListener('mouseleave', hideOverviewTooltip);
@@ -3556,13 +3966,13 @@ axisCanvas.addEventListener('mousemove', (e) => {
     drawAxis();
   }
   axisCanvas.style.cursor = mark ? 'pointer' : 'crosshair';
-  showTimestampGuideAt(e.clientX);
+  showPerformanceTooltipAtTime(localTimeAtClientX(e.clientX), e.clientX);
 });
 axisCanvas.addEventListener('mouseleave', () => {
   axisCanvas.style.cursor = 'default';
   state.hoverLayer = null;
   drawAxis();
-  hideTimestampGuide();
+  hideOverviewTooltip();
 });
 axisCanvas.addEventListener('click', (e) => {
   const rect = axisCanvas.getBoundingClientRect();
@@ -3747,27 +4157,46 @@ syncPathBtn.addEventListener('click', (e) => {
   e.currentTarget.setAttribute('aria-pressed', String(state.syncPathOnly));
   drawBody();
 });
-document.getElementById('zoomIn').addEventListener('click', () => setZoom(state.zoomPct + 5));
-document.getElementById('zoomOut').addEventListener('click', () => setZoom(state.zoomPct - 5));
+document.getElementById('zoomIn').addEventListener('click', () => setZoom(state.zoomPct + ZOOM_BUTTON_STEP));
+document.getElementById('zoomOut').addEventListener('click', () => setZoom(state.zoomPct - ZOOM_BUTTON_STEP));
 zoomSlider.addEventListener('input', (e) => setZoom(Number(e.target.value)));
 taskSearch.addEventListener('input', (e) => {
   state.query = e.target.value;
   drawBody();
 });
 if (globalRulerScale) {
+  globalRulerScale.addEventListener('pointermove', (e) => {
+    showPerformanceTooltipAtTime(globalTimeAtClientX(e.clientX), e.clientX);
+  });
+  globalRulerScale.addEventListener('pointerleave', hideOverviewTooltip);
   globalRulerScale.addEventListener('pointerdown', (e) => {
     const rect = (globalRulerTicks || globalRulerScale).getBoundingClientRect();
     const f = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    bodyWrap.scrollLeft = Math.max(0, bodyW() * f - bodyWrap.clientWidth / 2);
+    bodyWrap.scrollLeft = Math.max(0, timeTrackW() * f - bodyWrap.clientWidth / 2);
     syncGlobalRulerBrush();
   });
 }
 function setZoom(pct) {
+  pendingZoomAnchorTime = contentXToTime(bodyWrap.scrollLeft + bodyWrap.clientWidth / 2);
   state.zoomPct = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Math.round(pct / 5) * 5));
   document.getElementById('zoomReadout').textContent = state.zoomPct + '%';
   zoomSlider.value = String(state.zoomPct);
-  layout();
-  syncGlobalRulerBrush();
+  canvasPane?.setAttribute('aria-busy', 'true');
+  if (zoomRenderFrame) return;
+  zoomRenderFrame = window.requestAnimationFrame(() => {
+    zoomRenderFrame = 0;
+    layout({ reuseLaneCanvas: true });
+    bodyWrap.scrollLeft = Math.max(0,
+      timeToContentX(pendingZoomAnchorTime) - bodyWrap.clientWidth / 2);
+    axisWrap.scrollLeft = bodyWrap.scrollLeft;
+    overviewWrap.scrollLeft = bodyWrap.scrollLeft;
+    if (state.secondaryViewMode === 'comparison' && compareBodyWrap) {
+      compareBodyWrap.scrollLeft = bodyWrap.scrollLeft;
+    }
+    syncGlobalRulerBrush();
+    renderSelectedTaskProjection();
+    canvasPane?.removeAttribute('aria-busy');
+  });
 }
 
 /* ============================================================
@@ -3778,16 +4207,39 @@ function coreStats(coreIdx, group, wrap) {
   for (const t of MODEL.tasks) {
     if (t.coreIdx !== coreIdx) continue;
     if (group != null && t.group !== group) continue;
-    compute += t.computeEnd - t.start; wait += t.end - t.computeEnd; n++;
+    const blocked = taskBlockedWait(t);
+    compute += Math.max(0, t.end - t.start - blocked); wait += blocked; n++;
   }
   return { compute, wait, n, ratio: wait / (compute + wait || 1) };
+}
+function intervalUnionDuration(intervals) {
+  const sorted = intervals
+    .filter(([start, end]) => Number.isFinite(start) && Number.isFinite(end) && end > start)
+    .sort((left, right) => left[0] - right[0]);
+  const merged = [];
+  sorted.forEach(([start, end]) => {
+    const previous = merged[merged.length - 1];
+    if (!previous || start > previous[1]) merged.push([start, end]);
+    else previous[1] = Math.max(previous[1], end);
+  });
+  return merged.reduce((sum, [start, end]) => sum + end - start, 0);
+}
+function taskBlockedIntervals(task) {
+  return (task.syncIn || [])
+    .map((id) => edgeById[id])
+    .filter((edge) => edge?.relation === 'sync' && edge.waitTask?.id === task.id && edge.blockedWait > 0)
+    .map((edge) => [edge.waitTime, edge.releaseTime]);
+}
+function taskBlockedWait(task) {
+  return intervalUnionDuration(taskBlockedIntervals(task));
 }
 function groupStats(g) {
   let compute = 0, wait = 0;
   for (const t of MODEL.tasks) {
     if (t.group !== g) continue;
     if (MODEL.cores[t.coreIdx].kind !== 'aic' && MODEL.cores[t.coreIdx].kind !== 'aiv') continue;
-    compute += t.computeEnd - t.start; wait += t.end - t.computeEnd;
+    const blocked = taskBlockedWait(t);
+    compute += Math.max(0, t.end - t.start - blocked); wait += blocked;
   }
   return { compute, wait, ratio: wait / (compute + wait || 1) };
 }
@@ -3798,8 +4250,8 @@ function wrapStats(w) {
       const core = MODEL.cores[task.coreIdx];
       return core.kind === kind && (vector == null || core.vector === vector);
     });
-    const compute = selected.reduce((sum, task) => sum + task.computeEnd - task.start, 0);
-    const wait = selected.reduce((sum, task) => sum + task.end - task.computeEnd, 0);
+    const wait = selected.reduce((sum, task) => sum + taskBlockedWait(task), 0);
+    const compute = selected.reduce((sum, task) => sum + Math.max(0, task.end - task.start - taskBlockedWait(task)), 0);
     return { compute, wait, n: selected.length, ratio: wait / (compute + wait || 1) };
   };
   const all = [s('aic'), s('aiv', 0), s('aiv', 1)];
@@ -3809,9 +4261,11 @@ function wrapStats(w) {
 }
 
 function runMetricChips() {
-  let compute = 0, wait = 0;
-  MODEL.tasks.forEach((t) => { compute += t.computeEnd - t.start; wait += t.end - t.computeEnd; });
-  const ratio = (wait / (compute + wait) * 100).toFixed(1);
+  const machineDuration = MODEL.tasks
+    .filter((task) => task.phase === 'MACHINE_LEAF_TASK')
+    .reduce((sum, task) => sum + task.end - task.start, 0);
+  const wait = CURRENT_RUN.performanceStatistics.taskWaitUnionSum;
+  const ratio = (wait / Math.max(1, machineDuration) * 100).toFixed(1);
   const syncCount = MODEL.edges.filter((edge) => edge.relation === 'sync').length;
   const dependencyCount = MODEL.edges.length - syncCount;
   return `<div class="sl-report-metrics">
@@ -3824,16 +4278,14 @@ function runMetricChips() {
 }
 
 function runAggregateStats() {
-  let compute = 0, wait = 0, active = 0;
+  let machineDuration = 0;
   const laneUtils = MODEL.cores
     .filter((core) => core.kind === 'aic' || core.kind === 'aiv')
     .map((core) => laneUtil(core.idx).ratio);
-  MODEL.tasks.forEach((t) => {
-    compute += t.computeEnd - t.start;
-    wait += t.end - t.computeEnd;
-    active += t.end - t.start;
+  MODEL.tasks.filter((task) => task.phase === 'MACHINE_LEAF_TASK').forEach((task) => {
+    machineDuration += task.end - task.start;
   });
-  const total = compute + wait || 1;
+  const wait = CURRENT_RUN.performanceStatistics.taskWaitUnionSum;
   const avgLaneUtil = laneUtils.reduce((sum, ratio) => sum + ratio, 0) / Math.max(1, laneUtils.length);
   const minUtil = Math.min(...laneUtils);
   const maxUtil = Math.max(...laneUtils);
@@ -3843,21 +4295,25 @@ function runAggregateStats() {
     syncEdges: MODEL.edges.filter((edge) => edge.relation === 'sync').length,
     dependencyEdges: MODEL.edges.filter((edge) => edge.relation !== 'sync').length,
     duration: MODEL.timelineEnd,
-    waitRatio: wait / total,
+    waitRatio: wait / Math.max(1, machineDuration),
     avgLaneUtil,
     avgBubble: 1 - avgLaneUtil,
     loadBalance: balance,
     extraGmUbKiB: CURRENT_RUN.summaryMetrics.extraGmUbKiB,
     ubHeadroomKiB: CURRENT_RUN.summaryMetrics.ubHeadroomKiB,
     mte2Util: CURRENT_RUN.summaryMetrics.mte2Util,
+    pairBlockedWaitSum: CURRENT_RUN.performanceStatistics.pairBlockedWaitSum,
+    taskWaitUnionSum: CURRENT_RUN.performanceStatistics.taskWaitUnionSum,
+    overlapDoubleCount: CURRENT_RUN.performanceStatistics.overlapDoubleCount,
+    positiveBlockedPairCount: CURRENT_RUN.performanceStatistics.positiveBlockedPairCount,
   };
 }
 
 function topTasks() {
   return CURRENT_RUN.anomalies.map((anomaly) => {
     const task = taskById[anomaly.taskId];
-    const compute = task.computeEnd - task.start;
-    const wait = task.end - task.computeEnd;
+    const wait = taskBlockedWait(task);
+    const compute = Math.max(0, task.end - task.start - wait);
     const bubble = anomaly.bubbleDuration || 0;
     return { task, anomaly, compute, wait, bubble, total: task.end - task.start || 1 };
   });
@@ -3892,8 +4348,8 @@ function overviewReportHtml() {
     { label: '额外 GM / UB 搬运', value: `${s.extraGmUbKiB.toFixed(0)} KiB`, warn: s.extraGmUbKiB >= 192 },
     { label: 'UB 余量', value: `${s.ubHeadroomKiB.toFixed(1)} KiB`, warn: s.ubHeadroomKiB < 32 },
     { label: 'MTE 2 利用率', value: `${(s.mte2Util * 100).toFixed(1)}%`, warn: s.mte2Util >= 0.65 },
-    { label: '同步路径数量', value: String(s.syncEdges) },
-    { label: '同步等待占比', value: `${(s.waitRatio * 100).toFixed(1)}%`, warn: s.waitRatio >= 0.18 },
+    { label: 'Pair 累加 / Task 并集', value: `${s.pairBlockedWaitSum.toFixed(1)} / ${s.taskWaitUnionSum.toFixed(1)}μs`, warn: s.waitRatio >= 0.18 },
+    { label: '重叠重复计数', value: `${s.overlapDoubleCount.toFixed(1)}μs` },
   ];
   return `<div class="sl-report-card">
     <div class="sl-report-card__title">运行聚合指标</div>
@@ -3903,10 +4359,10 @@ function overviewReportHtml() {
         <div class="sl-metric-card__value">${m.value}</div>
       </div>`).join('')}
     </div>
-    <div class="sl-insp-hint">额外 GM/UB 搬运、UB 余量与 MTE 2 利用率为 L2 诊断指标，用于保持三条 run 的同口径比较。</div>
+    <div class="sl-insp-hint">同步 Pair 累加与按等待任务求区间并集是两种资源时间口径，二者都不等于 run 总耗时。</div>
   </div>
   <div class="sl-report-card">
-    <div class="sl-report-card__title">Top 任务</div>
+    <div class="sl-report-card__title">高耗时任务</div>
     ${topTasks().map(({ task, anomaly, wait, bubble, total }, idx) => {
       const core = MODEL.cores[task.coreIdx];
       const active = state.selTask && state.selTask.id === task.id;
@@ -3953,16 +4409,16 @@ function pmuReportHtml() {
   return `${groupButtons}<div class="sl-report-card">
     <div class="sl-report-card__title">A5 PMU Group 2 · 全图 counters 明细</div>
     <div class="sl-counter-table">
-      <div class="sl-counter-row is-head"><div>Counter</div><div class="sl-counter-val">Value</div><div>Summary</div></div>
+      <div class="sl-counter-row is-head"><div>Counter</div><div class="sl-counter-val">数值</div><div>说明</div></div>
       ${rows}
     </div>
   </div>
   <div class="sl-report-card">
-    <div class="sl-report-card__title">PMU summary</div>
+    <div class="sl-report-card__title">PMU 汇总</div>
     <div class="sl-metric-grid">
       <div class="sl-metric-card is-warn"><div class="sl-metric-card__label">主导 counter</div><div class="sl-metric-card__value">${dominant.key}</div></div>
       <div class="sl-metric-card ${mte2Ratio >= 0.65 ? 'is-warn' : ''}"><div class="sl-metric-card__label">MTE 2 / total cycle</div><div class="sl-metric-card__value">${(mte2Ratio * 100).toFixed(1)}%</div></div>
-      <div class="sl-metric-card"><div class="sl-metric-card__label">I-Cache miss rate</div><div class="sl-metric-card__value">${(missRate * 100).toFixed(1)}%</div></div>
+      <div class="sl-metric-card"><div class="sl-metric-card__label">I-Cache miss 率</div><div class="sl-metric-card__value">${(missRate * 100).toFixed(1)}%</div></div>
       <div class="sl-metric-card"><div class="sl-metric-card__label">Counter 覆盖</div><div class="sl-metric-card__value">Group 2</div></div>
     </div>
   </div>`;
@@ -4043,9 +4499,11 @@ function overviewHtml() {
   let html = defaultReportHtml();
   if (state.reportTab !== 'overview') return html;
   html += `<div class="sl-insp-section">
-    <div class="sl-insp-hint">4 个 Stitch，按 <b>${MODEL.groups.length} 个诊断分组</b>组织。Wrap 是运行时任务分组，
+    <div class="sl-insp-hint">4 个 DevTask（0–3），按 <b>${MODEL.groups.length} 个诊断分组</b>组织。Wrap 是运行时任务分组，
     不等同于物理 Core 编号；同一物理泳道在不同调用中可承载不同 Wrap。${escapeHtml(CURRENT_RUN.iterationDefinition)}<br>
-    任务颜色按<b>语义诊断分组</b>编码，不按 Core、Wrap 或异常等级编码。虚线框表示跨多个 Wrap 的 L2 诊断分组；选中 Wrap 后出现的实线框表示当前 Wrap 的任务范围。</div>
+    任务颜色按<b>语义诊断分组</b>编码，不按 Core、Wrap 或异常等级编码。依赖实线连接 task/HUB 的结束与开始；
+    诊断分组不是调度分组；多个语义组会在同一 HUB ready set 中并行。同步虚线连接 SET 与 WAIT release。
+    青色圆点竖线是 SET，橙色三角竖线是 WAIT，橙色斜纹仅表示实际 blocked interval。</div>
   </div>
   <div class="sl-insp-section"><div class="sl-insp-section-label">${MODEL.groups.length} 个 Mix 子图 · 同步等待占比</div>`;
   MODEL.groups.forEach((g) => {
@@ -4063,7 +4521,7 @@ function overviewHtml() {
   html += `<div class="sl-callout">
     <b>剧本 · 定位提示</b><br>
     <b>${bg.name}</b> 的同步等待占比明显高于其它子图。根因疑似落在它的某个
-    1C2V Wrap —— 一个 AIC 把整组其它核拖在 SyncWait 上。
+    1C2V Wrap；沿 C→V 广播或 V→C 归约虚线定位最后到达的 SET producer。
     <button class="btn btn-sm btn-solid sl-btn-drill" data-drill="bottleneck">▶ 下钻到瓶颈 Wrap</button>
   </div>
   <div class="sl-insp-section"><div class="sl-insp-section-label">硬件拓扑</div>
@@ -4133,16 +4591,16 @@ function wrapDetailHtml(w) {
       <span class="sl-pill" style="color:${grp.color}"><span class="sl-dot" style="width:8px;height:8px;background:${grp.color}"></span>${grp.short}</span>
       <span class="sl-pill ${ws.ratio >= 0.4 ? 'is-warn' : 'is-ok'}">${ws.ratio >= 0.4 ? '同步瓶颈' : '健康'}</span>
     </div>
-    <div class="sl-insp-hint">Wrap 是运行时 1C2V 任务分组，不是物理 Core 编号。下表泳道名取 Stitch 1 的映射；后续 Stitch 会重映射。</div>
+    <div class="sl-insp-hint">Wrap 是运行时 1C2V 任务分组，不是物理 Core 编号。下表泳道名取 DevTask 0 的映射；后续 DevTask 会重映射。</div>
   </div>
-  <div class="sl-report-card"><div class="sl-report-card__title">单元内三核 · 计算与同步等待</div>`;
+  <div class="sl-report-card"><div class="sl-report-card__title">单元内三核 · 任务时间与跨核同步等待</div>`;
   cores3.forEach((c) => {
     const tot = c.st.compute + c.st.wait || 1;
     const cp = (c.st.compute / tot * 100), wp = (c.st.wait / tot * 100);
     html += `<div style="margin-top:8px">
       <div class="sl-kv" style="padding-bottom:3px;border:0">
         <span class="sl-kv-key">${c.ci != null ? laneDisplayLabel(MODEL.cores[c.ci]) : '—'} · ${c.role}</span>
-        <span class="sl-kv-val">计算 ${c.st.compute.toFixed(0)} / 等待 ${c.st.wait.toFixed(0)}μs</span></div>
+        <span class="sl-kv-val">非该类跨核等待 ${c.st.compute.toFixed(0)} / 已登记等待 ${c.st.wait.toFixed(0)}μs</span></div>
       <div class="sl-meter">
         <div class="sl-meter-fill" style="width:${cp}%;background:${grp.color};float:left"></div>
         <div class="sl-meter-fill" style="width:${wp}%;background:repeating-linear-gradient(135deg,rgba(255,170,59,0.9) 0 3px,rgba(255,170,59,0.35) 3px 6px);float:left"></div>
@@ -4157,10 +4615,9 @@ function wrapDetailHtml(w) {
   </div>`;
   if (w === topTasks()[0]?.task.wrap) {
     html += `<div class="sl-callout">
-      <b>根因锁定</b> —— <b>${laneDisplayLabel(MODEL.cores[aicCore])}</b> 在跑一个「K 维未切分」的超大 BMM,
-      单任务计算量约为正常 tile 的 2.5x。它一直没发出 SyncSet,
-      配对的两个 AIV 算完一小段后就长时间停等。<br>
-      优化方向: 对该 BMM 做 K-split, 把单核长任务拆成多个 tile, 让 AIV 不必整段等待。</div>`;
+      <b>根因锁定</b> —— 该 Wrap 的多组 SET / WAIT 中，最后到达的生产者决定了归约或广播的 release 时间。
+      应沿虚线同步边检查对应 AIC/AIV 的前序计算和负载差，而不是把整段 task 尾部都归因为同步。<br>
+      优化方向：缩短 straggler task 的前序计算，或重新切分 tile，使 C↔V 的中段同步更早释放。</div>`;
   } else {
     html += `<div class="sl-callout is-success">
       该 Wrap 三核耗时较均衡。点击任务查看单个任务的同步事件。</div>`;
@@ -4176,13 +4633,13 @@ function taskReportTabsHtml() {
 
 function taskReportPlaceholderHtml(tabId) {
   const label = TASK_REPORT_TABS.find((tab) => tab.id === tabId)?.label || '';
-  return `<div class="sl-task-tab-panel"><div class="sl-empty-state">当前 demo 暂未接入单任务${label}数据；已有任务信息统一保留在“概览”。</div></div>`;
+  return `<div class="sl-task-tab-panel"><div class="sl-empty-state">当前运行暂未接入单任务${label}数据；已有任务信息统一保留在“概览”。</div></div>`;
 }
 
 function taskOverviewHtml(t) {
   const grp = t.group != null ? MODEL.groups[t.group] : null;
-  const compute = t.computeEnd - t.start;
-  const wait = t.end - t.computeEnd;
+  const wait = taskBlockedWait(t);
+  const nonCrossCoreWait = Math.max(0, t.end - t.start - wait);
   const total = (t.end - t.start) || 1;
   const ratio = wait / total;
   const pct = (ratio * 100).toFixed(0);
@@ -4199,18 +4656,19 @@ function taskOverviewHtml(t) {
         <span class="sl-pill" style="color:${grp ? grp.color : 'var(--accent)'}">
           <span class="sl-dot" style="width:8px;height:8px;background:${grp ? grp.color : 'var(--accent)'}"></span>
           ${grp ? grp.short : MODEL.cores[t.coreIdx].section}</span>
-        <span class="sl-pill ${ratio >= 0.3 ? 'is-warn' : 'is-ok'}">${ratio >= 0.3 ? '同步瓶颈' : '计算主导'}</span>
+        <span class="sl-pill ${ratio >= 0.3 ? 'is-warn' : 'is-ok'}">${ratio >= 0.3 ? '同步瓶颈' : '跨核等待较低'}</span>
       </div>
       ${t.inputRawMagic.length + t.outputRawMagic.length > 0 ? `<div class="sl-kv"><span class="sl-kv-key">输入 / 输出</span><span class="sl-kv-val">输入 ${t.inputRawMagic.length} · 输出 ${t.outputRawMagic.length}</span></div>` : ''}
       ${t.coveredTaskIds ? `<div class="sl-kv"><span class="sl-kv-key">调度覆盖</span><span class="sl-kv-val">${t.coveredTaskIds.length} 个 AI Core 任务</span></div>` : ''}
+      ${t.syncShape ? `<div class="sl-kv"><span class="sl-kv-key">同步形态</span><span class="sl-kv-val mono">${escapeHtml(t.syncShape)}</span></div>` : ''}
     </div>
-    <div class="sl-insp-section"><div class="sl-insp-section-label">计算与同步等待</div>
+    <div class="sl-insp-section"><div class="sl-insp-section-label">任务时间与跨核同步等待</div>
       <div class="sl-meter" style="height:14px">
-        <div class="sl-meter-fill" style="width:${compute / total * 100}%;background:${grp ? grp.color : 'var(--accent)'};float:left"></div>
+        <div class="sl-meter-fill" style="width:${nonCrossCoreWait / total * 100}%;background:${grp ? grp.color : 'var(--accent)'};float:left"></div>
         <div class="sl-meter-fill" style="width:${pct}%;background:repeating-linear-gradient(135deg,rgba(255,170,59,0.9) 0 3px,rgba(255,170,59,0.35) 3px 6px);float:left"></div>
       </div>
-      <div class="sl-kv"><span class="sl-kv-key">计算段</span><span class="sl-kv-val">${compute.toFixed(1)}μs</span></div>
-      <div class="sl-kv"><span class="sl-kv-key">同步等待段</span><span class="sl-kv-val" style="color:var(--warning)">${wait.toFixed(1)}μs · ${pct}%</span></div>
+      <div class="sl-kv"><span class="sl-kv-key">非该类跨核等待时间</span><span class="sl-kv-val">${nonCrossCoreWait.toFixed(1)}μs</span></div>
+      <div class="sl-kv"><span class="sl-kv-key">已登记跨核等待并集</span><span class="sl-kv-val" style="color:var(--warning)">${wait.toFixed(1)}μs · ${pct}%</span></div>
     </div>
     <div class="sl-insp-section"><div class="sl-insp-section-label">任务关系 (${visibleRelationCount})</div>`;
   if (visibleRelationCount === 0) {
@@ -4227,17 +4685,20 @@ function taskOverviewHtml(t) {
       @ <span class="mono">${e.toT.toFixed(1)}μs</span></div>`;
   });
   incomingSync.forEach((e) => {
-    html += `<div class="sl-sync-item">▼ <b>SyncWait</b> · 等待 <span class="mono">${laneDisplayLabel(MODEL.cores[e.fromCore])}</span>
-      的 SyncSet @ <span class="mono">${e.fromT.toFixed(1)}μs</span>，虚线表示内部同步/等待；等待耗时 <span class="mono">${e.wait.toFixed(1)}μs</span></div>`;
+    html += `<div class="sl-sync-item">▼ <b>SyncWait · event ${e.eventid}</b> · 等待 <span class="mono">${laneDisplayLabel(MODEL.cores[e.fromCore])}</span>
+      的 SyncSet：WAIT <span class="mono">${e.waitTime.toFixed(1)}μs</span> → SET <span class="mono">${e.setTime.toFixed(1)}μs</span>，
+      release <span class="mono">${e.releaseTime.toFixed(1)}μs</span>，阻塞 <span class="mono">${e.blockedWait.toFixed(1)}μs</span></div>`;
   });
   outgoingSync.forEach((e) => {
-    html += `<div class="sl-sync-item">▲ <b>SyncSet</b> · 向 <span class="mono">${laneDisplayLabel(MODEL.cores[e.toCore])}</span>
-      发出信号 @ <span class="mono">${e.fromT.toFixed(1)}μs</span>（虚线）</div>`;
+    html += `<div class="sl-sync-item">▲ <b>SyncSet · event ${e.eventid}</b> · 向 <span class="mono">${laneDisplayLabel(MODEL.cores[e.toCore])}</span>
+      发出信号 @ <span class="mono">${e.setTime.toFixed(1)}μs</span>；消费端 WAIT @ <span class="mono">${e.waitTime.toFixed(1)}μs</span>，
+      release <span class="mono">${e.releaseTime.toFixed(1)}μs</span></div>`;
   });
   html += `</div>`;
   if (wait > 0) {
     html += `<div class="sl-callout">
-      该任务实际计算仅 <b>${compute.toFixed(0)}μs</b>, 另有 <b>${wait.toFixed(0)}μs</b> 在等待同步。
+      该任务中已登记的跨核同步阻塞为 <b>${wait.toFixed(0)}μs</b>；其余 <b>${nonCrossCoreWait.toFixed(0)}μs</b>
+      仍可能包含 pipeline wait、memory stall 或未采样停顿，不归类为纯计算。
       ${incomingSync.length ? '优先缩短上游 <b>' + laneDisplayLabel(MODEL.cores[incomingSync[0].fromCore]) + '</b> 的前序计算量。'
         : state.mixMode ? '检查同 Wrap 内核间负载是否均衡。' : '打开 Mix 模式可查看对应的同步/等待关系。'}</div>`;
   }
@@ -4280,11 +4741,25 @@ function taskDetailHtml(t) {
       ${t.isSubtask ? `<div class="sl-kv"><span class="sl-kv-key">所属父任务</span><span class="sl-kv-val mono">${escapeHtml(t.parentTaskName)}</span></div>
       <div class="sl-kv"><span class="sl-kv-key">子任务类型</span><span class="sl-kv-val">${t.subtaskKind === 'wait' ? '同步等待' : escapeHtml(t.primarySublane || '计算')}</span></div>` : ''}
       <div class="sl-kv"><span class="sl-kv-key">所属 Wrap</span><span class="sl-kv-val">${t.wrap != null ? 'Wrap ' + wrapInstanceDisplayId(t.wrap, t.iteration) : '—'}</span></div>
-      <div class="sl-kv"><span class="sl-kv-key">Stitch</span><span class="sl-kv-val">${t.stitchIndex != null ? 'Stitch ' + (t.stitchIndex + 1) : '—'}</span></div>
-      <div class="sl-kv"><span class="sl-kv-key">原始 wrapId 示例</span><span class="sl-kv-val">${t.rawWrapId ?? '—'}</span></div>
+      <div class="sl-kv"><span class="sl-kv-key">DevTask</span><span class="sl-kv-val">${t.stitchIndex != null ? 'DevTask ' + t.stitchIndex : '—'}</span></div>
+      <div class="sl-kv"><span class="sl-kv-key">runtime wrapId</span><span class="sl-kv-val">${t.wrapId ?? t.rawWrapId ?? '—'}</span></div>
+      <div class="sl-kv"><span class="sl-kv-key">local opWrapId</span><span class="sl-kv-val">${t.opWrapId ?? '—'}</span></div>
+      <div class="sl-kv"><span class="sl-kv-key">seqNo / taskId</span><span class="sl-kv-val mono">${t.seqNo ?? '—'} / ${t.taskId ?? '—'}</span></div>
       <div class="sl-kv"><span class="sl-kv-key">leafHash</span><span class="sl-kv-val">${t.leafHash ?? '—'}</span></div>
       <div class="sl-kv"><span class="sl-kv-key">执行区间</span><span class="sl-kv-val">${t.start.toFixed(1)}–${t.end.toFixed(1)}μs</span></div>
       <div class="sl-kv"><span class="sl-kv-key">耗时</span><span class="sl-kv-val">${total.toFixed(1)}μs</span></div>
+      <div class="sl-task-connection-control">
+        <div class="sl-task-connection-control__copy">
+          <span class="sl-task-connection-control__title">任务连线层级</span>
+          <span class="sl-task-connection-control__hint" title="−1 全部连线 · 0 仅当前任务 · N 前后各 N 跳">−1 全部 · 0 当前 · N 跳</span>
+        </div>
+        <span class="toolbar-control" role="group" aria-label="任务连线层级">
+          <button class="btn btn-icon btn-ghost" type="button" data-connection-depth-dec aria-label="减少任务连线层级"
+            ${state.taskConnectionDepth === -1 ? 'disabled aria-disabled="true"' : ''}>−</button>
+          <output class="toolbar-readout mono" aria-live="polite">${state.taskConnectionDepth}</output>
+          <button class="btn btn-icon btn-ghost" type="button" data-connection-depth-inc aria-label="增加任务连线层级">+</button>
+        </span>
+      </div>
       <div class="sl-task-basic-actions">
         <button class="btn btn-sm" type="button" data-view-block-graph>查看计算图</button>
         <button class="btn btn-sm" type="button" title="后续接入 CCE 代码映射" disabled aria-disabled="true">查看 CCE 代码</button>
@@ -4316,7 +4791,7 @@ function renderBlockGraph(t) {
   const graph = blockGraphSpec(t);
   if (!graph) return;
   blockGraphTitle.textContent = graph.name;
-  blockGraphTitle.title = `${graph.graphType} · leafHash ${graph.leafHash} · ${graph.provenance}`;
+  blockGraphTitle.title = `${graph.graphType} · leafHash ${graph.leafHash}`;
   blockGraphMount.innerHTML = '';
   blockGraphMount.style.width = `${graph.canvas.width}px`;
   blockGraphMount.style.height = `${graph.canvas.height}px`;
@@ -4610,6 +5085,18 @@ function bindInspector() {
   });
   const viewBlockGraph = body.querySelector('[data-view-block-graph]');
   if (viewBlockGraph) viewBlockGraph.addEventListener('click', () => openBlockGraph(state.selTask));
+  const depthDecrease = body.querySelector('[data-connection-depth-dec]');
+  if (depthDecrease) depthDecrease.addEventListener('click', () => {
+    state.taskConnectionDepth = Math.max(-1, state.taskConnectionDepth - 1);
+    drawBody();
+    renderInspector();
+  });
+  const depthIncrease = body.querySelector('[data-connection-depth-inc]');
+  if (depthIncrease) depthIncrease.addEventListener('click', () => {
+    state.taskConnectionDepth += 1;
+    drawBody();
+    renderInspector();
+  });
   const drill = body.querySelector('[data-drill="bottleneck"]');
   if (drill) drill.addEventListener('click', () => selectWrap(topTasks()[0].task.wrap));
 }

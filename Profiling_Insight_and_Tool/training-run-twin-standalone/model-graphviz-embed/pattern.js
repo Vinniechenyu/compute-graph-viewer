@@ -1345,6 +1345,7 @@
     let suppressClick = false;
     let hover = null;
     let resizeObserver = null;
+    let resizeRaf = 0;
 
     stage.classList.add('pto-model-graphviz-interactive');
     if (opts.className) {
@@ -1395,7 +1396,9 @@
       const readableFloor = Number.isFinite(Number(opts.minReadableZoom)) ? Number(opts.minReadableZoom) : 0.62;
       const fitZoom = opts.fitMode === 'full'
         ? Math.min(1.08, Math.max(MIN_ZOOM, Math.min(widthFit, heightFit)))
-        : Math.min(1.08, Math.max(MIN_ZOOM, Math.min(widthFit, Math.max(heightFit, readableFloor))));
+        : opts.fitMode === 'height'
+          ? Math.min(1.08, Math.max(0.02, heightFit))
+          : Math.min(1.08, Math.max(MIN_ZOOM, Math.min(widthFit, Math.max(heightFit, readableFloor))));
       transform.zoom = fitZoom;
       transform.tx = Math.max(pad / 2, (rect.width - width * fitZoom) / 2);
       transform.ty = height * fitZoom > rect.height
@@ -1595,8 +1598,14 @@
 
     resizeObserver = typeof ResizeObserver !== 'undefined'
       ? new ResizeObserver(() => {
-        if (opts.autoFit === false) return;
-        if (!selectedItemId) fit();
+        // 拖拽分栏等连续 resize 场景下,多个组件各自的 ResizeObserver 可能在同一帧收到通知;
+        // 合并到下一帧再读布局/写 transform,避免和其他观察者的读写交叉造成多次强制回流。
+        if (resizeRaf) cancelAnimationFrame(resizeRaf);
+        resizeRaf = requestAnimationFrame(() => {
+          resizeRaf = 0;
+          if (opts.autoFit === false) return;
+          if (!selectedItemId) fit();
+        });
       })
       : null;
     if (resizeObserver) resizeObserver.observe(stage);
@@ -1627,6 +1636,7 @@
       },
       destroy() {
         abortController?.abort();
+        if (resizeRaf) cancelAnimationFrame(resizeRaf);
         resizeObserver?.disconnect();
         stage.innerHTML = '';
       },

@@ -98,11 +98,13 @@
 
 ---
 
-## 案例一：通信分支 — MoE all-to-all 超时导致 loss NaN
+## 案例一：通信分支 — Router 数值溢出导致路由塌缩，同时触发 loss NaN 与 all-to-all 死锁
 
-> **路径**：迭代层 → 仅多卡异常 → 通信调度层 → 模型层 → infra层 → 超参/代码层
+> **路径**：迭代层 → 仅多卡异常 → 通信调度层 → 模型层 → 数值层 → infra层 → 超参/代码层
 
-**背景**：64 GPU 训练 openPangu-2.0-Flash，EP=64，TP=1，PP=8，FP8 精度，seq_len=4096，global_batch=1024。训练至 step ~15000 时 loss 突发 NaN。
+**背景**：64 GPU 训练 openPangu-2.0-Flash，EP=64，TP=1，PP=4，FP8 精度，seq_len=4096，global_batch=1024。训练至 step ~15000 时 loss 突发 NaN。
+
+**关键认知**：死锁本身不会产生 NaN（死锁的典型表现是 hang/无输出），但 router logits 的数值溢出会**同时**导致两个平行后果——softmax 出 NaN 污染 loss，与路由概率塌缩触发 all-to-all 死锁。本案例的诊断从通信表象出发，最终追溯到 router 的数值层根因。
 
 ### 1. 迭代层
 
@@ -120,37 +122,49 @@
 | **结果** | 单卡：loss=3.21，grad_norm=11.8，完全正常 / 多卡：loss=NaN，grad_norm=inf |
 | **判据** | 仅多卡复现，单卡正常 → **切入通信分支** |
 
+> ⚠️ 单卡正常 ≠ 一定是纯粹的通信问题。可能是 router 数值溢出在单卡上被 FP8 截断掩盖（单卡无 all-to-all 则不触发 expert 塌缩的级联效应），需在模型层深挖。
+
 ### 3. 通信调度层
 
 | 步骤 | 内容 |
 |------|------|
-| **观测** | 开启 `NCCL_DEBUG=INFO` 重跑 step 15203。NCCL trace 显示 EP rank 23（node2 GPU 7）在 `all-to-all` 调用处超时（30s timeout）。该调用属于 layer 38 MoE 的 expert dispatch 阶段。<br>↳ 可在「模型层级」页签的 per-rank timeline 中复现：rank 23 的 all-to-all 横条拉满 30s（红），其余 63 rank 在同期显示为空等（Wait 段）。 |
-| **进一步确认** | 对比各 rank 的 all-to-all send/recv buffer size：rank 23 的 send buffer 为 0（没有 token 被 router 分发到其他 rank 的 expert），而 recv buffer 期望接收 2048 token × 2560 dim × 8 experts 的数据，size 不匹配导致死锁 |
-| **判据** | all-to-all send/recv 不匹配 → 通信调度失步 |
+| **观测** | 开启 `NCCL_DEBUG=INFO` 重跑 step 15203。NCCL trace 显示 EP rank 23（node2 GPU 7）在 `all-to-all` 调用处超时（30s timeout）。该调用属于 layer 38 MoE 的 expert dispatch 阶段。<br>↳ 可在 per-rank timeline 中复现：rank 23 的 all-to-all 横条拉满 30s（红），其余 63 rank 同期显示为空等（Wait 段）。 |
+| **进一步确认** | 对比各 rank 的 all-to-all send/recv buffer size：rank 23 的 send buffer 为 0（没有 token 被 router 分发到其他 rank 的 expert），而 recv buffer 期望接收大量 token 数据，size 不匹配导致死锁 |
+| **判据** | all-to-all send/recv 不匹配 → 通信调度失步。但死锁只是"果"，需继续追"因"——为什么 router 会把几乎所有 token 分配给 rank 23？ |
 | **产出** | 异常通信原语：`all-to-all` / 异常 rank：EP rank 23 / 关联层：layer 38 MoE |
 
-### 4. 模型层（回到主干定位影响层）
+### 4. 模型层
 
 | 步骤 | 内容 |
 |------|------|
-| **观测** | 提取 step 15203 各层 router 的 token-to-expert 分配统计。layer 38 的 router 将当前 micro-batch 中 98% 的 token 路由到了 expert 193（恰好位于 EP rank 23），其余 255 个 expert 几乎无 token |
-| **根因** | Router 的 `n_group=8`（将 256 个 expert 分成若干组，每组内独立做 topk 选择）、`topk_group=4` 配置下，gate weight 的 sigmoid score（router 输出经 sigmoid 归一化后的专家亲和度，0~1 之间）超过 0.99，表明某个 token 群体的 hidden state 对 expert 193 产生了极端偏好，导致该 expert 所在的 rank 23 通信负载骤增、其余 rank 空等，形成 all-to-all 死锁 |
-| **产出** | 问题层：`model.layers.38.mlp.router` / 路由倾斜度：单 expert 收到 98% token |
+| **观测** | 提取 step 15203 所有 256 个 expert 的 token 分配统计：expert 193 收到 98% token（约 8028/8192），其余 255 个 expert 合计仅 164 token，其中 247 个 expert 为 dead expert（0 token）。expert 193 恰好位于 EP rank 23 |
+| **判据** | 全量 expert 分布严重塌缩——不仅是 expert 193 过载，255 个 expert 几乎完全闲置。这不是普通的路由倾斜（CV=10~20%），而是 router 的 softmax 输出几乎退化为 one-hot |
 
-### 5. infra层
+### 5. 数值层 — 追查 router 的精度路径
 
-| 步骤 | 内容 |
-|------|------|
-| **观测** | 问题集中在 EP rank 23（node2 GPU 7），属于 PP stage 6（layers 36~41），该节点其余 7 个 GPU 均在 step 15203 的 all-to-all 中等待 rank 23 而空闲 |
-| **判据** | 问题聚集在单个 EP rank → 局部路由倾斜，非全局硬件故障 |
-| **产出** | 嫌疑范围：node2 GPU 7（EP rank 23），PP stage 6，layer 38 MoE |
-
-### 6. 超参/代码层
+> 此层是本案例的**核心转折点**：从"通信怎么死的"下钻到"数值为什么先崩了"。
 
 | 步骤 | 内容 |
 |------|------|
-| **修改** | ① 增大 router 的 `n_group` 从 8→16，分散 expert 选择范围；② 在 router gate 前增加 z-loss 正则项（系数 1e-4），抑制 gate logit 极端值；③ NCCL all-to-all 超时从 30s 延长至 60s 作为兜底 |
-| **验证** | 修改后从 step 15000 续跑，step 15203 正常通过，继续训练 5000 step 无 NaN |
+| **观测** | ① dump step 15203 时 layer 38 router 的 raw logits（softmax 之前），发现 max(logits)=**1846**（正常应 < 50），且存在 `inf` 值——FP8 E4M3 下 `exp(1846)` 直接溢出为 inf。② 检查 router 计算精度路径：当前实现中 router 的 softmax 在 **FP8** 下计算（`router_logits → FP8 cast → softmax`），而非业界建议的 FP32。③ AMP scaler 日志显示 loss scale 从 step 15000 起从 65536 持续衰减至 step 15202 的 4096，说明训练已处于持续 FP 溢出的临界状态 |
+| **判据** | FP8 下 router logits 溢出 → softmax 产生 NaN/inf → 路由概率退化为一组非法值 → top-k 选取极端集中于单个 expert（expert 193）→ 同时触发两个后果：**A)** NaN 沿 forward 传播到 loss；**B)** 所有 token 路由到 rank 23 → all-to-all 死锁。**死锁和 NaN 是同一 root cause 的两个平行后果，而非因果关系** |
+| **产出** | 根因：router softmax 在 FP8 精度下计算，logits 动态范围超出 FP8 表示能力 / 前置信号：AMP loss scale 持续衰减（65536→4096）是 NaN 的预警指标 / dead expert 占比 96.5%（247/256） |
+
+### 6. infra层
+
+| 步骤 | 内容 |
+|------|------|
+| **观测** | 问题集中在 EP rank 23（node2 GPU 7），属于 PP stage 3（layers 34~45）。AMP scaler 衰减在全部 64 rank 上同步发生，但 only rank 23 因 expert 193 的地理位置成为死锁的"引爆点"——如果 expert 193 位于其他 rank，只会换一个 rank 触发死锁 |
+| **判据** | 问题聚集在单个 EP rank → 局部路由塌缩，非全局硬件故障。但根因（router FP8 overflow）是系统性的 |
+| **产出** | 嫌疑范围：node2 GPU 7（EP rank 23），PP stage 3，layer 38 MoE |
+
+### 7. 超参/代码层
+
+| 步骤 | 内容 |
+|------|------|
+| **诊断总结** | 根因是 router softmax 在 FP8 下计算 + 缺乏 logits 正则化。三个问题叠加：① 精度路径错误（FP8 softmax，应 FP32）；② 无 z-loss 抑制 logits 极端值；③ router 学习率与 expert 相同（应降低）。AMP scaler 持续衰减是可在 NaN 前捕获的预警信号 |
+| **修改** | 按优先级：① **router softmax 改 FP32** ——`router_logits = router(x.float()); probs = softmax(router_logits); probs = probs.to(dtype)`，这是最关键的修复，消除 logits 溢出的可能性；② **加 z-loss** ——系数 1e-4，抑制 logits 向极端漂移；③ **降低 router 学习率** ——router lr = expert lr × 0.1；④ **gradient clipping** ——`clip_grad_norm=1.0`，MoE 训练的标配；⑤ 增大 `n_group` 8→16 作为路由多样性的辅助保障；⑥ NCCL timeout 30s→60s 作为训练不中断的兜底 |
+| **验证** | ①~④ 从 step 15000 续跑：router logits max 稳定在 18~35（安全范围），AMP scaler 维持在 65536 不衰减，256 expert 的 token CV 降至 8~15%。step 15203 正常通过，继续训练 5000 step 无 NaN 无死锁 |
 
 ---
 
@@ -158,7 +172,7 @@
 
 > **路径**：迭代层 → 单/多卡均异常 → 模型层 → 算子层 → 张量层 → infra层 → 超参/代码层
 
-**背景**：同上 64 GPU 训练 openPangu-2.0-Flash，EP=64，TP=1，PP=8，FP8 精度。训练至 step ~8000 后 grad_norm 持续上升，loss 缓慢恶化。
+**背景**：同上 64 GPU 训练 openPangu-2.0-Flash，EP=64，TP=1，PP=4，FP8 精度。训练至 step ~8000 后 grad_norm 持续上升，loss 缓慢恶化。
 
 ### 1. 迭代层
 
@@ -207,7 +221,7 @@
 
 | 步骤 | 内容 |
 |------|------|
-| **观测** | 检查问题是否局限在特定 PP stage 或 EP rank。layer 38 属于 PP stage 6（layers 36~41），但在所有 64 个 EP rank 上均观测到相同的 q_b_proj 溢出模式 |
+| **观测** | 检查问题是否局限在特定 PP stage 或 EP rank。layer 38 属于 PP stage 3（layers 34~45），但在所有 64 个 EP rank 上均观测到相同的 q_b_proj 溢出模式 |
 | **判据** | 跨所有 rank 复现 → 全局精度问题，非硬件/特定节点故障 |
 | **产出** | 全局问题，与 PP/EP 切分无关，根因在 FP8 数值表示能力不足 |
 
@@ -225,7 +239,7 @@
 
 > **路径**：迭代层 → 单/多卡均异常 → 张量数值分析（分布曲线 + 宏观指标 + 量化风险 + 算子定位）→ 误差传递路径（逐层对比高精度基线）→ infra层 → 超参/代码层
 
-**背景**：64 GPU 训练 openPangu-2.0-Flash，EP=64，TP=1，PP=8，HiF8 混合精度（forward: FP8 E4M3 hybrid, backward: BF16, master weights: FP32），同时跑 BF16 全精度对照组。训练至 step ~25000 后 HiF8 与 BF16 的 loss 曲线开始分叉——BF16 继续下降，HiF8 停滞不前。step ~31000 后 HiF8 loss 微幅反弹，grad_norm 持续衰减至接近 0——模型进入"低精训练陷阱"：梯度信号被量化噪声淹没。
+**背景**：64 GPU 训练 openPangu-2.0-Flash，EP=64，TP=1，PP=4，HiF8 混合精度（forward: FP8 E4M3 hybrid, backward: BF16, master weights: FP32），同时跑 BF16 全精度对照组。训练至 step ~25000 后 HiF8 与 BF16 的 loss 曲线开始分叉——BF16 继续下降，HiF8 停滞不前。step ~31000 后 HiF8 loss 微幅反弹，grad_norm 持续衰减至接近 0——模型进入"低精训练陷阱"：梯度信号被量化噪声淹没。
 
 ### 1. 迭代层
 
@@ -365,7 +379,7 @@ layer 35 → layer 36 残差连接传播受损的 hidden state
 
 | 步骤 | 内容 |
 |------|------|
-| **观测** | 检查问题是否局限在特定 PP stage 或 EP rank。layer 35 属于 PP stage 5（layers 30~35），但在所有 64 个 EP rank 上均观测到相同的分布偏移模式。进一步检查各 rank 的 FP8 量化参数（scale factor）：layer 35 的 per-tensor scale 从 step 25000 的 0.62 持续下降至 step 32000 的 **0.18**——scale 过小意味着 FP8 的量化粒度变粗，每个量化 bin 代表更大的实数值间隔，舍入误差增大 |
+| **观测** | 检查问题是否局限在特定 PP stage 或 EP rank。layer 35 属于 PP stage 3（layers 34~45），但在所有 64 个 EP rank 上均观测到相同的分布偏移模式。进一步检查各 rank 的 FP8 量化参数（scale factor）：layer 35 的 per-tensor scale 从 step 25000 的 0.62 持续下降至 step 32000 的 **0.18**——scale 过小意味着 FP8 的量化粒度变粗，每个量化 bin 代表更大的实数值间隔，舍入误差增大 |
 | **判据** | 跨所有 rank 复现 + scale factor 持续衰减 → 全局精度问题。FP8 per-tensor scaling 策略的 scale 衰减是量化误差累积的放大器 |
 | **产出** | 全局问题。FP8 per-tensor scale 衰减（0.62→0.18）使有效量化精度从 ~4.5 bit 退化至 ~2.8 bit |
 
@@ -481,7 +495,7 @@ layer 35 → layer 36 残差连接传播受损的 hidden state
 
 > **路径**：集群层 → 资源层 → 通信原语层 → 硬件层 → 配置变更层
 
-**背景**：64 GPU（8 节点 × 8 GPU）训练 openPangu-2.0-Flash，EP=64，TP=1，PP=8，FP8 精度。训练至 step ~20000 后，总吞吐从 3200 tokens/s 掉至 1200 tokens/s，MFU 从 55% 降至 20%。
+**背景**：64 GPU（8 节点 × 8 GPU）训练 openPangu-2.0-Flash，EP=64，TP=1，PP=4，FP8 精度。训练至 step ~20000 后，总吞吐从 3200 tokens/s 掉至 1200 tokens/s，MFU 从 55% 降至 20%。
 
 ### 1. 集群层
 
@@ -503,9 +517,9 @@ layer 35 → layer 36 残差连接传播受损的 hidden state
 
 | 步骤 | 内容 |
 |------|------|
-| **观测** | Nsight Systems trace 显示：layer 30~38 的 MoE all-to-all 调用在 node2 GPU 3 和 GPU 4 上耗时从正常的 2.3ms 飙升至 18.7ms（8× 恶化）。NCCL topology 日志显示 GPU 3↔GPU 4 间 `NCCL_P2P_LEVEL` 从 `PATH_NVL` 回退到 `PATH_SYS`（经 PCIe/IB）。该链路承载了 PP stage 5↔6 的跨 stage p2p 传输，导致整个 PP pipeline 被拖慢 |
+| **观测** | Nsight Systems trace 显示：layer 30~38 的 MoE all-to-all 调用在 node2 GPU 3 和 GPU 4 上耗时从正常的 2.3ms 飙升至 18.7ms（8× 恶化）。NCCL topology 日志显示 GPU 3↔GPU 4 间 `NCCL_P2P_LEVEL` 从 `PATH_NVL` 回退到 `PATH_SYS`（经 PCIe/IB）。该链路承载了 PP stage 2↔3 的跨 stage p2p 传输，导致整个 PP pipeline 被拖慢 |
 | **判据** | all-to-all 耗时 8× + NVLINK→SYS 回退 → 通信路径降级 |
-| **产出** | 异常原语：`all-to-all`（MoE dispatch+combine）+ PP `p2p` / 涉及 GPU：node2 GPU 3, GPU 4 / PP stage：4↔5 |
+| **产出** | 异常原语：`all-to-all`（MoE dispatch+combine）+ PP `p2p` / 涉及 GPU：node2 GPU 3, GPU 4 / PP stage：2↔3 |
 
 ### 4. 硬件层
 
@@ -601,7 +615,7 @@ layer 35 → layer 36 残差连接传播受损的 hidden state
 | **定位目标** | 在多 stage pipeline 中定位到瓶颈 stage，或在单 stage 内定位到具体模型层 |
 | **观测手段** | Pipeline 时序泳道图（swimlane）：横轴为时间、纵轴为各 stage，看哪个 stage 的计算段最长（成为 pipeline bubble 的源头）；层粒度算子耗时排序（parent-child operator table）：按总耗时降序排列各层的 attention / FFN / MoE |
 | **判据** | Pipeline 泳道图中某 stage 的计算耗时是其他 stage 的 1.3× 以上 → 该 stage 是 pipeline bottleneck；层耗时排序中某层耗时占该 stage 总耗时 > 25% → 该层是热点层 |
-| **产出** | 瓶颈 stage（如 PP stage 5 耗时 401ms vs stage 0 的 231ms）+ 热点层（如 layer 42 MoE） |
+| **产出** | 瓶颈 stage（如 PP stage 3 耗时 401ms vs stage 0 的 231ms）+ 热点层（如 layer 42 MoE） |
 
 ### ↕ 汇合点：此处可与精度链「模型层」结论交叉验证
 
@@ -775,7 +789,7 @@ layer 35 → layer 36 残差连接传播受损的 hidden state
 
 > **路径**：性能表征层 → 瓶颈分类层（计算受限）→ 阶段定位层 → 算子定位层 → 执行效率层 → 代码/配置层
 
-**背景**：128 GPU（16 节点 × 8 GPU）训练 openPangu-2.0-Flash，EP=64，PP=8，TP=1，FP8 精度，seq_len=4096，micro_batch=1，global_batch=1024。目标步耗时 ≤ 8.5s，实测步耗时 12.1s，超标 42%。MFU 约 38%，目标 MFU ≥ 50%。
+**背景**：128 GPU（16 节点 × 8 GPU）训练 openPangu-2.0-Flash，EP=64，PP=4，TP=1，FP8 精度，seq_len=4096，micro_batch=1，global_batch=1024。目标步耗时 ≤ 8.5s，实测步耗时 12.1s，超标 42%。MFU 约 38%，目标 MFU ≥ 50%。
 
 ### 1. 性能表征层
 
@@ -797,33 +811,33 @@ layer 35 → layer 36 残差连接传播受损的 hidden state
 
 | 步骤 | 内容 |
 |------|------|
-| **观测** | Pipeline 时序泳道图（Timeline trace，横轴时间、纵轴 PP stage 0~7 的 Computing / Comm / Free 堆叠）。Stage 7（末级，layers 54~60 + final_layernorm + lm_head + loss）Computing 段 2152ms，是中间 stage（stage 1~6 各约 1180ms）的 **1.82×**。Stage 0（embedding + L0~L2 dense + L3~L7 MoE）Computing 段 1310ms（首级 embedding 额外开销）。Stage 1~6 在 stage 7 的计算段期间显示为空等（PP bubble） |
-| **判据** | Stage 7 耗时 / 中间 stage 均值 = 2152/1180 ≈ 1.82× → 末级严重过载；PP bubble 估算 ≈ 35%（≈1337ms），与 PP=8、1F1B 调度下末级含 lm_head+loss 的典型 bubble 范围一致 |
-| **产出** | 瓶颈 stage：PP stage 7（Computing 2152ms）/ PP bubble ≈ 1337ms / 中间 stage 均值 ≈ 1180ms |
+| **观测** | Pipeline 时序泳道图（Timeline trace，横轴时间、纵轴 PP stage 0~3 的 Computing / Comm / Free 堆叠）。Stage 3（末级，layers 34~45 + final_layernorm + lm_head + loss）Computing 段 2152ms，是中间 stage（stage 1~2 各约 1180ms）的 **1.82×**。Stage 0（embedding + L0~L11）Computing 段 1310ms（首级 embedding 额外开销）。Stage 1~2 在 stage 3 的计算段期间显示为空等（PP bubble） |
+| **判据** | Stage 3 耗时 / 中间 stage 均值 = 2152/1180 ≈ 1.82× → 末级严重过载；PP bubble 估算 ≈ 12%（≈620ms），与 PP=4、1F1B 调度下末级含 lm_head+loss 的典型 bubble 范围一致 |
+| **产出** | 瓶颈 stage：PP stage 3（Computing 2152ms）/ PP bubble ≈ 620ms / 中间 stage 均值 ≈ 1180ms |
 
 ### 4. 算子定位层
 
 | 步骤 | 内容 |
 |------|------|
-| **观测** | Stage 7 算子 parent-child 表（`op_statistic.csv` 按总耗时降序，device 6 代表卡）： |
-|  | ① `MatMulV3`（all layers 的 attention QKV/o_proj + MLP fc1/fc2，合计 count=4928+448）：**5936ms**（占 stage 7 Computing 的 63%），其中 fc1 MatMul [4096,2560]×[16384,2560] shape 最大——openPangu-2.0-Flash 的 MoE expert hidden=1024，fc1 shape 为 gate_up 合并 [4096,2560]×[16384,2560]（gate+up 合并 2×1024×8 experts → 等效 16384），远小于 dense 模型的 37888 |
+| **观测** | Stage 3 算子 parent-child 表（`op_statistic.csv` 按总耗时降序）： |
+|  | ① `MatMulV3`（all layers 的 attention QKV/o_proj + MLP fc1/fc2，合计 count=4928+448）：**5936ms**（占 stage 3 Computing 的 63%），其中 fc1 MatMul [4096,2560]×[16384,2560] shape 最大——openPangu-2.0-Flash 的 MoE expert hidden=1024，fc1 shape 为 gate_up 合并 [4096,2560]×[16384,2560]（gate+up 合并 2×1024×8 experts → 等效 16384），远小于 dense 模型的 37888 |
 |  | ② `FlashAttentionScore` + Grad（MLA 的 core_attention，count=448+448）：**723ms**（7.7%） |
 |  | ③ **AICPU 算子汇总**（`ArgMaxWithValue` 72ms + `Exp` 128ms + `RealDiv` 125ms + `Sub` 126ms + `ReduceSum` 75ms + `ApplyAdamWV2` 52ms + `LpNormV2` 12ms + 杂项 ≈90ms）：合计 **≈680ms**（7.2%），集中在 CE loss 与优化器 |
 |  | ④ **RmsNorm** ×（46 层 × 2）= 92 次 fwd+bwd：**≈60ms**（0.6%） |
 |  | ⑤ 残差/杂项 Add+Mul+Cast+Slice+… ≈ **500ms**（5.3%） |
-| **判据** | MatMul 耗时 5936ms 占 63% ——但这是「总耗时」不是 FLOPS 效率低。进一步检查 `kernel_details.csv` 中 MatMulV3 的 cube 利用率：stage 0~6 的 MatMul cube_util ≈ 78~82%，而 **stage 7 的 lm_head MatMulV2（[4096,2560]×[151552,2560]）cube_util 仅 49%**（vocab 151552 = 592×256，但 151552 不是 256 的整数倍约束的实际对齐粒度导致尾块浪费 → **带宽瓶颈**）。另外 AICPU 的 680ms（7.2%）中 CE loss 链路 526ms 是手写算子组合而非融合实现 |
+| **判据** | MatMul 耗时 5936ms 占 63% ——但这是「总耗时」不是 FLOPS 效率低。进一步检查 `kernel_details.csv` 中 MatMulV3 的 cube 利用率：stage 0~2 的 MatMul cube_util ≈ 78~82%，而 **stage 3 的 lm_head MatMulV2（[4096,2560]×[151552,2560]）cube_util 仅 49%**（vocab 151552 = 592×256，但 151552 不是 256 的整数倍约束的实际对齐粒度导致尾块浪费 → **带宽瓶颈**）。另外 AICPU 的 680ms（7.2%）中 CE loss 链路 526ms 是手写算子组合而非融合实现 |
 | **产出** | 问题算子：① `lm_head MatMulV2`（vocab 非对齐 → 带宽瓶颈，cube_util 49% vs 预期 75%）；② `CE loss 链路`（Exp/Sub/RealDiv/ArgMax/ReduceSum，526ms，AICPU 回退）；③ `ApplyAdamWV2`（52ms，优化器 vector 算子） |
 
 ### 5. 执行效率层
 
 | 步骤 | 内容 |
 |------|------|
-| **观测** | Timeline trace（swimlane）放大 stage 7 的算子时序： |
+| **观测** | Timeline trace（swimlane）放大 stage 3 的算子时序： |
 |  | ① **lm_head 带宽瓶颈**：`kernel_details` 中 lm_head MatMulV2 的 `cube_util=49%`，dram_bytes ≈ 输入 4096×2560×2 + 权重 151552×2560×2 + 输出 4096×151552×2 ≈ 2.0GB。理论 HBM 带宽 3.35TB/s（H800），纯带宽耗时 ≈ 0.60ms——但实测 8.5ms/call × 64 microbatch = 544ms。Roofline 分析：该 MatMul 落在 **memory-bound 区**。根因：vocab=151552，H800 的 Tensor Core 要求 K 维对齐到 128 的倍数以便 FP8 tile 分块；151552/128=1184 整除，但 N 维（151552）不是 256 的倍数（151552/256=592，恰好整除 256），真正问题出在 vocab 维的 tile 粒度与 hidden=2560 的 K 维不匹配，导致 GEMM 尾块效率折半 |
 |  | ② **CE loss AICPU 链路**：Timeline 中可见 5 个 vector 算子在 lm_head 后串行排列（Exp→Sub→RealDiv→ReduceSum→ArgMax），每个算子间有 60~100μs 的 launch gap，合计约 526ms。若替换为 `F.cross_entropy`（路由到 `aclnnSoftmaxCrossEntropyWithLogits` 融合实现），融合后仅 1 个 kernel，消除 5 次 HBM 读写往返 |
 |  | ③ **优化器 vector 算子**：ApplyAdamWV2 和 LpNormV2（grad clip）各占 52ms 和 12ms，属正常范围（BF16 优化器状态下已减半），不构成独立瓶颈 |
 | **判据** | lm_head → 带宽瓶颈（memory-bound），vocab 尾块未对齐 256 导致 cube_util 折半；CE loss → 手写算子链 × AICPU 回退；其余算子（MatMul FA RmsNorm）正常 |
-| **产出** | 根因归类：lm_head MatMulV2 → 带宽瓶颈/tiling 对齐；loss 链路 → AICPU 回退。合计可优化 ≈750ms。若要进一步达到 50% MFU，需配合案例二的 PP bubble 优化 |
+| **产出** | 根因归类：lm_head MatMulV2 → 带宽瓶颈/tiling 对齐；loss 链路 → AICPU 回退。合计可优化 ≈750ms |
 
 ### 6. 代码/配置层
 
@@ -832,7 +846,7 @@ layer 35 → layer 36 残差连接传播受损的 hidden state
 | **修改 ① — vocab 对齐到 64 的倍数** | 当前 vocab=151552 已对齐到 256（151552/256=592 整除），但 K 维 hidden=2560 不是 128 的整数倍对 tile 划分不够友好。将 `hidden_dim` 对齐到 `make-hidden-size-divisible-by 256`（2560 已是 256×10，无需改动），重点调整 lm_head 的 tiling 策略使其针对 vocab=151552 的特定 shape 做手工调优。预期 lm_head cube_util 49% → 72%，耗时 544ms → 约 370ms（↓174ms） |
 | **修改 ② — CE loss 融合** | 将手写的 softmax+CE 替换为 `F.cross_entropy(logits, labels, ignore_index=pad_id)`。CANN 路由到 `aclnnSoftmaxCrossEntropyWithLogits` 融合算子，消除 Exp/Sub/RealDiv/ReduceSum/ArgMax 5 段 AICPU/Vector 链路，融合后单 kernel 约 15ms × 64 microbatch = 约 10ms（注意：融合算子内部仍要做 softmax+CE，但消除了中间张量物化和 launch gap）。预期 526ms → 约 50ms（↓476ms） |
 | **修改 ③ — 优化器 BF16 状态** | 当前已启用（openPangu-2.0-Flash 默认），无需修改。若未启用则设置 `--optimizer-cpu-offload` 或在代码中 `optimizer_config={'adam_beta1': 0.9, 'adam_beta2': 0.95, 'use_distributed_optimizer': True}` |
-| **验证** | ①+② 叠加：T_iter 12100ms → 约 10350ms（↓14.5%），MFU 38% → 约 45%，lm_head cube_util 49% → 72%，AICPU 耗时占比 7.2% → 约 1.5%。PHS 从 D(32) → C+(55)。若要进一步达到 50% MFU，需配合案例四的 PP bubble 优化 |
+| **验证** | ①+② 叠加：T_iter 12100ms → 约 10350ms（↓14.5%），MFU 38% → 约 45%，lm_head cube_util 49% → 72%，AICPU 耗时占比 7.2% → 约 1.5%。PHS 从 D(32) → C+(55)。若要进一步达到 50% MFU，需配合案例二的 PP bubble 与通信重叠优化 |
 
 
 ---
@@ -841,59 +855,58 @@ layer 35 → layer 36 残差连接传播受损的 hidden state
 
 > **路径**：性能表征层 → 瓶颈分类层（计算受限）→ MFU 拆解（达成率 × 占用率）→ 阶段定位层 → 执行效率层（PP bubble）→ 代码/配置层
 
-**背景**：同案例一的 128 GPU openPangu-2.0-Flash 训练，EP=64，PP=8，TP=1，FP8，seq_len=4096。案例一已修复 lm_head 带宽瓶颈和 CE loss AICPU 回退，T_iter 从 12.1s 降至 10.35s，MFU 从 38% 升至 45%。但距离目标 50%+ 仍有差距，需进一步下钻。
+**背景**：同案例一的 128 GPU openPangu-2.0-Flash 训练，EP=64，PP=4，TP=1，FP8，seq_len=4096。案例一已修复 lm_head 带宽瓶颈和 CE loss AICPU 回退，T_iter 从 12.1s 降至 10.35s，MFU 从 38% 升至 45%。但距离目标 50%+ 仍有差距，需进一步下钻。
 
 ### 1. 性能表征层
 
 | 步骤 | 内容 |
 |------|------|
-| **现象** | 案例一修复后 T_iter≈10350ms，MFU≈45%。同配置 openPangu-2.0-Flash 报告 MFU 可达 52~55%（等效配置 180K GPU·h/T token → 理论 T_iter≈7200ms，加 PP=8 调度开销约 +30% → 预期 9400ms）。差距仍有约 950ms |
+| **现象** | 案例一修复后 T_iter≈10350ms，MFU≈45%。同配置 openPangu-2.0-Flash 报告 MFU 可达 52~55%（等效配置 180K GPU·h/T token → 理论 T_iter≈7200ms，加 PP=4 调度开销约 +15% → 预期 8300ms）。差距仍有约 2050ms |
 | **判据** | MFU 45% < 50% 目标 → 继续下钻。但此时算子层面已无明显异常（cube_util 正常、无 AICPU 回退），需从 MFU 公式拆解入手 |
-| **产出** | 残余差距：T_iter 10350ms vs 目标 9400ms（+950ms）/ MFU 45% vs 目标 52%（−7pp） |
+| **产出** | 残余差距：T_iter 10350ms vs 目标 8300ms（+2050ms）/ MFU 45% vs 目标 52%（−7pp） |
 
 ### 2. MFU 拆解（替代瓶颈分类层的「二次下钻」）
 
 | 步骤 | 内容 |
 |------|------|
 | **公式** | $\text{MFU} = \underbrace{\frac{\text{模型 FLOPs}}{T_{\text{compute}} \times \text{峰值 FLOPS}}}_{\text{算子达成率}} \times \underbrace{\frac{T_{\text{compute}}}{T_{\text{iter}}}}_{\text{计算占用率}}$ |
-| **观测** | ① **算子达成率**：profile_dir 中 MatMulV3 的 cube_util 均值 ≈ 72%（stage 0~6 约 78%，stage 7 约 55%——lm_head 拉低均值）。FA（FlashAttentionScore）的 cube_util ≈ 65%（MLA 的 128-head × 192-dim 非标准 shape，H800 上 FA 实现未完全优化）。加权后达成率 ≈ **68%** |
+| **观测** | ① **算子达成率**：profile_dir 中 MatMulV3 的 cube_util 均值 ≈ 72%（stage 0~2 约 78%，stage 3 约 55%——lm_head 拉低均值）。FA（FlashAttentionScore）的 cube_util ≈ 65%（MLA 的 48-head × 192-dim 非标准 shape，Ascend 上 FA 实现未完全优化）。加权后达成率 ≈ **68%** |
 |  | ② **计算占用率**：T_compute = Computing 中真正计入 FLOPs 的部分 ≈ CUBE(total MatMul) + FA = 5936 + 723 = 6659ms（剔除 AICPU/Vector/Free）。T_iter = 10350ms。计算占用率 = 6659/10350 ≈ **64.3%** |
 |  | ③ 代入：MFU = 68% × 64.3% ≈ **43.7%**（与实测 45% 接近，误差来自 FA FLOPs 折算系数） |
-| **判据** | 计算占用率仅 64.3% → **35.7% 的 T_iter 被"陪跑项"吃掉**。陪跑项构成：PP bubble（~1337ms，12.9%）、未掩盖通信（1093ms，10.6%）、Vector/AICPU 零碎算子（~850ms，8.2%）、Free（248ms，2.4%）、误差（~163ms，1.6%）。**PP bubble 是最大单因子** |
-| **产出** | MFU 拆解结论：算子达成率 68% 正常（openPangu-2.0-Flash FP8 报告约 70~75%，差值来自 H800 vs Ascend 差异），计算占用率 64.3% 偏低的根因是 **PP bubble（35.7% 陪跑中的 36% 贡献 = 12.9pp MFU 损失）** |
+| **判据** | 计算占用率仅 64.3% → **35.7% 的 T_iter 被"陪跑项"吃掉**。陪跑项构成：PP bubble（~620ms，6.0%）、未掩盖通信（1093ms，10.6%）、Vector/AICPU 零碎算子（~850ms，8.2%）、Free（248ms，2.4%）、误差（~889ms，8.6%）。**未掩盖通信是最大单因子**（PP=4 下 bubble 已大幅缩减） |
+| **产出** | MFU 拆解结论：算子达成率 68% 正常（openPangu-2.0-Flash FP8 报告约 70~75%，差值来自 H800 vs Ascend 差异），计算占用率 64.3% 偏低，PP=4 下 bubble 仅 6%，主要陪跑项为未掩盖通信和 Vector/AICPU 零碎算子 |
 
 ### 3. 阶段定位层
 
 | 步骤 | 内容 |
 |------|------|
-| **观测** | Timeline trace 泳道图（PP pipeline，8 stage × 1F1B 调度，横轴时间，纵轴 stage 0~7，颜色区分 Fwd-Compute / Bwd-Compute / P2P-Send/Recv / DP-Collective / Optimizer / PP-Bubble）。关键观测： |
-|  | • stage 7（末级）Fwd-Compute 段 2152ms，Bwd-Compute 段在 warm-up 和 cool-down 阶段与其余 stage 不同步 |
-|  | • stage 0~6 在 stage 7 的 Fwd-Compute 期间显示为空等（红色 PP-Bubble），累计 bubble = stage 0 约 1550ms、stage 1~6 各约 1300~1400ms |
-|  | • **Bubble 的根因**：末级 stage 7 额外扛了 final_layernorm（RmsNorm）+ lm_head（MatMulV2）+ CE loss，合计约 1037ms 额外负载。按 1F1B 调度，这 1037ms 在 warm-up 阶段造成所有上游 stage 空等、在 steady 阶段每 microbatch 造成 1 个 bubble 周期、在 cool-down 阶段下游空等 |
-| **判据** | PP bubble ≈ 1337ms（占 T_iter 10350ms 的 12.9%），为最大陪跑项。Bubble 的源头是末级 stage 7 的 lm_head+loss 额外负载 + PP=8 均分 46 层导致层数分配未补偿末级额外开销 |
-| **产出** | 瓶颈根因：PP bubble 12.9% / 末级额外负载 1037ms / PP 层数均匀分配未补偿 |
+| **观测** | Timeline trace 泳道图（PP pipeline，4 stage × 1F1B 调度，横轴时间，纵轴 stage 0~3，颜色区分 Fwd-Compute / Bwd-Compute / P2P-Send/Recv / DP-Collective / Optimizer / PP-Bubble）。关键观测： |
+|  | • stage 3（末级）Fwd-Compute 段 2152ms，Bwd-Compute 段在 warm-up 和 cool-down 阶段与其余 stage 不同步 |
+|  | • stage 0~2 在 stage 3 的 Fwd-Compute 期间显示为空等（红色 PP-Bubble），累计 bubble = stage 0~2 各约 200~250ms |
+|  | • **Bubble 的根因**：末级 stage 3 额外扛了 final_layernorm（RmsNorm）+ lm_head（MatMulV2）+ CE loss，合计约 1037ms 额外负载。按 1F1B 调度，这 1037ms 在 warm-up 阶段造成所有上游 stage 空等、在 steady 阶段每 microbatch 造成 1 个 bubble 周期、在 cool-down 阶段下游空等。PP=4 下仅 3 个 stage 间有 bubble，总量大幅低于典型 PP=8 配置 |
+| **判据** | PP bubble ≈ 620ms（占 T_iter 10350ms 的 6.0%），PP=4 下已大幅缩减，不再是最大陪跑项。Bubble 的源头是末级 stage 3 的 lm_head+loss 额外负载 + PP=4 均分 46 层导致末级层数偏多 |
+| **产出** | 瓶颈根因：PP bubble 6.0% / 末级额外负载 1037ms / 末级 12 层偏多 |
 
 ### 4. 执行效率层（PP bubble 深度分析）
 
 | 步骤 | 内容 |
 |------|------|
 | **观测** | 进一步量化 PP bubble 的构成（基于 1F1B 调度公式）： |
-|  | • 理论 bubble = (PP−1) × (T_fwd_stage7 − T_fwd_stage_avg) / microbatch_count。PP=8, microbatch=64, T_fwd_stage7≈1720ms, T_fwd_stage_avg≈780ms → 单 microbatch bubble ≈ (8−1)×(1720−780)/64 ≈ 103ms。64 microbatch 累计 ≈ 6592ms，但 1F1B 的 warm-up/steady/cool-down 三段中仅 warm-up 和 cool-down 产生 bubble，steady 段无 bubble → 实际 bubble ≈ 6592 × (warmup+cool-down microbatches / total) ≈ 1337ms（与 trace 观测一致） |
-|  | • 若能将 stage 7 的计算量减少 500ms（如 lm_head 优化），则 T_fwd_stage7→1220ms，bubble 减至约 800ms（↓40%） |
-|  | • 另外，PP=8 也可考虑减至 PP=4（每 stage 层数翻倍，但 bubble 减半），代价是每卡显存压力增大 |
-| **判据** | PP bubble 可优化空间约 500~800ms（通过减小末级负载 + 调整层数分配） |
-| **产出** | 优化方向：减小 stage 7 负载 + 调整 PP 层数分配 + 可选降低 PP size |
+|  | • 理论 bubble = (PP−1) × (T_fwd_stage3 − T_fwd_stage_avg) / microbatch_count。PP=4, microbatch=64, T_fwd_stage3≈1720ms, T_fwd_stage_avg≈780ms → 单 microbatch bubble ≈ (4−1)×(1720−780)/64 ≈ 44ms。64 microbatch 累计 ≈ 2816ms，但 1F1B 的 warm-up/steady/cool-down 三段中仅 warm-up 和 cool-down 产生 bubble，steady 段无 bubble → 实际 bubble ≈ 2816 × (warmup+cool-down microbatches / total) ≈ 620ms（与 trace 观测一致） |
+|  | • 若能将 stage 3 的计算量减少 500ms（如 lm_head 优化），则 T_fwd_stage3→1220ms，bubble 减至约 350ms（↓43%） |
+|  | • PP=4 已是最小 pipeline 深度（再减到 PP=1 则无 pipeline），优化重点应放在减小末级负载和通信重叠 |
+| **判据** | PP bubble 可优化空间约 270~350ms（通过减小末级负载 + 调整层数分配 + 通信重叠） |
+| **产出** | 优化方向：减小 stage 3 负载 + 调整 PP 层数分配 + 通信-计算重叠 |
 
 ### 5. 代码/配置层
 
 | 步骤 | 内容 |
 |------|------|
-| **修改 ① — 调整 PP stage 层数分配** | 当前 PP=8 均分 46 层为 [6,6,6,6,6,6,6,4]（末级 4 层 + lm_head）。改为 [7,6,6,6,6,6,5,4]（stage 0 多 1 层 Dense embedding 补偿 L0~1 的 Dense 计算，stage 6 减 1 层给末级减压——stage 6 不是瓶颈，减层后其计算时间下降有利于减少 warm-up bubble）。Megatron 参数：`--decoder-first-pipeline-num-layers 7 --decoder-last-pipeline-num-layers 4` |
-|  | 实际更优方案：将阶段 6（layers 36~41）的 1 层移到 stage 7（layers 42~45），stage 7 从 4 层→5 层但 lm_head+loss 时间不变——stage 7 已经有 4 层 + lm_head，加层反而更重。正确方向是：**stage 7 减层**，把 layer 42 移到 stage 6。stage 7 从 layers 42~45(4 层) 减为 layers 43~45(3 层)，每减 1 层减少约 118ms（1 层 MoE 的 fwd+bwd），预期 stage 7 计算时间 2152ms → 约 2034ms（↓118ms），bubble 减少约 65ms |
-| **修改 ② — vocab-parallel cross-entropy（TP 切分 lm_head）** | 将 TP 从 1 改为 2（仅作用于 lm_head 和 loss，其余部分保持 TP=1）。lm_head 权重沿 vocab 维切分到 2 张卡，每卡 vocab=75776。但 openPangu-2.0-Flash 的 EP=64 已占满 64 卡，增加 TP 需要更多卡。替代方案：使用 **vocab-parallel cross-entropy**（Megatron 的 `VocabParallelCrossEntropy`），将 logits 沿 vocab 维做 TP 切分后在各卡本地计算 CE loss 再 all-reduce——但这要求 TP>1。当前 TP=1 无法使用 |
-|  | 实际可行方案：**将 lm_head 的 MatMul 改为 seq-parallel**（sequence parallelism）：lm_head 的输入 [4096,2560] 沿 seq 维切分到 2 张卡（每卡 [2048,2560]），输出 [2048,151552]，再 all-gather 回完整 logits。这需要 PP stage 7 内有 2 张卡（当前 PP=8 时每 stage 有 128/8=16 卡——不对，EP=64 意味着每 EP group 64 卡，PP=8 意味着每 PP stage 有 64/8=8 卡。可以在这 8 卡内做 seq-parallel） |
-| **修改 ③ — Interleaved 1F1B（可选更大改动）** | 启用 `--num-layers-per-virtual-pipeline-stage 2`，将每个 PP stage 内的约 6 层再切成 3 个 virtual stage（每 virtual 2 层），用 interleaved 1F1B 调度。Bubble 从 (PP−1)/(microbatch) 降至 (VPP−1)/(microbatch)，预期 bubble 减少约 45% |
-| **验证** | 修改①（减 1 层）+ 修改③（interleaved 1F1B）：T_iter 10350ms → 约 9200ms（↓11%），PP bubble 1337ms → 约 600ms（↓55%），MFU 45% → 约 51%。PHS 从 C+(55) → B+(74)。若同时实施案例三的修改①②，T_iter 可达约 8100ms，MFU 可达 57%+ |
+| **修改 ① — 调整 PP stage 层数分配** | 当前 PP=4 均分 46 层为 [12,11,11,12]（末级 12 层 + lm_head）。末级 stage 3 天然偏重（含 lm_head+loss），调整为 [13,11,11,11]（stage 0 多 1 层补偿 embedding 开销，stage 3 减 1 层减压）。Megatron 参数：`--decoder-first-pipeline-num-layers 13 --decoder-last-pipeline-num-layers 11`。每减 1 层减少约 118ms，预期 stage 3 计算时间 2152ms → 约 2034ms（↓118ms），bubble 减少约 40ms |
+|  | 更激进的方案：将 stage 3 再减 1 层到 10 层 [13,12,11,10]，但 stage 3 仅 10 层可能显存压力过大。保守方案先减 1 层观察效果。 |
+| **修改 ② — 通信-计算重叠** | PP=4 下 bubble 仅 6%，未掩盖通信（1093ms, 10.6%）成为更大陪跑项。开启 `--overlap-grad-reduce` 和 `--overlap-param-gather`，将 all-reduce 与反向计算重叠，预期未掩盖通信 1093ms → 约 400ms（↓63%） |
+| **修改 ③ — Interleaved 1F1B（可选更大改动）** | 启用 `--num-layers-per-virtual-pipeline-stage 2`，将每个 PP stage 内的约 12 层再切成 6 个 virtual stage（每 virtual 2 层），用 interleaved 1F1B 调度。Bubble 从 (PP−1)/(microbatch) 降至 (VPP−1)/(microbatch)，预期 bubble 减少约 50% |
+| **验证** | 修改①（减 1 层）+ 修改②（通信重叠）：T_iter 10350ms → 约 9650ms（↓6.8%），PP bubble 620ms → 约 580ms，未掩盖通信 1093ms → 约 400ms。MFU 45% → 约 48%。PHS 从 C+(55) → B(65)。若同时实施修改③，T_iter 可达约 9100ms，MFU 可达 51% |
 
 
 ---
@@ -902,7 +915,7 @@ layer 35 → layer 36 残差连接传播受损的 hidden state
 
 > **路径**：性能表征层 → 瓶颈分类层（通信受限）→ 通信原语层 → 通信模式层 → 执行效率层（负载倾斜）→ 代码/配置层
 
-**背景**：128 GPU（16 节点 × 8 GPU）训练 openPangu-2.0-Flash，EP=64，PP=8，TP=1，FP8，seq_len=4096。步耗时均值约 10.3s，但标准差达 2.8s（CV=27%）。每 8~12 步出现一次步耗时 > 15s 的尖峰，对应 Timeline trace 中某几个 rank 的 all-to-all 通信耗时暴增。
+**背景**：128 GPU（16 节点 × 8 GPU）训练 openPangu-2.0-Flash，EP=64，PP=4，TP=1，FP8，seq_len=4096。步耗时均值约 10.3s，但标准差达 2.8s（CV=27%）。每 8~12 步出现一次步耗时 > 15s 的尖峰，对应 Timeline trace 中某几个 rank 的 all-to-all 通信耗时暴增。
 
 ### 1. 性能表征层
 
@@ -965,4 +978,4 @@ layer 35 → layer 36 残差连接传播受损的 hidden state
 | **修改 ② — 增大 n_group / topk_group** | 将 router 的 `n_group` 从 8 增大到 **16**，`topk_group` 从 4 增大到 **6**。这增加了 expert 选择的多样性——每个 token 从 16 个 group 中选 top-6 group，再从其中选 top-8 expert，减少了单一 expert 被"垄断"的概率。代价：路由计算量增加约 15%（router 是轻量操作，对总耗时影响 < 0.5%） |
 | **修改 ③ — Redundant Expert Deployment（推理可用，训练需评估）** | 对于检测到的高负载 expert（如 expert 193），在 EP group 内做冗余部署：将 expert 193 复制到 rank 17 和 rank 18 两张卡，token 随机分流到两张卡（各 50%）。但这对训练的一致性有影响（两条梯度的 expert weight 不同）——仅适用于推理场景，训练不推荐 |
 | **修改 ④ — 训练侧兜底：增大 NCCL timeout** | 将 `NCCL_IB_TIMEOUT` 从 30s 增大到 **60s**，防止极端过载时 all-to-all 超时触发 NCCL 错误导致训练中断。不解决根因但防止训练 crash |
-| **验证** | ①+② 实施后：慢步占比从 10% 降至 < 2%，步耗时 CV 从 27% → 约 8%，all-to-all 耗时恢复到正常步 180~220ms 范围（慢步不再出现 >1s 的 all-to-all）。步耗时均值 10.3s → 约 10.0s（正常步小幅下降，因为减少了偶发的 all-to-all jitter 对流水线稳定性的影响）。MFU 均值 45% → 约 46%（慢步消除 + 流水线稳定性提升，但主要瓶颈仍在 PP bubble——见案例二） |
+| **验证** | ①+② 实施后：慢步占比从 10% 降至 < 2%，步耗时 CV 从 27% → 约 8%，all-to-all 耗时恢复到正常步 180~220ms 范围（慢步不再出现 >1s 的 all-to-all）。步耗时均值 10.3s → 约 10.0s（正常步小幅下降，因为减少了偶发的 all-to-all jitter 对流水线稳定性的影响）。MFU 均值 45% → 约 46% |

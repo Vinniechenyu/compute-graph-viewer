@@ -582,6 +582,11 @@ body.is-header-collapsed .side-nav {
   background: var(--surface-1);
 }
 
+/* Code Recovery 的预览需要保留左侧源码窗的滚动与标注交互。 */
+.card-preview iframe.is-interactive {
+  pointer-events: auto;
+}
+
 .preview-placeholder {
   height: 100%;
   display: grid;
@@ -1068,12 +1073,12 @@ const launchItems = [
     ]
   },
   {
-    title: "A5 数据搬运 Flow Map",
+    title: "Ascend A5 架构映射",
     group: "A5 硬件与迁移",
     status: "hi-fi",
-    desc: "一张地图看清 950 的数据搬运路径与通信指令走向。",
-    href: "ascend-hardware-map/ascend-hardware-map-v3.html",
-    preview: "assets/Ascend950-flow-map.png",
+    desc: "融合迁移分类、执行流与硬件架构图，联动查看 Ascend 910B 到 A5 的硬件变化、数据通路与迁移动作。",
+    href: "ascend-hardware-map/index.html",
+    preview: "assets/preview-a5-data-flow-map.png",
     fit: "contain",
     tags: ["Memory Flow", "A5"]
   },
@@ -1163,6 +1168,20 @@ const launchItems = [
     tags: ["Training", "Task", "Manage"]
   },
   {
+    title: "训练任务监控",
+    group: "模型训练推理",
+    status: "hi-fi",
+    desc: "训练任务拉起、监控、对比、诊断。",
+    href: "Profiling_Insight_and_Tool/training-run-twin-standalone/training-monitoring-v2.html",
+    preview: "assets/training-monitoring.png",
+    fit: "contain",
+    tags: ["Training", "Monitor", "Diagnose"],
+    variants: [
+      { label: "V1", href: "Profiling_Insight_and_Tool/training-run-twin-standalone/training-monitoring.html" },
+      { label: "V2", href: "Profiling_Insight_and_Tool/training-run-twin-standalone/training-monitoring-v2.html" }
+    ]
+  },
+  {
     title: "昇腾融合算子推荐",
     sub: "Ascend Fusion Advisor",
     group: "模型图与 IR",
@@ -1170,7 +1189,11 @@ const launchItems = [
     desc: "用 IDE Frame 三栏工作台查看 vLLM 算子图,悬停与点击节点后定位融合建议和算子源码。",
     href: "op-fusion/index.html?theme=light",
     preview: "assets/op-fusion-preview-light.png",
-    tags: ["Fusion", "Operator", "Graph"]
+    tags: ["Fusion", "Operator", "Graph"],
+    variants: [
+      { label: "V1", href: "op-fusion/index.html?theme=light" },
+      { label: "V2", href: "deepseek-v32-report-V2/index.html" }
+    ]
   },
   {
     title: "算子矩阵",
@@ -1187,18 +1210,28 @@ const launchItems = [
     ]
   },
   {
+    title: "算子入图工作台",
+    sub: "Op Graph-Integration",
+    group: "模型图与 IR",
+    status: "hi-fi",
+    desc: "从算子源码、结构检查到构建注册，串起算子入图流程并联动代码预览、执行阶段和问题修复建议。",
+    href: "op-graph-integration/index.html",
+    previewFrame: "op-graph-integration/index.html",
+    tags: ["Operator", "Graph", "Integration"]
+  },
+  {
     title: "模型 Profiling 报告叠加图",
     sub: "DeepSeek V3.2 / openPangu-2.0-Flash",
     group: "模型图与 IR",
     status: "hi-fi",
     desc: "在经过架构校验的模型图上叠加 profiling 报告，联动定位问题节点、诊断证据与时间线。",
-    href: "graphviz/deepseek_v32_report_overlay_demo_v2.html",
+    href: "deepseek-v32-report-overlay/index.html",
     preview: "assets/preview-deepseek-v32-report-overlay.png",
     fit: "contain",
     tags: ["Graph", "Report", "Profiling"],
     variants: [
       { label: "OpenPangu Mock", href: "openpangu-2-0-flash-report-overlay/index.html" },
-      { label: "DeepSeek 新版", href: "graphviz/deepseek_v32_report_overlay_demo_v2.html" },
+      { label: "DeepSeek 新版", href: "deepseek-v32-report-overlay/index.html" },
       { label: "DeepSeek 旧版", href: "graphviz/deepseek_v32_report_overlay_demo.html" }
     ]
   },
@@ -1233,7 +1266,7 @@ const launchItems = [
     status: "hi-fi",
     desc: "整网到算子逐层定位精度首错(910B vs A100 golden):计算图叠加精度、算子下钻看张量与根因、指令/排布仿真对标。",
     href: "precision-debugger/index.html",
-    preview: "precision-debugger/cover.png",
+    preview: "precision-debugger/cover.png?v=20260716",
     tags: ["Precision", "Debug", "Ascend"]
   },
   {
@@ -1248,13 +1281,11 @@ const launchItems = [
     tags: ["Precision", "RL", "Alignment"]
   },
   {
-    title: "PyPTOUX 泳道性能分析",
-    sub: "Swimlane Profiler · 外部",
     title: "PTO性能分析",
     sub: "Swimlane Profiler · 本地",
     group: "执行与性能分析",
     status: "hi-fi",
-    desc: "融合泳道视图、Profiler 报告、同步等待与性能下钻,展示 PTO 性能分析工作流。",
+    desc: "通过同步竞争、调度空泡与流水失衡三类场景，展示 PTO 泳道性能分析与下钻工作流。",
     href: "pto-swimlane-profiler/index.html",
     preview: "assets/pto-swimlane-profiler.png",
     fit: "contain",
@@ -1299,12 +1330,12 @@ const launchItems = [
     group: "执行与性能分析",
     status: "hi-fi",
     desc: "用 MindStudio Next 和计算图证据工作台做智能性能定位。",
-    href: "Profiling_Insight_and_Tool/AI_Profiling_Tool/MindStudioNext.html",
+    href: "Profiling_Insight_and_Tool/AI_Profiling_Tool/index_v3.html",
     preview: "assets/preview-mindstudio-next.png",
     fit: "contain",
     tags: ["AI", "Profiling"],
     variants: [
-      { label: "MindStudio Next", href: "Profiling_Insight_and_Tool/AI_Profiling_Tool/MindStudioNext.html" },
+      { label: "MindStudio Next", href: "Profiling_Insight_and_Tool/AI_Profiling_Tool/index_v3.html" },
       { label: "计算图证据", href: "Profiling_Insight_and_Tool/AI_Profiling_Tool/graph-evidence-workbench.html" }
     ]
   },
@@ -1347,13 +1378,24 @@ const launchItems = [
     tags: ["Operator", "Planning", "Workflow"]
   },
   {
+    title: "Code Recovery",
+    sub: "Kernel Execution Model",
+    group: "算子开发工具",
+    status: "lo-fi",
+    desc: "从 Ascend C 源码恢复 Tiling、Memory Path、Pipeline 与 Buffer Lifecycle 的可视化执行模型。",
+    href: "operator-planning/code-recovery.html",
+    previewFrame: "operator-planning/code-recovery.html?preview=1",
+    interactivePreview: true,
+    tags: ["Code Recovery", "Kernel", "Tiling"]
+  },
+  {
     title: "Recommendation Trace",
     sub: "Explainable Design Advisor",
     group: "算子开发工具",
     status: "lo-fi",
-    desc: "展示设计空间如何按 API、资源与流水约束逐轮收敛，并追溯每类 rejection 的依据。",
-    href: "operator-planning/recommendation-trace-framework-demo.html",
-    previewFrame: "operator-planning/recommendation-trace-framework-demo.html?preview=1",
+    desc: "展示设计空间如何收敛，并审查每个候选的目标 buffer 生命周期、数据路径与逻辑依赖。",
+    href: "operator-planning/recommendation-trace-V3.html",
+    previewFrame: "operator-planning/recommendation-trace-V3.html?preview=1",
     tags: ["Recommendation", "Trace", "Explainability"]
   },
   {
@@ -1492,7 +1534,8 @@ function getFilteredItems() {
 
 function renderPreview(item) {
   if (item.previewFrame) {
-    return `<iframe src="${item.previewFrame}" title="${item.title} 预览" loading="lazy"></iframe>`;
+    const interactiveClass = item.interactivePreview ? " class=\"is-interactive\"" : "";
+    return `<iframe${interactiveClass} src="${item.previewFrame}" title="${item.title} 预览" loading="lazy"></iframe>`;
   }
 
   if (item.preview) {

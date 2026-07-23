@@ -164,7 +164,7 @@
     },
     deepseek: {
       name: "Pangu 2.0 flash",
-      title: "Pangu 2.0 flash 整网图",
+      title: "Pangu 2.0 flash 训练监控",
       meta: "",
       graphKind: "moe",
       trainingGraph: makeDeepSeekTrainingGraph(),
@@ -602,12 +602,11 @@
       },
       // 问题标注：对应进度条上 5 个诊断标记，标在整网图的首个问题节点上
       problemMarkers: [
-        { id: "1", nodeId: "router",              diagnosisKey: "moe-a2a",                  label: "问题1：MoE all-to-all 超时", sub: "layer 38 router → rank 23 死锁 → loss NaN" },
-        { id: "2", nodeId: "query_tensor",        diagnosisKey: "qproj-overflow",           label: "问题2：q_proj FP8 溢出", sub: "layer 33 q_proj 输入 3.2% 超 FP8 E4M3 max(448)" },
-        { id: "3", nodeId: "query_projection",    diagnosisKey: "low-precision-training",    label: "问题3：低精训练 loss 不收敛", sub: "FP8 深层数值退化 → layer 35 偏差起点 → 梯度消失" },
-        { id: "4", nodeId: "routed_experts",      diagnosisKey: "nvlink",                   label: "问题4：NVLINK 链路掉线", sub: "node2 GPU3 lane5 inactive → MFU 骤降至 20%" },
-        { id: "5", nodeId: "lm_head",             diagnosisKey: "perf-compute-bottleneck",  label: "问题5：lm_head 带宽瓶颈", sub: "vocab 129280 非对齐256 → cube_util 仅 49%" },
-        { id: "6", nodeId: "topk_expert_select",  diagnosisKey: "perf-comm-straggler",      label: "问题6：all-to-all 快慢卡", sub: "rank 17/23/41 负载 5× → 步耗时周期性尖峰" },
+        { id: "1", nodeId: "router",              diagnosisKey: "moe-a2a",                  label: "问题1：Router 数值溢出", sub: "FP8 softmax 溢出 → NaN + 死锁双发" },
+        { id: "2", nodeId: "lm_head",             diagnosisKey: "perf-compute-bottleneck",  label: "问题2：lm_head 带宽瓶颈", sub: "vocab 151552 尾块非对齐 → cube_util 仅 49%" },
+        { id: "3", nodeId: "query_tensor",        diagnosisKey: "qproj-overflow",           label: "问题3：q_proj FP8 溢出", sub: "layer 33 q_proj 输入 3.2% 超 FP8 E4M3 max(448)" },
+        { id: "4", nodeId: "query_projection",    diagnosisKey: "low-precision-training",    label: "问题4：低精训练 loss 不收敛", sub: "FP8 深层数值退化 → layer 35 偏差起点 → 梯度消失" },
+        { id: "5", nodeId: "routed_experts",      diagnosisKey: "nvlink",                   label: "问题5：NVLINK 链路掉线", sub: "node2 GPU3 lane5 inactive → MFU 骤降至 20%" },
       ],
     };
   }
@@ -616,7 +615,7 @@
     single8: { label: "8 × Ascend 910B · 1 节点", devices: 64, world: 8, cols: 16, unit: "AI Core 槽位", unitHint: "单节点细粒度视图" },
     cluster64: { label: "64 × Ascend 910B · 8 节点", devices: 64, world: 64, cols: 16, unit: "NPU 卡槽", unitHint: "集群聚合视图" },
     cluster512: { label: "512 × Ascend NPU · 64 节点", devices: 512, world: 512, cols: 32, unit: "NPU 卡槽", unitHint: "集群聚合视图" },
-    cluster2048: { label: "2048 × Ascend 910B · 256 节点", devices: 2048, world: 2048, cols: 64, unit: "910B NPU 卡槽", unitHint: "PP8×EP64×DP 集群视图" },
+    cluster2048: { label: "2048 × Ascend 910B · 256 节点", devices: 2048, world: 2048, cols: 64, unit: "910B NPU 卡槽", unitHint: "PP4×EP64×DP 集群视图" },
   };
 
   const phaseSteps = [
@@ -645,6 +644,10 @@
     devices: [],
   };
 
+  // 时光机「已训练时长」换算用：目标步耗时取自本页定位链案例(openPangu-2.0-Flash 稳态 T_iter 基线 ≤8.5s),
+  // 比用 seen/tokps 反推(会被 target=3e12 tokens 的语料规模拉到几百天)更贴近一次训练的合理周期。
+  const TIME_MACHINE_STEP_SECONDS = 8.5;
+
   const TP_VALUES = [1, 2, 4, 8];
   const PP_VALUES = [1, 2, 4, 8, 16];
   const MB_VALUES = [1, 2, 4, 8];
@@ -667,6 +670,16 @@
     if (days > 0) return `${days}d ${hours}h`;
     if (hours > 0) return `${hours}h ${mins}m`;
     return `${mins}m`;
+  }
+
+  function fmtDurationCN(seconds) {
+    const safeSeconds = Math.max(0, Math.round(seconds));
+    const days = Math.floor(safeSeconds / 86400);
+    const hours = Math.floor((safeSeconds % 86400) / 3600);
+    const mins = Math.floor((safeSeconds % 3600) / 60);
+    if (days > 0) return `${days}天${hours}小时${mins}分`;
+    if (hours > 0) return `${hours}小时${mins}分`;
+    return `${mins}分`;
   }
 
   function seedHistory() {
@@ -693,13 +706,10 @@
         bad: false,
       });
     }
-    if (state.devices[37]) {
-      state.devices[37].temp = 83;
-      state.devices[37].bad = "straggler";
-      state.devices[37].util = 0.52;
-    }
+    // 之前这里固定把 devices[37]/[330] 的温度顶到阈值以上,导致集群监控热力图默认(未进入任何
+    // 问题详情时)就常驻 2 个红框,且它们不对应任何一个诊断案例,讲故事时解释不清——已去掉,
+    // 热力图默认保持健康态,红色只应在联动到具体事故(如 nvlink)时出现。
     if (state.devices[201]) state.devices[201].util = 0.58;
-    if (state.devices[330]) state.devices[330].temp = 84;
     renderHeatShell();
   }
 
@@ -709,11 +719,17 @@
     "rgba(6,182,212,0.06)", "rgba(239,68,68,0.06)", "rgba(34,197,94,0.06)", "rgba(168,85,247,0.06)"
   ];
 
-  var PP_STAGE_COUNT = 8;
-  var PP_COLS_PER_STAGE = 8; // 64 cols / 8 PP stages = 8 cols per stage
+  var PP_STAGE_COUNT = 4;
+  var PP_COLS_PER_STAGE = 16; // 64 cols / 4 PP stages = 16 cols per stage
+
+  // 本页是演示 demo,集群热力图不需要"实时"——着色只在外壳重建后(初始加载/切硬件)
+  // 算一次并冻结,之后 tick/时光机/renderAll 再调用 renderHeat() 都直接跳过,
+  // 不再逐帧重写 2048 个格子的 class/style/tip(此前每次重绘要花数百毫秒)。
+  var heatPainted = false;
 
   function renderHeatShell(heatEl) {
     const heat = heatEl || $("heat");
+    if (!heatEl) heatPainted = false; // 只有主热力图(#heat)外壳重建才需要重新着色
     const profile = hardwareProfiles[state.hardware];
     const cols = profile.cols; // 64
     const rows = profile.devices / cols; // 32
@@ -761,11 +777,11 @@
           var index = dp * rowsPerDp * cols + row * cols + col;
           var ppStage = Math.floor(col / PP_COLS_PER_STAGE);
           var cell = document.createElement("div");
-          cell.className = "twin-heat-cell";
+          // ep-tint-N 类携带底色(见 training-run-twin.css),避免给每个格子单独写内联 background
+          cell.className = "twin-heat-cell ep-tint-" + (col % EP_TINT_COLORS.length);
           cell.dataset.index = String(index);
           cell.dataset.epRank = String(col);
           cell.dataset.ppStage = String(ppStage);
-          cell.style.background = EP_TINT_COLORS[col % EP_TINT_COLORS.length];
           // PP 阶段分界：每 8 列右侧加粗分隔
           if ((col + 1) % PP_COLS_PER_STAGE === 0 && col < cols - 1) {
             cell.style.marginRight = "3px";
@@ -799,6 +815,7 @@
   }
 
   function renderHeat() {
+    if (heatPainted) return; // 已经着色过一次,固定着色,不再逐帧重绘 2048 个格子
     var cells = $("heat").querySelectorAll(".twin-heat-cell");
     var profile = hardwareProfiles[state.hardware];
     var cols = profile.cols;
@@ -809,9 +826,6 @@
     let totalUtil = 0;
     state.devices.forEach((device, index) => {
       var col = index % cols;
-      const targetTemp = 54 + device.util * 23 + (device.bad ? 8 : 0);
-      device.temp = clamp(device.temp * 0.86 + (targetTemp + rand(-2.2, 2.2)) * 0.14, 50, 92);
-      device.util = clamp(device.util + (Math.random() - 0.5) * 0.025, 0.45, 1);
       peak = Math.max(peak, device.temp);
       total += device.temp;
       totalUtil += device.util;
@@ -819,9 +833,9 @@
       if (device.util < 0.7) lowUtil += 1;
       const cell = cells[index];
       if (!cell) return;
-      // 在 EP 底色之上叠加 util 着色（保留 EP rank 列背景作为基底）
-      cell.className = "twin-heat-cell";
-      cell.style.background = EP_TINT_COLORS[col % EP_TINT_COLORS.length];
+      // 在 EP 底色之上叠加 util 着色（ep-tint-N 类保留 EP rank 列背景作为基底,
+      // 避免像之前那样对每个格子重新解析一次内联 background 颜色字符串）
+      cell.className = "twin-heat-cell ep-tint-" + (col % EP_TINT_COLORS.length);
       var utilOverlay = "";
       // PP 分界线保留
       var ppShadow = (col + 1) % PP_COLS_PER_STAGE === 0 && col < cols - 1
@@ -847,15 +861,18 @@
       cell.dataset.tip = tip;
     });
     const avgUtil = totalUtil / state.devices.length;
-    $("hwUtil").textContent = `${(avgUtil * 100).toFixed(0)}%`;
-    $("hwLow").textContent = `${lowUtil}`;
-    $("hwThermal").textContent = `${thermalRisk}`;
-    $("hwThermal").style.color = thermalRisk > 0 ? "var(--danger, #dc2626)" : "";
-    $("hwAction").textContent = lowUtil > state.devices.length * 0.05
-      ? "查低利用 rank"
-      : thermalRisk > 0
-        ? "查降频/散热"
-        : "继续观察";
+    if ($("hwUtil")) {
+      $("hwUtil").textContent = `${(avgUtil * 100).toFixed(0)}%`;
+      $("hwLow").textContent = `${lowUtil}`;
+      $("hwThermal").textContent = `${thermalRisk}`;
+      $("hwThermal").style.color = thermalRisk > 0 ? "var(--danger, #dc2626)" : "";
+      $("hwAction").textContent = lowUtil > state.devices.length * 0.05
+        ? "查低利用 rank"
+        : thermalRisk > 0
+          ? "查降频/散热"
+          : "继续观察";
+    }
+    heatPainted = true;
   }
 
   function renderArchitecture() {
@@ -947,8 +964,15 @@
   const ACC_STRIDE = Math.max(1, Math.round(state.stepsPerEpoch / 20));
   const ACC_EPOCH_STRIDE = Math.max(1, Math.round(ACC_WINDOW / 8)); // val 仅在若干采样点上有值,其余为 null
 
+  /* 窗口右边界永远是 state.step(实时态 = 最新 step,回放态 = 拖块所在 step)。
+     回放到训练早期时 step 可能不够铺满 200×ACC_STRIDE 的窗口,此时按比例收窄步距,
+     保证窗口左边界不越过 step 0(否则会算出负数 step 的"未来之前"数据)。 */
   function computeAccSteps() {
-    return Array.from({ length: ACC_WINDOW }, (_, i) => state.step - (ACC_WINDOW - 1 - i) * ACC_STRIDE);
+    const right = Math.max(0, state.step);
+    const stride = right >= (ACC_WINDOW - 1) * ACC_STRIDE
+      ? ACC_STRIDE
+      : Math.max(1, Math.floor(right / (ACC_WINDOW - 1)));
+    return Array.from({ length: ACC_WINDOW }, (_, i) => Math.max(0, right - (ACC_WINDOW - 1 - i) * stride));
   }
   let accSteps = computeAccSteps();
 
@@ -957,6 +981,9 @@
      事故步本身显示 NaN/inf；恢复期内指标从异常值平滑过渡回正常趋势；
      恢复完成后继续朝好的方向发展（loss 降低、acc 升高等）。 */
   const INCIDENT_STEP = 41230;
+  // 时光机手动拖动很难像点击「问题一」标记那样精确落在单个 step 上,
+  // 故给 W_gate/EP All-to-All 两张卡的事故态判定留一点容差(见 applyViewStep 里的回调)。
+  const INCIDENT_STEP_TOLERANCE = 300;
   const RECOVERY_STEPS = 15;
   const RECOVERY_END = INCIDENT_STEP + RECOVERY_STEPS;
 
@@ -992,6 +1019,12 @@
     const shockGn = atIncident ? Infinity : inRecovery ? (50.0 * (1 - ease) + baseGn * ease) : baseGn;
     const grad_norm = atIncident ? Infinity : +(shockGn).toFixed(2);
 
+    // 权重差分 ‖ΔW‖(逐 step 参数更新幅度的 L2 范数):早期训练步长大、收敛后趋于平稳(convDown 项),
+    // 与 grad_norm 同一根因(事故步梯度发散→ 优化器更新量同步炸至 inf),故事故/恢复处理与 grad_norm 一致。
+    const baseWd = 0.42 + 0.25 * convDown + stepNoise(12, step, 0.03);
+    const shockWd = atIncident ? Infinity : inRecovery ? (3.2 * (1 - ease) + baseWd * ease) : baseWd;
+    const weight_diff = atIncident ? Infinity : +(shockWd).toFixed(4);
+
     const tlBase = Math.max(0.15, targetLoss * (1.0 + 0.7 * convDown) + stepNoise(1, step, 0.11));
     const tl = atIncident ? NaN : inRecovery ? (tlBase + 0.8 * (1 - ease)) : tlBase;
     const vlBase = tlBase + 0.05 + stepNoise(2, step, 0.06);
@@ -1002,8 +1035,10 @@
     const vaBase = clamp(1 - vlBase / 6, 0.05, 0.99);
     const va = atIncident ? NaN : inRecovery ? (vaBase - 0.08 * (1 - ease)) : vaBase;
 
+    // MFU：事故步进程死锁/超时崩溃，该 step 无有效算力读数，记 NaN（口径与 loss/grad_norm 一致，
+    // 而非"测得 0%"）；恢复期进程重启后从低位回升，恢复后继续正常波动
     const mfBase = clamp(targetMfu * (0.72 + 0.28 * convUp) + stepNoise(3, step, 0.03), 0.05, 0.9);
-    const mf = atIncident ? 0 : inRecovery ? (mfBase * ease) : mfBase;
+    const mf = atIncident ? NaN : inRecovery ? (mfBase * ease) : mfBase;
 
     const pcBase = clamp(0.62 + 0.3 * convUp + stepNoise(4, step, 0.045), 0.05, 0.99);
     const pc = atIncident ? NaN : inRecovery ? (pcBase - 0.1 * (1 - ease)) : pcBase;
@@ -1013,9 +1048,13 @@
     const crBase = clamp(0.7 + 0.28 * convUp + stepNoise(6, step, 0.045), -0.3, 0.999);
     const cr = atIncident ? NaN : inRecovery ? (crBase - 0.15 * (1 - ease)) : crBase;
 
-    // HBM 显存利用率：事故步跌至 0（训练中断），恢复期从低位回升，恢复后继续正常波动
+    // F1 = precision、recall 的调和平均，随两者同步计算，事故/恢复处理与 precision、recall 一致
+    const f1 = atIncident ? NaN : (pc + rc > 0 ? (2 * pc * rc) / (pc + rc) : 0);
+
+    // HBM 显存利用率：事故步进程死锁/超时崩溃，该 step 无有效显存读数，记 NaN（同 mf 口径）；
+    // 恢复期进程重启后从低位回升，恢复后继续正常波动
     const memBase = clamp(0.72 + 0.12 * convUp + stepNoise(11, step, 0.03), 0.45, 0.95);
-    const avg_mem = atIncident ? 0 : inRecovery ? (memBase * ease) : memBase;
+    const avg_mem = atIncident ? NaN : inRecovery ? (memBase * ease) : memBase;
 
     // 单卡重跑同一 step(定位链.md 案例一 · 分叉判定):不经历多卡 all-to-all,不受事故影响,全程健康——
     // loss≈3.21、grad_norm≈11.8,用于和上面的多卡曲线对照,证明问题只在多卡复现。
@@ -1024,16 +1063,16 @@
     return {
       train_loss: +tl.toFixed(4), val_loss: +vl.toFixed(4),
       train_acc: +ta.toFixed(4), val_acc: +va.toFixed(4),
-      mfu: +mf.toFixed(4), precision: +pc.toFixed(4), recall: +rc.toFixed(4),
+      mfu: +mf.toFixed(4), precision: +pc.toFixed(4), recall: +rc.toFixed(4), f1: +f1.toFixed(4),
       rollout_actor_probs_pearson_corr: +cr.toFixed(4),
       avg_mem: +avg_mem.toFixed(4),
-      loss, grad_norm, loss_single, grad_norm_single,
+      loss, grad_norm, loss_single, grad_norm_single, weight_diff,
     };
   }
 
   function buildAccuracyData(steps) {
     const n = steps.length;
-    const cols = { train_loss: [], val_loss: [], train_acc: [], val_acc: [], mfu: [], precision: [], recall: [], rollout_actor_probs_pearson_corr: [], avg_mem: [], loss: [], grad_norm: [], loss_single: [], grad_norm_single: [] };
+    const cols = { train_loss: [], val_loss: [], train_acc: [], val_acc: [], mfu: [], precision: [], recall: [], f1: [], rollout_actor_probs_pearson_corr: [], avg_mem: [], loss: [], grad_norm: [], loss_single: [], grad_norm_single: [], weight_diff: [] };
     steps.forEach((s, i) => {
       const m = metricsAtStep(s, n > 1 ? i / (n - 1) : 1);
       const isEpoch = i % ACC_EPOCH_STRIDE === 0 || i === n - 1;
@@ -1044,12 +1083,14 @@
       cols.mfu.push(m.mfu);
       cols.precision.push(m.precision);
       cols.recall.push(m.recall);
+      cols.f1.push(m.f1);
       cols.rollout_actor_probs_pearson_corr.push(m.rollout_actor_probs_pearson_corr);
       cols.avg_mem.push(m.avg_mem);
       cols.loss.push(m.loss);
       cols.grad_norm.push(m.grad_norm);
       cols.loss_single.push(m.loss_single);
       cols.grad_norm_single.push(m.grad_norm_single);
+      cols.weight_diff.push(m.weight_diff);
     });
     return cols;
   }
@@ -1071,15 +1112,26 @@
         { id: "train_loss", label: "train loss", key: "train_loss", colorVar: "--twin-chart-loss" },
         { id: "val_loss", label: "val loss", key: "val_loss", colorVar: "--twin-chart-gradnorm", emphasis: true },
       ] },
-    { id: "acc", name: "acc", legend: true, formatValue: fmtAccPct, series: [
+    { id: "acc", name: "acc", legend: true, formatValue: fmtAccPct,
+      tipCarryForward: false, markerStep: INCIDENT_STEP,
+      series: [
       { id: "train_acc", label: "train acc", key: "train_acc", colorVar: "--twin-chart-acc" },
       { id: "val_acc", label: "val acc", key: "val_acc", colorVar: "--twin-chart-loss", emphasis: true },
     ] },
-    { id: "precision", name: "precision", legend: false, note: "预测正例中的准确率", formatValue: fmtAccPct, series: [
+    { id: "precision", name: "precision", legend: false, note: "预测正例中的准确率", formatValue: fmtAccPct,
+      tipCarryForward: false, markerStep: INCIDENT_STEP,
+      series: [
       { id: "precision", label: "precision", key: "precision", colorVar: "--twin-chart-precision", emphasis: true },
     ] },
-    { id: "recall", name: "recall", legend: false, note: "真实正例的召回率", formatValue: fmtAccPct, series: [
+    { id: "recall", name: "recall", legend: false, note: "真实正例的召回率", formatValue: fmtAccPct,
+      tipCarryForward: false, markerStep: INCIDENT_STEP,
+      series: [
       { id: "recall", label: "recall", key: "recall", colorVar: "--twin-chart-recall", emphasis: true },
+    ] },
+    { id: "f1", name: "f1", legend: false, note: "precision 与 recall 的调和平均", formatValue: fmtAccPct,
+      tipCarryForward: false, markerStep: INCIDENT_STEP,
+      series: [
+      { id: "f1", label: "f1", key: "f1", colorVar: "--twin-chart-f1", emphasis: true },
     ] },
     { id: "gradnorm", name: "grad_norm", legend: false,
       note: `step ${INCIDENT_STEP} MoE all-to-all 超时 → grad_norm 跳至 inf，AI 定位修复后 ${RECOVERY_STEPS} 步内恢复`,
@@ -1088,21 +1140,57 @@
       series: [
         { id: "gradnorm", label: "grad_norm", key: "grad_norm", colorVar: "--twin-chart-gradnorm", emphasis: true },
       ] },
-    { id: "corr", name: "rollout_actor_probs_pearson_corr", legend: false, note: "rollout 与训练 actor 概率相关系数", formatValue: (v) => (v == null ? "—" : v.toFixed(3)), series: [
+    { id: "weightdiff", name: "weight_diff", legend: true,
+      note: `参数更新幅度 ‖ΔW‖，与 grad_norm 同一根因同步观察；step ${INCIDENT_STEP} 梯度发散时同步跳至 inf`,
+      formatValue: (v) => (v == null ? "—" : !isFinite(v) ? "inf" : v.toFixed(4)),
+      tipCarryForward: false, markerStep: INCIDENT_STEP,
+      series: [
+        { id: "weight_diff", label: "‖ΔW‖", key: "weight_diff", colorVar: "--twin-chart-weightdiff" },
+        // grad_norm 量级(约 12~50)远大于 ‖ΔW‖(约 0.4~3.2),放右轴独立定域,避免被压成贴底的平线
+        { id: "gradnorm_ref", label: "grad_norm (右轴)", key: "grad_norm", colorVar: "--twin-chart-gradnorm", emphasis: true, axis: "right" },
+      ] },
+    { id: "corr", name: "rollout_actor_probs_pearson_corr", legend: false, note: "rollout 与训练 actor 概率相关系数", formatValue: (v) => (v == null ? "—" : v.toFixed(3)),
+      tipCarryForward: false, markerStep: INCIDENT_STEP,
+      series: [
       { id: "corr", label: "pearson corr", key: "rollout_actor_probs_pearson_corr", colorVar: "--twin-chart-corr", emphasis: true },
     ] },
   ];
 
+  /* infra 两图(MFU / 显存利用率)的 y 轴域：只按「健康段」取值域。
+     这两个指标事故步本身为 NaN（无效读数），恢复期从 0 回升，若把 0 纳入值域，正常波动（MFU 约 0.45~0.60、
+     HBM 约 0.72~0.85）会被压成图表顶部一条窄带，下方大片留白 —— 图表空间大但看不出波动。
+     这里排除事故窗口 [INCIDENT_STEP, RECOVERY_END] 内的点后再取 min/max 并留 8% 余量；
+     骤降段被图表 clip 裁到画面外，事故本身仍由下方 regions 区带 + 悬浮气泡的真实数值体现。 */
+  function healthyDomain(values, steps) {
+    if (!values) return null;
+    let min = Infinity, max = -Infinity;
+    steps.forEach((st, i) => {
+      const v = values[i];
+      if (v == null || !isFinite(v)) return;
+      if (st >= INCIDENT_STEP && st <= RECOVERY_END) return;
+      if (v < min) min = v;
+      if (v > max) max = v;
+    });
+    if (!isFinite(min) || !isFinite(max)) return null;   // 窗口整段落在事故区 → 退回引擎自适应
+    if (min === max) { min -= 0.01; max += 0.01; }
+    const pad = (max - min) * 0.08;
+    return [min - pad, max + pad];
+  }
+
   const INFRA_CARD_DEFS = [
     { id: "mfu", name: "MFU", legend: false,
-      note: "Model FLOPS Utilization · 训练算力利用效率",
+      note: `Model FLOPS Utilization · 训练算力利用效率；step ${INCIDENT_STEP} 进程死锁崩溃，无有效读数记为 NaN`,
       formatValue: (v) => (v == null ? "—" : `${(v * 100).toFixed(1)}%`),
+      markerStep: INCIDENT_STEP,
+      yDomain: (steps, data) => ({ left: healthyDomain(data.mfu, steps) }),
       series: [
         { id: "mfu", label: "MFU", key: "mfu", colorVar: "--twin-chart-mfu", emphasis: true },
       ] },
     { id: "avg_mem", name: "显存利用率", legend: false,
-      note: "HBM 平均占用率 · 跨卡均值",
+      note: `HBM 平均占用率 · 跨卡均值；step ${INCIDENT_STEP} 进程死锁崩溃，无有效读数记为 NaN`,
       formatValue: (v) => (v == null ? "—" : `${(v * 100).toFixed(1)}%`),
+      markerStep: INCIDENT_STEP,
+      yDomain: (steps, data) => ({ left: healthyDomain(data.avg_mem, steps) }),
       series: [
         { id: "avg_mem", label: "HBM", key: "avg_mem", colorVar: "--twin-chart-mem", emphasis: true },
       ] },
@@ -1164,17 +1252,28 @@
     const regions = cfg.markerStep != null
       ? [{ start: cfg.markerStep, end: Math.min(RECOVERY_END, steps[steps.length - 1]), label: "事故 · 恢复" }]
       : (cfg.regions || null);
+    const data = cfg.data || ACC_DATA;
+    // x 轴刻度档数按实际绘图宽度动态收缩：窄卡(训练监控侧栏 2 列)硬塞 4 档会首尾数字交错重叠，
+    // 宽一点的场景(如「问题一·迭代层」大图)才有空间摆下 3~4 档。阈值按 pad.l(40)+pad.r(10) 扣完后的
+    // plotW 估算：每档数字(如"41230")在 10px 等宽字体下约占 30~35px，需要档间留白避免贴边。
+    const plotW = w - 50;
+    const xTicks = plotW < 150 ? 2 : plotW < 260 ? 3 : 4;
     const renderOpts = {
       steps,
       series: cfg.series.map((s) => ({ axis: "left", ...s })),
-      data: cfg.data || ACC_DATA,
+      data,
       regions,
-      cursor: cfg.markerStep != null ? cfg.markerStep : null,
+      // cfg.yDomain 可为函数(按当前窗口数据算)或常量对象;不给则由引擎自适应
+      yDomain: typeof cfg.yDomain === "function" ? cfg.yDomain(steps, data) : (cfg.yDomain || null),
+      // markerStep：常驻红色虚线(事故点)，与 cursor(仅 hover 时临时出现的中性色游标)彻底分开，
+      // 故这里 cursor 恒为 null，不再借用 markerStep 当初始值
+      markerStep: cfg.markerStep,
+      cursor: null,
       smoothing: accSmoothing,
       cursorTooltip: true,
       tipCarryForward: cfg.tipCarryForward !== false,
       formatValue: cfg.formatValue,
-      options: { width: w, height: h, pad: { t: 14, r: 10, b: 20, l: 40 }, xTicks: 4 },
+      options: { width: w, height: h, pad: { t: 14, r: 10, b: 20, l: 40 }, xTicks },
       onBrush: false,
       // 图例固定不走引擎内置(会作为额外 DOM 追加进被测量高度的容器,配合 auto-height 造成"越拉越高"的循环增长);
       // 需要图例时改由调用方在容器外自行渲染(见 mountLocateMetricCharts 的 buildAccLegend)
@@ -1184,10 +1283,9 @@
     renderOpts.onCursorHover = (step) => {
       accCards.forEach((c) => { if (c.ctrl) { c.ctrl.setCursor(step); c.ctrl.setTooltip(true); } });
     };
-    // 鼠标离开后收起所有图表的气泡；对于有 markerStep 的图表（loss / grad_norm）收回问题点
+    // 鼠标离开后收起所有图表的气泡(事故点红线是常驻标注，不随 hover 变化，不需要在这里复位)
     renderOpts.onCursorLeave = () => {
       accCards.forEach((c) => { if (c.ctrl) c.ctrl.setTooltip(false); });
-      if (cfg.markerStep != null && ctrl) ctrl.setCursor(cfg.markerStep);
     };
     ctrl = window.PtoTrainingMetricsChart.render(el, renderOpts);
     return ctrl;
@@ -1202,8 +1300,22 @@
     card.ctrl = renderMetricChart(card.wrap, card.cfg, w, h);
   }
 
+  // 先统一读完所有卡片的尺寸(一次 layout flush),再统一写(renderMetricChart 重建图表 DOM)。
+  // 逐卡"读尺寸→建 DOM→读下一张尺寸"交替着来的话,每张卡都会强制浏览器同步跑一次 layout——
+  // profiler 实测这是 tick() 单帧里最重的一块(N 张卡 N 次同步 layout,而不是 1 次)。
   function syncAccCards(force) {
-    accCards.forEach((c) => syncAccCard(c, force));
+    const pending = [];
+    accCards.forEach((card) => {
+      const w = Math.round(card.wrap.clientWidth || 0);
+      const h = Math.round(card.wrap.clientHeight || 0);
+      if (w < 2 || h < 2) return;
+      if (!force && card.ctrl && w === card.size.w && h === card.size.h) return;
+      pending.push({ card, w, h });
+    });
+    pending.forEach(({ card, w, h }) => {
+      card.size = { w, h };
+      card.ctrl = renderMetricChart(card.wrap, card.cfg, w, h);
+    });
   }
 
   function renderAccReadouts() {
@@ -1212,9 +1324,29 @@
       const data = c.cfg.data || ACC_DATA;
       const v = data[c.cfg.series[0].key][steps.length - 1];
       c.valEl.textContent = c.cfg.formatValue ? c.cfg.formatValue(v) : (v == null ? "—" : v);
-      const txt = c.valEl.textContent;
-      c.valEl.classList.toggle("is-danger", txt === "NaN" || txt === "inf");
+      // 按数值而非格式化文本判断是否标红：acc/precision/recall/f1 走 fmtAccPct 会拼出 "NaN%"，
+      // 不等于裸 "NaN"，字符串精确匹配会漏判，故统一用 !isFinite(v) 判定问题值
+      c.valEl.classList.toggle("is-danger", v != null && !isFinite(v));
     });
+  }
+
+  // 页面上可能同时挂多个 smoothing 滑条(精度卡 / infra 集群监控 / 迭代层),
+  // 它们共享同一个 accSmoothing —— 拖动任一个都要把其余滑条的位置与读数镜像过去。
+  let smoothControls = []; // [{range, out}]
+
+  function applySmoothing(value, source) {
+    accSmoothing = value;
+    const pct = String(Math.round(value * 100));
+    const txt = value.toFixed(2);
+    smoothControls = smoothControls.filter((c) => c.range.isConnected);
+    smoothControls.forEach((c) => {
+      if (c.range !== source) c.range.value = pct;
+      c.out.textContent = txt;
+    });
+    syncAccCards(true);
+    syncInfraCards(true);
+    syncLocateMetricCharts(true);
+    renderCase6MetricCharts(); // 问题二迭代层的 loss/grad_norm 也随滑条重画(无对应容器时内部自动跳过)
   }
 
   function buildAccuracySmoothControl() {
@@ -1231,12 +1363,9 @@
     range.setAttribute("aria-label", "曲线平滑度");
     const out = document.createElement("output");
     out.textContent = accSmoothing.toFixed(2);
+    smoothControls.push({ range, out });
     range.addEventListener("input", () => {
-      accSmoothing = (+range.value) / 100;
-      out.textContent = accSmoothing.toFixed(2);
-      syncAccCards(true);
-      syncLocateMetricCharts(true);
-      renderCase6MetricCharts(); // 问题二迭代层的 loss/grad_norm 也随滑条重画(无对应容器时内部自动跳过)
+      applySmoothing((+range.value) / 100, range);
     });
     wrap.appendChild(lab);
     wrap.appendChild(range);
@@ -1267,6 +1396,102 @@
     renderAccReadouts();
   }
 
+  // ── 智能对话「调整图表」演示场景专用:临时把精度栏 4 张卡换成新指标,关闭对话框(见
+  // js/training-chat-panel.js 的 revertChartsOverrideIfActive)即还原。复用真实图表引擎
+  // (buildAccCard/renderMetricChart)与 metricsAtStep 同款"先快后缓收敛 + 事故态回弹"曲线形状,
+  // 只是喂入虚构的新指标数据,不写回 ACC_DATA/ACC_CARD_DEFS,不影响其余联动逻辑。
+  function demoMetricSeries(seed, base, span, noiseAmp, incidentBump) {
+    return accSteps.map((step, i) => {
+      const t = accSteps.length > 1 ? i / (accSteps.length - 1) : 1;
+      const recRaw = (step - INCIDENT_STEP - 1) / (RECOVERY_STEPS - 1 || 1);
+      const rec = step <= INCIDENT_STEP ? 0 : step >= RECOVERY_END ? 1 : Math.min(1, Math.max(0, recRaw));
+      const ease = rec < 0.5 ? 2 * rec * rec : -1 + (4 - 2 * rec) * rec;
+      const atIncident = step === INCIDENT_STEP;
+      const inRecovery = step > INCIDENT_STEP && step < RECOVERY_END;
+      const convUp = t >= 1 ? 1 : 1 - Math.pow(2, -5.5 * t);
+      const baseVal = base - span * convUp + stepNoise(seed, step, noiseAmp);
+      if (atIncident) return NaN;
+      return +(inRecovery ? baseVal + incidentBump * (1 - ease) : baseVal).toFixed(4);
+    });
+  }
+
+  // 「数值 t 分布」自由度 ν:不跟随主事故步,而是在已定位的问题四(低精训练 loss 不收敛,
+  // step 28000~35000)窗口内走低,呼应 diagnosisCases["low-precision-training"] 的叙事。
+  function demoTDistSeries() {
+    const mid = 31500, half = 3500;
+    return accSteps.map((step) => {
+      if (step === INCIDENT_STEP) return NaN;
+      const baseNu = 7.2 + stepNoise(21, step, 0.35);
+      if (step >= 28000 && step <= 35000) {
+        const dipT = 1 - Math.min(1, Math.abs(step - mid) / half);
+        return +(baseNu - 3.6 * dipT).toFixed(2);
+      }
+      return +baseNu.toFixed(2);
+    });
+  }
+
+  const fmtDemoLoss = (digits) => (v) => (v == null || !isFinite(v) ? "—" : v.toFixed(digits));
+
+  const ACC_DEMO_REPLACEMENTS = [
+    { targetId: "precision", id: "wplc_val_loss", key: "wplc_val_loss", name: "WPLC val loss",
+      note: "WPLC(Wikipedia+Pile 混合语料)验证集 loss，衡量通用语言建模能力",
+      colorVar: "--twin-chart-precision", formatValue: fmtDemoLoss(3),
+      genSeries: () => demoMetricSeries(31, 4.6, 1.7, 0.08, 1.4) },
+    { targetId: "recall", id: "lambada_val_loss", key: "lambada_val_loss", name: "LAMBADA val loss",
+      note: "LAMBADA 完形填空评测集验证 loss，衡量长程上下文理解能力",
+      colorVar: "--twin-chart-recall", formatValue: fmtDemoLoss(3),
+      genSeries: () => demoMetricSeries(32, 5.8, 2.4, 0.12, 2.0) },
+    { targetId: "f1", id: "z_loss", key: "z_loss", name: "Z loss",
+      note: "logits 归一化正则项(z-loss)，抑制 softmax 前 logits 幅值发散",
+      colorVar: "--twin-chart-f1", formatValue: fmtDemoLoss(4),
+      genSeries: () => demoMetricSeries(33, 0.18, 0.14, 0.012, 0.25) },
+    { targetId: "corr", id: "t_dist_nu", key: "t_dist_nu", name: "数值 t 分布 (ν)",
+      note: "逐层激活值分布拟合为 t 分布后的自由度 ν，越低代表尾部越重、越易在 FP8 下溢出；日志无直接字段，按激活值分布派生计算",
+      colorVar: "--twin-chart-corr", formatValue: fmtDemoLoss(2),
+      genSeries: () => demoTDistSeries() },
+  ];
+
+  let accDemoOverrideBackup = null; // null = 未应用；应用后存 [{idx, original, originalCardEl}]
+
+  window.twinDemoApplyAccuracyOverride = function () {
+    if (accDemoOverrideBackup || !accCards.length) return false;
+    const backup = [];
+    ACC_DEMO_REPLACEMENTS.forEach((rep) => {
+      const idx = accCards.findIndex((c) => c.cfg.id === rep.targetId);
+      if (idx === -1) return;
+      const original = accCards[idx];
+      const originalCardEl = original.wrap.parentElement;
+      backup.push({ idx, original, originalCardEl });
+      const cfg = {
+        id: rep.id, name: rep.name, legend: false, note: rep.note,
+        formatValue: rep.formatValue, tipCarryForward: false, markerStep: INCIDENT_STEP,
+        data: { [rep.key]: rep.genSeries() },
+        series: [{ id: rep.id, label: rep.name, key: rep.key, colorVar: rep.colorVar, emphasis: true }],
+      };
+      const built = buildAccCard(cfg);
+      originalCardEl.replaceWith(built.card);
+      const entry = { cfg, valEl: built.valEl, wrap: built.wrap, ctrl: null, size: { w: 0, h: 0 } };
+      accCards[idx] = entry;
+      syncAccCard(entry, true);
+    });
+    accDemoOverrideBackup = backup;
+    renderAccReadouts();
+    return true;
+  };
+
+  window.twinDemoResetAccuracyOverride = function () {
+    if (!accDemoOverrideBackup) return false;
+    accDemoOverrideBackup.forEach(({ idx, original, originalCardEl }) => {
+      const currentCardEl = accCards[idx] && accCards[idx].wrap && accCards[idx].wrap.parentElement;
+      if (currentCardEl && currentCardEl.parentNode) currentCardEl.replaceWith(originalCardEl);
+      accCards[idx] = original;
+      syncAccCard(original, true);
+    });
+    accDemoOverrideBackup = null;
+    renderAccReadouts();
+    return true;
+  };
+
   // ── infra 图表（MFU / 显存利用率）────────────────────────────────────────
   let infraCards = []; // [{cfg, valEl, wrap, ctrl, size}]
 
@@ -1279,8 +1504,20 @@
     card.ctrl = renderMetricChart(card.wrap, card.cfg, w, h);
   }
 
+  // 同 syncAccCards:批量读完尺寸再批量写,避免逐卡读写交替触发多次同步 layout。
   function syncInfraCards(force) {
-    infraCards.forEach((c) => syncInfraCard(c, force));
+    const pending = [];
+    infraCards.forEach((card) => {
+      const w = Math.round(card.wrap.clientWidth || 0);
+      const h = Math.round(card.wrap.clientHeight || 0);
+      if (w < 2 || h < 2) return;
+      if (!force && card.ctrl && w === card.size.w && h === card.size.h) return;
+      pending.push({ card, w, h });
+    });
+    pending.forEach(({ card, w, h }) => {
+      card.size = { w, h };
+      card.ctrl = renderMetricChart(card.wrap, card.cfg, w, h);
+    });
   }
 
   function renderInfraReadouts() {
@@ -1289,12 +1526,20 @@
       const data = c.cfg.data || ACC_DATA;
       const v = data[c.cfg.series[0].key][steps.length - 1];
       c.valEl.textContent = c.cfg.formatValue ? c.cfg.formatValue(v) : (v == null ? "—" : v);
+      // 与精度栏同一套"问题值标红"语义：事故步 MFU/显存利用率也是 NaN（无效读数）
+      c.valEl.classList.toggle("is-danger", v != null && !isFinite(v));
     });
   }
 
   function initInfraCharts() {
     const host = $("infraCharts");
     if (!host || !window.PtoTrainingMetricsChart) return;
+    // 「集群监控」标题右侧的 smoothing 滑条：与「精度」卡那个互为镜像(共享 accSmoothing)
+    const smoothSlot = $("infraSmoothSlot");
+    if (smoothSlot) {
+      smoothSlot.innerHTML = "";
+      smoothSlot.appendChild(buildAccuracySmoothControl());
+    }
     host.innerHTML = "";
     const cardsWrap = document.createElement("div");
     cardsWrap.className = "twin-accuracy-cards";
@@ -1311,37 +1556,236 @@
   }
 
   function renderVitals() {
-    const acc = clamp(1 - state.loss / 6, 0, 1);
-    const accEMA = clamp(1 - state.lossEMA / 6, 0, 1);
-    const avgMem = state.devices.length
+    // 回放态：关键指标改读 ACC_DATA 窗口右端(= 拖块所在 step)的值,和精度/infra 图表同源;
+    // 实时态仍用 state 上的随机游走值,行为不变。
+    const replay = isTimeMachineReplaying() && ACC_DATA ? ACC_DATA : null;
+    const last = (key) => {
+      const col = replay && replay[key];
+      if (!col) return null;
+      for (let i = col.length - 1; i >= 0; i -= 1) if (col[i] != null) return col[i];
+      return null;
+    };
+    const rTrainLoss = last("train_loss");
+    const rValLoss = last("val_loss");
+    const rMfu = last("mfu");
+    const rMem = last("avg_mem");
+    const rAcc = last("train_acc");
+
+    const shownLoss = rTrainLoss != null ? rTrainLoss : state.loss;
+    const acc = rAcc != null ? rAcc : clamp(1 - state.loss / 6, 0, 1);
+    const accEMA = clamp(1 - (rTrainLoss != null ? rTrainLoss : state.lossEMA) / 6, 0, 1);
+    const avgMem = rMem != null ? rMem : (state.devices.length
       ? state.devices.reduce((sum, device) => sum + device.mem, 0) / state.devices.length
-      : 0;
+      : 0);
+    const shownVal = rValLoss != null ? rValLoss : state.val;
+    const shownMfu = rMfu != null ? rMfu : state.mfu;
     setText("vAcc", `${(acc * 100).toFixed(1)}%`);
     setText("vAccSub", `ema ${(accEMA * 100).toFixed(1)}%`);
-    setText("vLoss", state.loss.toFixed(3));
-    setText("vLossSub", `val ${state.val.toFixed(3)} · ema ${state.lossEMA.toFixed(3)}`);
-    setText("vMfu", `${(state.mfu * 100).toFixed(1)}%`);
+    setText("vLoss", Number.isFinite(shownLoss) ? shownLoss.toFixed(3) : "NaN");
+    setText("vLossSub", `val ${Number.isFinite(shownVal) ? shownVal.toFixed(3) : "NaN"} · ema ${(rTrainLoss != null ? rTrainLoss : state.lossEMA).toFixed(3)}`);
+    setText("vMfu", `${(shownMfu * 100).toFixed(1)}%`);
     setText("vMem", `${(avgMem * 100).toFixed(1)}%`);
     setText("vMemSub", `HBM avg / ${state.devices.length} 卡`);
   }
 
+  /* ===== 时光机回放 =====
+     liveStep 是训练真正推进到的最新 step(由 tick() 独占推进);state.step 是"当前展示的 step"。
+     实时态两者相等;回放态 state.step 被拖块钉在历史某步,tick() 只更新 liveStep 不重绘图表,
+     所有以 state.step 为时钟的视图(精度/infra 图表窗口、进度读数、集群热力图、关键指标)
+     因此整体回到那一步的状态。拖块只能在 [0, liveStep] 内移动 —— 未执行的 step 无从回放。 */
+  let liveStep = state.step;
+  let isReplaying = false;
+  let liveDeviceSnapshot = null;
+
+  /* 可回放的最早 step。图表窗口是「以展示 step 为右边界的 ACC_WINDOW 个采样点」,
+     step 小于窗口点数时步距会被压到 0,200 个采样点全落在同一 step 上,
+     x 轴跨度归零 → 坐标算成 NaN,图表卡死。因此下限取一个窗口的点数,保证跨度恒 > 0。 */
+  const MIN_VIEW_STEP = ACC_WINDOW;
+
+  function isTimeMachineReplaying() { return isReplaying; }
+
+  // 回放态的集群热力图必须可复现：同一 step 拖过去几次都是同一张图，
+  // 因此用 stepNoise(绝对 step 播种)代替 renderHeat() 里的随机游走。
+  function applyReplayDevices(step) {
+    state.devices.forEach((device, index) => {
+      const base = liveDeviceSnapshot ? liveDeviceSnapshot[index] : device;
+      device.util = clamp(base.util + stepNoise(20 + (index % 16), step, 0.06), 0.45, 1);
+      device.mem = clamp(base.mem + stepNoise(40 + (index % 16), step, 0.05), 0.3, 0.98);
+      device.temp = clamp(54 + device.util * 23 + (device.bad ? 8 : 0) + stepNoise(60 + (index % 16), step, 2.2), 50, 92);
+    });
+  }
+
+  /* 回放/返回统一走这里：换掉展示时钟 → 重算数据 → 重绘所有以 step 为时钟的视图。
+     opts.dragging = 拖动中的中间帧,跳过集群热力图。热力图要逐卡重写 2048 个格子的
+     class/style/tip(实测每帧数百毫秒,是拖动卡顿的唯一大头),而图表整套重绘只要 ~7ms;
+     所以拖动中图表逐帧跟手回放,热力图留到松手那一帧补齐。 */
+  function applyViewStep(step, opts) {
+    const dragging = !!(opts && opts.dragging);
+    const target = clamp(Math.round(step), Math.min(MIN_VIEW_STEP, liveStep), liveStep);
+    const wasReplaying = isReplaying;
+    isReplaying = target < liveStep;
+    if (isReplaying && !wasReplaying) {
+      // 首次进入回放：留存实时态的设备基线，返回时原样恢复
+      liveDeviceSnapshot = state.devices.map((d) => ({ util: d.util, temp: d.temp, mem: d.mem }));
+    }
+    state.step = target;
+    if (isWzhTwinPage() && typeof window.wzhSyncProblemOneMonitorCards === "function") {
+      window.wzhSyncProblemOneMonitorCards(Math.abs(target - INCIDENT_STEP) <= INCIDENT_STEP_TOLERANCE);
+    }
+    if (!dragging) {
+      if (isReplaying) {
+        applyReplayDevices(target);
+      } else if (liveDeviceSnapshot) {
+        state.devices.forEach((d, i) => Object.assign(d, liveDeviceSnapshot[i]));
+        liveDeviceSnapshot = null;
+      }
+    }
+    refreshAccuracyData();
+    renderVitals();
+    renderProgress();
+    if (!dragging) {
+      renderHeat();
+      if (activeLocateCase) syncLocateInfraHeat(activeLocateCase);
+      renderWhatIf();
+    }
+    syncAccCards(true);
+    syncInfraCards(true);
+    if (!dragging) syncLocateMetricCharts(true);
+    renderAccReadouts();
+    renderInfraReadouts();
+  }
+
+  function exitTimeMachine() {
+    applyViewStep(liveStep);
+    // 只有 wzh 单屏页面的时光机才会触发问题一透镜(见 activateProblemOneLens),
+    // 返回最新 step 时一并收起,避免整网图/infra 热力图残留上一次的问题聚焦。
+    if (isWzhTwinPage()) {
+      clearDiagnosisFocus();
+      hideDiagnosisLocator();
+    }
+  }
+
   function renderProgress() {
     const pct = clamp(state.step / state.totalSteps, 0, 1);
-    const epoch = Math.floor(state.step / state.stepsPerEpoch) + 1;
-    const totalEpochs = Math.ceil(state.totalSteps / state.stepsPerEpoch);
-    $("progressPct").textContent = `${(pct * 100).toFixed(1)}%`;
+    const livePct = clamp(liveStep / state.totalSteps, 0, 1);
+    // progressPct/progressEpoch 只在旧版 training-monitoring.html 的进度条里还有对应节点，
+    // wzh 单屏时光机卡已去掉这两项展示（40.2% 冗余；预训练语料通常只过 1 遍，Epoch 计数没有意义）。
+    setText("progressPct", `${(pct * 100).toFixed(1)}%`);
     $("progressFill").style.width = `${(pct * 100).toFixed(2)}%`;
     $("progressStepCurrent").textContent = state.step.toLocaleString();
     $("progressStepTotal").textContent = state.totalSteps.toLocaleString();
-    $("progressEpoch").textContent = `${epoch} / ${totalEpochs}`;
+    const epoch = Math.floor(state.step / state.stepsPerEpoch) + 1;
+    const totalEpochs = Math.ceil(state.totalSteps / state.stepsPerEpoch);
+    setText("progressEpoch", `${epoch} / ${totalEpochs}`);
+    setText("progressElapsed", fmtDurationCN(state.step * TIME_MACHINE_STEP_SECONDS));
+
+    const live = document.getElementById("progressLive");
+    if (live) live.style.width = `${(livePct * 100).toFixed(2)}%`;
+    const thumb = document.getElementById("progressThumb");
+    if (thumb) {
+      thumb.style.left = `${(pct * 100).toFixed(2)}%`;
+      thumb.setAttribute("aria-valuenow", String(state.step));
+      thumb.setAttribute("aria-valuemin", String(Math.min(MIN_VIEW_STEP, liveStep)));
+      thumb.setAttribute("aria-valuemax", String(liveStep));
+      thumb.setAttribute("aria-valuetext", `Step ${state.step.toLocaleString()}`);
+    }
+    document.querySelector(".wzh-timemachine-card")?.classList.toggle("is-replay", isReplaying);
+
     renderDiagnosisMarkers();
   }
 
+  function bindTimeMachine() {
+    const track = document.getElementById("progressTrack");
+    const thumb = document.getElementById("progressThumb");
+    if (!track || !thumb) return;
+
+    const stepFromClientX = (clientX) => {
+      const rect = track.getBoundingClientRect();
+      if (!rect.width) return state.step;
+      const ratio = clamp((clientX - rect.left) / rect.width, 0, 1);
+      // 越过 liveStep 的部分是"还没跑到的 step",不可拖
+      return clamp(Math.round(ratio * state.totalSteps), Math.min(MIN_VIEW_STEP, liveStep), liveStep);
+    };
+
+    let dragging = false;
+    // 拖动中图表按 rAF 节流重画：ACC_DATA 每次要算 200 点 ×13 条序列，逐 pointermove 重算会掉帧
+    let pendingStep = null;
+    let raf = 0;
+    const flush = () => {
+      raf = 0;
+      if (pendingStep == null) return;
+      applyViewStep(pendingStep, { dragging });
+      pendingStep = null;
+    };
+    const scheduleStep = (step) => {
+      pendingStep = step;
+      if (!raf) raf = requestAnimationFrame(flush);
+    };
+
+    const onMove = (e) => {
+      if (!dragging) return;
+      e.preventDefault();
+      scheduleStep(stepFromClientX(e.clientX));
+    };
+    const onUp = () => {
+      if (!dragging) return;
+      const landedAt = pendingStep != null ? pendingStep : state.step;
+      dragging = false;  // 先落回非拖动态,下面这次重绘才会把热力图等"重活"补齐
+      track.classList.remove("is-dragging");
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+      if (raf) { cancelAnimationFrame(raf); raf = 0; }
+      pendingStep = null;
+      applyViewStep(landedAt); // 松手必定整套重绘一次,不依赖是否还有未 flush 的帧
+    };
+
+    const onDown = (e) => {
+      if (e.button != null && e.button !== 0) return;
+      dragging = true;
+      track.classList.add("is-dragging");
+      thumb.focus({ preventScroll: true });
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+      window.addEventListener("pointercancel", onUp);
+      scheduleStep(stepFromClientX(e.clientX));
+    };
+
+    thumb.addEventListener("pointerdown", onDown);
+    // 轨道上点击即跳转到该 step；问题点标注保留原有的 hover 气泡 + 点击展开诊断卡,不当作拖拽起点
+    track.addEventListener("pointerdown", (e) => {
+      if (e.target === thumb || e.target.closest?.(".twin-progress-marker")) return;
+      onDown(e);
+    });
+
+    // 键盘：←/→ 单步、PageUp/PageDown 粗调、Home/End 到两端
+    thumb.addEventListener("keydown", (e) => {
+      const coarse = Math.max(1, Math.round(state.stepsPerEpoch));
+      const delta = { ArrowLeft: -2, ArrowRight: 2, PageDown: -coarse, PageUp: coarse }[e.key];
+      if (delta != null) { e.preventDefault(); applyViewStep(state.step + delta); return; }
+      if (e.key === "Home") { e.preventDefault(); applyViewStep(MIN_VIEW_STEP); }
+      if (e.key === "End") { e.preventDefault(); exitTimeMachine(); }
+    });
+
+    document.getElementById("diagnosisLocatorClose")?.addEventListener("click", exitTimeMachine);
+  }
+
   const artifacts = [
-    { name: "ckpt-500", meta: "loss 0.44" },
-    { name: "ckpt-400", meta: "loss 0.46" },
-    { name: "ckpt-300", meta: "loss 0.50" },
-    { name: "ckpt-200", meta: "loss 0.55" },
+    { name: "ckpt-40000", meta: "loss 0.44" },
+    { name: "ckpt-30000", meta: "loss 0.50" },
+    { name: "ckpt-20000", meta: "loss 0.58" },
+    { name: "ckpt-10000", meta: "loss 0.72" },
+  ];
+
+  const checkpointMarkers = [
+    { step: 10000 },
+    { step: 20000 },
+    { step: 30000 },
+    { step: 40000 },
+    { step: 60000 },
+    { step: 80000 },
+    { step: 100000 },
+    { step: 120000 },
   ];
 
   function renderArtifacts() {
@@ -1429,7 +1873,8 @@
   }
 
   function tick() {
-    state.step += 2;
+    liveStep += 2;
+    if (!isReplaying) state.step = liveStep;
     if (Math.random() < 0.025 && state.spike < 0.2) {
       state.spike = rand(0.45, 0.95);
       pushEvent("crit", `loss spike 检测 · ${(state.loss + rand(0.1, 0.28)).toFixed(3)} · 建议检查数据和梯度`);
@@ -1443,8 +1888,11 @@
     state.seen += currentTokps();
     if (Math.random() < 0.45) {
       const event = eventPool[Math.floor(rand(0, eventPool.length))];
-      pushEvent(event[0], event[1].replace("{s}", state.step).replace("{r}", Math.floor(rand(0, 64))).replace("{g}", Math.floor(rand(0, 8))));
+      pushEvent(event[0], event[1].replace("{s}", liveStep).replace("{r}", Math.floor(rand(0, 64))).replace("{g}", Math.floor(rand(0, 8))));
     }
+    // 回放中：只把进度条右端的"已执行范围"往前推,视图保持钉在拖块所在的历史 step,
+    // 否则用户正在看的那一步会被实时时钟顶走
+    if (isReplaying) { renderProgress(); return; }
     renderAll();
     // 精度图表窗口跟着 state.step 一起往前滑,和右上角进度条同一个时钟
     refreshAccuracyData();
@@ -1454,6 +1902,66 @@
     renderAccReadouts();
     renderInfraReadouts();
   }
+
+  // ── 供「实时监控」视图（training-monitoring-v2.html 内联脚本）驱动步数的最小接口 ──
+  // 实时监控每跑完一遍 46 层前向 = 推进一个 step，需与「时光机」共用同一个 state.step，
+  // 因此这里只推进步数并重绘进度条，不触发 tick() 那套 2 分钟一次的指标重算。
+  // 回放(时光机拖动)期间不改视图 step，只把已执行范围往前推，与 tick() 的处理保持一致。
+  window.twinAdvanceStep = function (n) {
+    const delta = Number(n) || 1;
+    liveStep = Math.min(state.totalSteps, liveStep + delta);
+    if (!isReplaying) state.step = liveStep;
+    renderProgress();
+    return state.step;
+  };
+  window.twinGetStep = function () { return state.step; };
+
+  // 供智能对话面板(js/training-chat-panel.js)读取当前训练态作为系统提示上下文,
+  // 只读汇总,不暴露 state 本身引用,避免外部误改内部状态。
+  window.twinGetTrainingContext = function () {
+    const model = models[state.model] || {};
+    const hw = hardwareProfiles[state.hardware] || {};
+    return {
+      model: {
+        name: model.name || state.model,
+        title: model.title || "",
+        summary: model.summary || "",
+        seq: model.seq || "",
+        parallel: model.parallel || "",
+        batch: model.batch || "",
+        params: model.params || null,
+      },
+      task: state.task,
+      hardwareLabel: hw.label || state.hardware,
+      step: state.step,
+      totalSteps: state.totalSteps,
+      stepsPerEpoch: state.stepsPerEpoch,
+      loss: state.loss,
+      lossEMA: state.lossEMA,
+      val: state.val,
+      mfu: state.mfu,
+      seenTokens: state.seen,
+      phase: state.phase,
+      diagnosisMarkers: diagnosisMarkers.map((m) => ({
+        num: m.num,
+        severity: m.severity,
+        category: m.category,
+        label: m.label,
+        sub: m.sub,
+        step: m.step != null ? m.step : null,
+        stepFrom: m.stepFrom != null ? m.stepFrom : null,
+        stepTo: m.stepTo != null ? m.stepTo : null,
+      })),
+    };
+  };
+
+  // 供 training-monitoring-v2.html 的 3D deck 适配器复用本文件里的诊断联动入口
+  // (适配器负责画图,业务语义仍只有这一份实现)。函数声明会提升,这里引用晚定义的函数是安全的。
+  window.PtoTwinGraphBridge = {
+    activateProblemOneLens: function (key) { activateProblemOneLens(key); },
+    enterProblemOneLayerView: function () { enterProblemOneLayerView(); },
+    lvSelectedExperts: function (hotExpert) { return lvSelectedExperts(hotExpert); },
+  };
 
   function renderAll() {
     renderVitals();
@@ -1506,7 +2014,7 @@
         ["shared_expert_mlp", "moe_all_to_all_combine"]
       ],
       clusterIds: ["moe-block"],
-      note: "Router → all-to-all dispatch → Routed Experts → all-to-all combine。EP rank 23 死锁,其余 rank 空等超时。",
+      note: "Router FP8 softmax 溢出→路由塌缩→all-to-all 死锁+NaN 双发。根因在数值层,通信只是表象。",
     },
     "qproj-overflow": {
       layer: "Layer 33 · GQA Attention",
@@ -1537,17 +2045,7 @@
       ],
       note: "LM Head → Logits 路径。vocab 非对齐致 cube_util 仅 49%,AICPU 回退 526ms。",
     },
-    "perf-comm-straggler": {
-      layer: "MoE FFN 区",
-      nodeIds: ["router_gate", "router_weight", "routed_expert_bank", "shared_expert_mlp", "moe_all_to_all_dispatch", "moe_all_to_all_combine"],
-      edges: [
-        ["router_gate", "routed_expert_bank"],
-        ["routed_expert_bank", "moe_all_to_all_combine"],
-        ["moe_all_to_all_dispatch", "routed_expert_bank"]
-      ],
-      clusterIds: ["moe-block"],
-      note: "Router gate bias 漂移 → 热点 rank 承接 5× token → all-to-all 尾延迟恶化。",
-    },
+
     "low-precision-training": {
       layer: "Layer 35 深层",
       nodeIds: ["query_tensor", "attention_core", "shared_expert_mlp", "routed_expert_bank"],
@@ -1562,27 +2060,47 @@
 
   // 进度条诊断标记:step 在 0~totalSteps 范围内,百分比自动换算
   const diagnosisMarkers = [
-    { key: "moe-a2a", step: INCIDENT_STEP, severity: "p0", category: "精度", num: "一", label: "MoE all-to-all 超时 → loss NaN", sub: "layer 38 router 98% token → expert 193, EP23 死锁" },
-    { key: "qproj-overflow", step: 8500, severity: "p1", category: "精度", num: "二", label: "q_proj FP8 精度溢出 → grad_norm 发散", sub: "layer 33 q_proj 3.2% 超 FP8 max(448)" },
-    { key: "low-precision-training", stepFrom: 28000, stepTo: 35000, severity: "p1", category: "精度", num: "三", label: "低精训练 loss 不收敛 → 梯度消失", sub: "FP8 E4M3 深层激活值长尾, 峰度 +15.3, SNR 降至 6.8dB" },
-    { key: "nvlink", step: 20000, severity: "p1", category: "Infra", num: "四", label: "HCCS 链路掉线 → MFU 骤降", sub: "node2 NPU3 lane5 inactive, HCCL 回退 RoCE 慢路径" },
-    { key: "perf-compute-bottleneck", stepFrom: 20000, stepTo: 120000, severity: "p1", category: "性能", num: "五", label: "算子带宽瓶颈 + AICPU 回退", sub: "lm_head vocab 非对齐, cube_util 49%, AICPU 526ms" },
-    { key: "perf-comm-straggler", step: 18427, severity: "p1", category: "性能", num: "六", label: "MoE all-to-all 快慢卡 → 步耗时尖峰", sub: "gate bias 漂移 rank 17/23/41 承接 5× token" },
+    { key: "moe-a2a", step: INCIDENT_STEP, severity: "p0", category: "精度", num: "一", label: "Router 数值溢出 → 路由塌缩，同时触发 loss NaN 与 all-to-all 死锁", sub: "router softmax FP8 溢出 → 98% token 集中到 expert 193 → NaN + 死锁双发" },
+    { key: "perf-compute-bottleneck", stepFrom: 20000, stepTo: 120000, severity: "p1", category: "性能", num: "二", label: "算子带宽瓶颈 + AICPU 回退", sub: "lm_head vocab 非对齐, cube_util 49%, AICPU 526ms" },
+    { key: "qproj-overflow", step: 8500, severity: "p1", category: "精度", num: "三", label: "q_proj FP8 精度溢出 → grad_norm 发散", sub: "layer 33 q_proj 3.2% 超 FP8 max(448)" },
+    { key: "low-precision-training", stepFrom: 28000, stepTo: 35000, severity: "p1", category: "精度", num: "四", label: "低精训练 loss 不收敛 → 梯度消失", sub: "FP8 E4M3 深层激活值长尾, 峰度 +15.3, SNR 降至 6.8dB" },
+    { key: "nvlink", step: 20000, severity: "p1", category: "Infra", num: "五", label: "HCCS 链路掉线 → MFU 骤降", sub: "node2 NPU3 lane5 inactive, HCCL 回退 RoCE 慢路径" },
   ];
+
+  // wzh 单屏页面识别:该页面把「时光机」进度条搬进独立卡片(.wzh-timemachine-card),
+  // training-monitoring.html 没有这个类名,用它做两个页面共用同一份 JS 时的行为分支。
+  function isWzhTwinPage() {
+    return !!document.querySelector('.wzh-timemachine-card');
+  }
 
   function renderDiagnosisMarkers() {
     const track = document.getElementById('progressTrack');
     if (!track) return;
+    // wzh 单屏时光机只保留「问题一」标记,其余 4 个不再画;training-monitoring.html 仍是全量 5 个
+    const markers = isWzhTwinPage() ? diagnosisMarkers.filter((m) => m.key === 'moe-a2a') : diagnosisMarkers;
+    // 标记位置只取决于绝对 step / totalSteps,与当前展示的 step 无关;
+    // 已经画好就直接复用,避免时光机拖动时每帧重建 DOM(还会打断 hover 气泡)
+    if (track.querySelectorAll('.twin-progress-marker').length === markers.length) return;
     // 问题点标注改为进度条内的「带白边纵向线」,直接用百分比定位,无需测量几何
-    track.querySelectorAll('.twin-progress-marker').forEach((el) => el.remove());
+    track.querySelectorAll('.twin-progress-marker, .twin-progress-checkpoint').forEach((el) => el.remove());
     const total = state.totalSteps || 120000;
-    diagnosisMarkers.forEach((m) => {
+    markers.forEach((m) => {
       const firstStep = m.stepFrom != null ? m.stepFrom : m.step;
       const pct = clamp(firstStep / total, 0, 1);
       const mk = document.createElement('div');
       mk.className = `twin-progress-marker is-${m.severity}`;
       mk.style.left = (pct * 100).toFixed(2) + '%';
       mk.dataset.markerKey = m.key;
+      track.appendChild(mk);
+    });
+    // checkpoint 标记：已到达=绿色菱形，未到达=灰色
+    checkpointMarkers.forEach((cp) => {
+      const pct = clamp(cp.step / total, 0, 1);
+      const mk = document.createElement('div');
+      const reached = state.step >= cp.step;
+      mk.className = 'twin-progress-checkpoint' + (reached ? ' is-reached' : '');
+      mk.style.left = (pct * 100).toFixed(2) + '%';
+      mk.title = 'ckpt-' + cp.step + (reached ? ' · 已保存' : ' · 未到达');
       track.appendChild(mk);
     });
   }
@@ -1607,6 +2125,13 @@
   // 常态标红 + 问题序号徽标:页面加载后在 #graphStage（新整网图）上标出诊断案例命中的节点/连线/Cluster,
   // 并在第一个命中节点旁画红色胶囊序号徽标
   function applyDefaultDiagnosisMarkers() {
+    // training-monitoring-v2.html 把整网图换成了 model-architecture-3d-deck(CSS 3D DOM,
+    // 不是 SVG),节点几何与徽标绘制方式完全不同,由它自己注册的适配器接管;旧 v2/training-monitoring.html
+    // 没有适配器,继续走下面这套 SVG 实现,行为不变。下同。
+    if (window.PtoTwinGraphAdapter) {
+      window.PtoTwinGraphAdapter.renderMarkers(diagnosisCases, diagnosisMarkers, problemSeverityColor);
+      return;
+    }
     var stage = document.getElementById('graphStage');
     if (!stage) return;
     var NS = "http://www.w3.org/2000/svg";
@@ -1867,22 +2392,32 @@
           e.stopPropagation();
           if (tip) tip.hidden = true;
           var card = document.querySelector('.diagnosis-card[data-diagnosis="' + m.diagnosisKey + '"]');
-          if (card) toggleDiagnosisCard(card);
+          if (card) { toggleDiagnosisCard(card); return; }
+          // wzh 单屏页面没有「问题诊断」卡片列表,改走单屏问题一透镜联动
+          if (isWzhTwinPage()) activateProblemOneLens(m.diagnosisKey);
         });
       }
     });
   }
 
   function clearDiagnosisFocus() {
+    if (window.PtoTwinGraphAdapter) {
+      window.PtoTwinGraphAdapter.clearFocus();
+      highlightProblemBadge(null);
+      hideRoutedExpertBankExpand();
+      return;
+    }
     var stage = document.getElementById("graphStage");
     if (stage) {
       stage.classList.remove("is-diagnosis-focus");
       stage.querySelectorAll(".pto-diagnosis-focus-active").forEach(function(el) { el.classList.remove("pto-diagnosis-focus-active"); });
     }
     highlightProblemBadge(null);
+    hideRoutedExpertBankExpand();
   }
 
   function highlightProblemBadge(caseKey) {
+    if (window.PtoTwinGraphAdapter) { window.PtoTwinGraphAdapter.highlightBadge(caseKey); return; }
     var stage = document.getElementById("graphStage");
     if (!stage) return;
     stage.querySelectorAll(".pto-problem-badge").forEach(function(b) {
@@ -1892,9 +2427,246 @@
     });
   }
 
+  // ── wzh 单屏页面专属:「routed_expert_bank」单节点原地撑开卡片 ──────────────────
+  // training-monitoring.html 点问题一是下钻到整块「L38 · MoE TransformerLayer」展开图页面
+  // (openModelLayerView,见下文);wzh 单屏不下钻整页,只让整网图里 routed_expert_bank 这一个
+  // 节点原地"撑开"成同样内容的卡片(routed experts·256→EP64(64 卡×4) 网格 + EP rank 23 死锁
+  // buffer 失配),复用 lvSelectedExperts()/LV_BASE 的数据与配色,和「模型层展开图」保持信息一致。
+  // 卡片挂在节点同一个父级(与节点共享 pan/zoom 坐标系,视图跟着整网图一起缩放平移),
+  // 不受 .twin-live-on(实时监控)隐藏问题徽标的 CSS 规则影响,因此全局/实时监控视图下都可见。
+  var routedExpertExpandActive = false;
+  var ROUTED_EXPERT_HOT_ID = 193; // 与 diagnosisMarkers/locateChains 的「问题一」口径一致(expert 193)
+  var EXPAND_W = 560, EXPAND_H = 210; // 卡片尺寸,同时供下面「挤开邻居节点」的避让计算复用
+
+  function buildExpertBankExpandMarkup() {
+    var LV = LV_BASE;
+    var W = EXPAND_W, H = EXPAND_H;
+    var ox = -W / 2, oy = -H / 2;
+    var padX = 14;
+    var gX = ox + padX, gW = W - padX * 2;
+    var gY = oy + 46, gH = 96;
+    var cardCols = 16, cardRows = 4, gapX = 3, gapY = 5;
+    var cardW = (gW - (cardCols - 1) * gapX) / cardCols;
+    var cardH = (gH - (cardRows - 1) * gapY) / cardRows;
+    var cellW = (cardW - 3) / 2, cellH = (cardH - 3) / 2;
+    var cardPos = function (card) { return { x: gX + (card % cardCols) * (cardW + gapX), y: gY + Math.floor(card / cardCols) * (cardH + gapY) }; };
+    var cellCenter = function (card, cell) {
+      var p = cardPos(card);
+      return { x: p.x + 1.5 + (cell % 2) * cellW + cellW / 2, y: p.y + 1.5 + Math.floor(cell / 2) * cellH + cellH / 2 };
+    };
+    var selected = lvSelectedExperts(ROUTED_EXPERT_HOT_ID);
+    var hotCards = {};
+    selected.forEach(function (s) { if (s.hot) hotCards[s.card] = true; });
+
+    var cardsSvg = "";
+    for (var card = 0; card < 64; card += 1) {
+      var p = cardPos(card);
+      var overloaded = !!hotCards[card];
+      cardsSvg += '<rect x="' + p.x.toFixed(1) + '" y="' + p.y.toFixed(1) + '" width="' + cardW.toFixed(1) + '" height="' + cardH.toFixed(1) + '" rx="2"' +
+        ' fill="color-mix(in srgb, ' + LV.cFlow + ' 6%, var(--surface-1))"' +
+        ' stroke="' + (overloaded ? LV.cHot : LV.cFlow) + '" stroke-opacity="' + (overloaded ? "1" : ".28") + '" stroke-width="' + (overloaded ? "1.6" : "0.7") + '"></rect>';
+      for (var cell = 0; cell < 4; cell += 1) {
+        var c = cellCenter(card, cell);
+        var hot = selected.some(function (s) { return s.card === card && s.cell === cell && s.hot; });
+        var fill = hot ? LV.cHot : LV.cExpert;
+        var op = hot ? 1 : 0.32;
+        cardsSvg += '<rect x="' + (c.x - cellW / 2).toFixed(1) + '" y="' + (c.y - cellH / 2).toFixed(1) + '" width="' + Math.max(0, cellW - 1).toFixed(1) + '" height="' + Math.max(0, cellH - 1).toFixed(1) + '" rx="1" fill="' + fill + '" opacity="' + op + '"></rect>';
+      }
+    }
+    var rHot = cardPos(23);
+    var hotLabel = '<text x="' + (rHot.x + cardW / 2).toFixed(1) + '" y="' + (rHot.y - 4).toFixed(1) + '" text-anchor="middle" fill="' + LV.cHot + '" style="font-size:8px;font-weight:800;font-family:ui-monospace,monospace">EP rank 23</text>';
+
+    // top-8 专家 all-to-all mesh(与「模型层展开图」lvBuildSvg 同一套视觉语言,见 startLayerA2A):
+    // 8 个参与者(selected)两两连线 C(8,2)=28 条,ring/node 盖在整张 rank 卡上(dispatch 命中的是
+    // 整个 rank,不止单个 expert cell)。动画分两阶段由 startLayerA2A() 用 rAF 逐帧驱动:
+    // ① dispatch:8 条…28 条 mesh 描边生长,8 个 rank 陆续变红(收到数据);
+    // ② combine:7 个非 rank23 专家依次淡出恢复原色,rank 23 send=0 保持红(死锁)。
+    var a2aNodesData = selected.map(function (s, k) {
+      var c = cellCenter(s.card, s.cell), p = cardPos(s.card);
+      return { k: k, hot: !!s.hot, cx: c.x, cy: c.y, px: p.x, py: p.y };
+    });
+    var a2aMesh = "";
+    var mi = 0;
+    for (var ai = 0; ai < a2aNodesData.length; ai += 1) {
+      for (var bi = ai + 1; bi < a2aNodesData.length; bi += 1) {
+        var A = a2aNodesData[ai], B = a2aNodesData[bi];
+        var len = Math.hypot(B.cx - A.cx, B.cy - A.cy).toFixed(1);
+        a2aMesh += '<path class="lv-a2a-mesh" data-mi="' + mi + '" data-len="' + len + '" style="--lv-dash:' + len + '" d="M' + A.cx + ' ' + A.cy + ' L' + B.cx + ' ' + B.cy + '"></path>';
+        mi += 1;
+      }
+    }
+    var a2aNodesSvg = "";
+    a2aNodesData.forEach(function (n) {
+      a2aNodesSvg += '<rect class="lv-a2a-ring" x="' + (n.px - 1.5).toFixed(1) + '" y="' + (n.py - 1.5).toFixed(1) + '" width="' + (cardW + 3).toFixed(1) + '" height="' + (cardH + 3).toFixed(1) + '" rx="3.5"></rect>';
+      a2aNodesSvg += '<rect class="lv-a2a-node" data-k="' + n.k + '" data-hot="' + (n.hot ? 1 : 0) + '" x="' + n.px.toFixed(1) + '" y="' + n.py.toFixed(1) + '" width="' + cardW.toFixed(1) + '" height="' + cardH.toFixed(1) + '" rx="2.5"></rect>';
+    });
+    var a2aLabels =
+      '<text class="lv-a2a-label" data-phase="disp" x="' + (ox + padX) + '" y="' + (oy + 36) + '" style="font-size:9.5px;font-weight:700;font-family:system-ui,sans-serif" fill="' + LV.cHot + '">① all-to-all dispatch:top-8 专家互发 token,8 个 rank 收到数据 → 变红(rank 23 recv≈151MB)</text>' +
+      '<text class="lv-a2a-label" data-phase="comb" x="' + (ox + padX) + '" y="' + (oy + 36) + '" style="font-size:9.5px;font-weight:700;font-family:system-ui,sans-serif;opacity:0" fill="' + LV.cFlow + '">② all-to-all combine:7 个专家输出完成 → 恢复原色,rank 23 send=0 → 保持红色(死锁)</text>';
+
+    var gaugeY = gY + gH + 16;
+    var barX = gX + 40, barMaxW = gW - 100;
+    var gauge =
+      '<text x="' + gX + '" y="' + (gaugeY - 2).toFixed(1) + '" fill="' + LV.cHot + '" style="font-size:9.5px;font-weight:800;font-family:system-ui,sans-serif">EP rank 23 all-to-all buffer 失配 → 死锁</text>' +
+      '<text x="' + gX + '" y="' + (gaugeY + 12).toFixed(1) + '" style="font-size:8.5px;font-family:system-ui,sans-serif" fill="var(--foreground-secondary)">send</text>' +
+      '<rect x="' + barX + '" y="' + (gaugeY + 6).toFixed(1) + '" width="3" height="8" rx="1" fill="none" stroke="' + LV.cHot + '" stroke-width="1"></rect>' +
+      '<text x="' + (barX + 10) + '" y="' + (gaugeY + 12).toFixed(1) + '" fill="' + LV.cHot + '" style="font-size:8.5px;font-weight:700;font-family:ui-monospace,monospace">0(无 token 外发)</text>' +
+      '<text x="' + gX + '" y="' + (gaugeY + 26).toFixed(1) + '" style="font-size:8.5px;font-family:system-ui,sans-serif" fill="var(--foreground-secondary)">recv</text>' +
+      '<rect x="' + barX + '" y="' + (gaugeY + 20).toFixed(1) + '" width="' + Math.max(3, barMaxW).toFixed(1) + '" height="8" rx="1" fill="' + LV.cHot + '"></rect>' +
+      '<text x="' + (barX + barMaxW + 6).toFixed(1) + '" y="' + (gaugeY + 26).toFixed(1) + '" fill="' + LV.cHot + '" style="font-size:8.5px;font-weight:700;font-family:ui-monospace,monospace">2048×4608×8 ≈ 151MB</text>';
+
+    return (
+      '<rect x="' + ox + '" y="' + oy + '" width="' + W + '" height="' + H + '" rx="10"' +
+      ' fill="color-mix(in srgb, ' + LV.cExpert + ' 12%, var(--surface-1))" stroke="' + LV.cHot + '" stroke-width="1.6"' +
+      ' style="filter:drop-shadow(0 8px 20px rgba(0,0,0,.38))"></rect>' +
+      '<text x="' + (ox + padX) + '" y="' + (oy + 20) + '" style="font-size:12.5px;font-weight:800;font-family:system-ui,sans-serif" fill="var(--foreground)">routed experts · ' + LV.routedExperts + ' → EP64(64 卡 × 4)</text>' +
+      cardsSvg + a2aMesh + a2aNodesSvg + hotLabel + gauge + a2aLabels
+    );
+  }
+
+  // 整网图节点的坐标/连线路径是渲染引擎算好后画死的 SVG,节点之间没有"弹性避让"能力。
+  // 这里做轻量的近似位移:卡片撑开后,几何上会被卡片包围盒盖住的邻居节点顺着"卡片中心→
+  // 节点中心"的方向被推到卡片外(只挪必要的那一侧,不做真正的重新布局);连到这些被挤开的
+  // 节点、或连到 routed_expert_bank 自身的连线位置对不上了,展开期间先淡出,收起时淡回,
+  // 位置和普通视图完全一致。
+  function collectRoutedExpertNeighbors(stage, group) {
+    var m = (group.getAttribute("transform") || "").match(/translate\(([-\d.]+)[,\s]+([-\d.]+)\)/);
+    var selfTx = m ? parseFloat(m[1]) : 0;
+    var selfTy = m ? parseFloat(m[2]) : 0;
+    var halfW = EXPAND_W / 2, halfH = EXPAND_H / 2, gap = 18;
+    var neighbors = [];
+    stage.querySelectorAll("[data-node-id]").forEach(function (el) {
+      var id = el.getAttribute("data-node-id");
+      if (!id || id === "routed_expert_bank") return;
+      var rect = el.querySelector("rect");
+      if (!rect) return;
+      var w = parseFloat(rect.getAttribute("width") || "0");
+      var h = parseFloat(rect.getAttribute("height") || "0");
+      if (!w || !h) return;
+      var mm = (el.getAttribute("transform") || "").match(/translate\(([-\d.]+)[,\s]+([-\d.]+)\)/);
+      if (!mm) return;
+      var tx = parseFloat(mm[1]), ty = parseFloat(mm[2]);
+      var relX = tx - selfTx, relY = ty - selfTy;
+      var overX = (halfW + w / 2 + gap) - Math.abs(relX);
+      var overY = (halfH + h / 2 + gap) - Math.abs(relY);
+      if (overX > 0 && overY > 0) {
+        neighbors.push({ el: el, id: id, tx: tx, ty: ty, relX: relX, relY: relY, overX: overX, overY: overY });
+      }
+    });
+    return neighbors;
+  }
+
+  function pushRoutedExpertNeighborsAway(stage, group) {
+    var neighbors = collectRoutedExpertNeighbors(stage, group);
+    var touchIds = ["routed_expert_bank"];
+    neighbors.forEach(function (n) {
+      // 从较窄的越界轴挤开(节点更贴近卡片左右两侧就横推,更贴近上下就竖推),避免同时对角挪动显得乱
+      var dx = 0, dy = 0;
+      if (n.overX < n.overY) dx = (n.relX >= 0 ? 1 : -1) * n.overX;
+      else dy = (n.relY >= 0 ? 1 : -1) * n.overY;
+      n.el.dataset.expandOrigTransform = n.el.getAttribute("transform") || "";
+      n.el.dataset.expandPushed = "routed_expert_bank";
+      n.el.style.transition = "transform 260ms cubic-bezier(.2,.7,.2,1)";
+      n.el.setAttribute("transform", "translate(" + (n.tx + dx).toFixed(1) + "," + (n.ty + dy).toFixed(1) + ")");
+      touchIds.push(n.id);
+    });
+    touchIds.forEach(function (id) {
+      stage.querySelectorAll('[data-source="' + id + '"], [data-target="' + id + '"]').forEach(function (edge) {
+        edge.style.transition = "opacity 200ms ease";
+        edge.style.opacity = "0";
+        edge.dataset.expandDimmed = "routed_expert_bank";
+      });
+    });
+  }
+
+  function restoreRoutedExpertNeighbors(stage) {
+    if (!stage) return;
+    stage.querySelectorAll('[data-expand-pushed="routed_expert_bank"]').forEach(function (el) {
+      el.style.transition = "transform 220ms ease";
+      el.setAttribute("transform", el.dataset.expandOrigTransform || el.getAttribute("transform") || "");
+      delete el.dataset.expandPushed;
+      delete el.dataset.expandOrigTransform;
+    });
+    stage.querySelectorAll('[data-expand-dimmed="routed_expert_bank"]').forEach(function (edge) {
+      edge.style.opacity = "";
+      delete edge.dataset.expandDimmed;
+    });
+  }
+
+  function showRoutedExpertBankExpand() {
+    if (window.PtoTwinGraphAdapter) {
+      routedExpertExpandActive = true;
+      window.PtoTwinGraphAdapter.showExpertExpand(buildExpertBankExpandMarkup, startLayerA2A);
+      return;
+    }
+    var stage = document.getElementById("graphStage");
+    if (!stage) return;
+    var group = stage.querySelector('[data-node-id="routed_expert_bank"]');
+    if (!group || !group.parentNode) return;
+    // 先清掉可能残留的旧实例、还原上一次的邻居位移(不经过 hideRoutedExpertBankExpand,
+    // 避免它把下面刚设的 active 标记又清掉),再按当前布局重新计算一遍位移,幂等、不会累积漂移。
+    document.querySelectorAll('[data-node-expand="routed_expert_bank"]').forEach(function (el) { el.remove(); });
+    restoreRoutedExpertNeighbors(stage);
+    routedExpertExpandActive = true;
+    var NS = "http://www.w3.org/2000/svg";
+    var wrap = document.createElementNS(NS, "g");
+    wrap.setAttribute("class", "pto-node-expand-card");
+    wrap.setAttribute("data-node-expand", "routed_expert_bank");
+    // 与节点挂在同一个父级、复用节点自身的 translate,跟随整网图 pan/zoom 一起走;
+    // 追加为最后一个子节点保证画在最上层,不被相邻节点/连线遮挡。
+    wrap.setAttribute("transform", group.getAttribute("transform") || "");
+    wrap.innerHTML = buildExpertBankExpandMarkup();
+    group.parentNode.appendChild(wrap);
+    // top-8 专家 all-to-all mesh 动画:与「模型层展开图」共用同一个 startLayerA2A() rAF 驱动器
+    // (全页仅一个展开图会用到它,两个入口互斥,不会抢同一个 lvAnimRaf 句柄)。
+    startLayerA2A(wrap);
+    // 卡片比原节点大得多,几何上会盖住的邻居节点顺势挤开,让"节点变大"看起来更像真实的展开
+    pushRoutedExpertNeighborsAway(stage, group);
+    // model-graphviz-embed/pattern.js 用 ResizeObserver 盯着 #graphStage 容器尺寸,只要没有
+    // selectedItemId 就在尺寸变化(比如展开 Timeline dock 挤压整网图高度)时自动 fit() 回默认视图,
+    // 会把上面 applyDiagnosisFocus 刚做的聚焦平移冲掉。这里借 selectNode 钉住 selectedItemId
+    // 抑制这次自动回位;selectNode 会联动弹出 opv-modelviz 自带的节点详情浮层(#nodePopover),
+    // 这不是本卡片要的效果,借完 pin 效果立即把它关掉。
+    var svg = stage.querySelector("svg");
+    var vctrl = svg && svg.ptoModelGraphvizController;
+    if (vctrl && vctrl.selectNode) {
+      vctrl.selectNode("routed_expert_bank");
+      var popover = stage.querySelector("#nodePopover");
+      if (popover) popover.hidden = true;
+    }
+  }
+
+  function hideRoutedExpertBankExpand() {
+    routedExpertExpandActive = false;
+    if (lvAnimRaf) { cancelAnimationFrame(lvAnimRaf); lvAnimRaf = null; }
+    if (window.PtoTwinGraphAdapter) { window.PtoTwinGraphAdapter.hideExpertExpand(); return; }
+    var stage = document.getElementById("graphStage");
+    document.querySelectorAll('[data-node-expand="routed_expert_bank"]').forEach(function (el) { el.remove(); });
+    restoreRoutedExpertNeighbors(stage);
+    var svg = stage && stage.querySelector("svg");
+    var vctrl = svg && svg.ptoModelGraphvizController;
+    if (vctrl && vctrl.clearSelection) vctrl.clearSelection();
+  }
+
+  // opv-modelviz.js 的 centerView()(挂在 window resize 上)会无条件 fit() 回默认视图、
+  // 并重新弹出它自己的节点详情浮层,不受 selectedItemId 影响——凡是会派发 resize 的动作
+  // (展开/收起 Timeline dock、切换「全局/实时监控」整网图视图……)都会把刚钉好的聚焦平移和
+  // routed_expert_bank 卡片冲掉。opv-modelviz.js 先于本文件加载,这里的 resize 监听注册在
+  // 它之后,同一次 resize 事件里保证后触发,借此把聚焦平移和卡片重新钉回去。
+  window.addEventListener("resize", function () {
+    if (!routedExpertExpandActive) return;
+    applyDiagnosisFocus("moe-a2a");
+    showRoutedExpertBankExpand();
+  });
+
   function hideDiagnosisLocator() {
     const locator = $("diagnosisLocator");
-    if (locator) locator.hidden = true;
+    if (locator) locator.classList.remove("is-visible");
+  }
+
+  function showDiagnosisLocator() {
+    const locator = $("diagnosisLocator");
+    if (locator) locator.classList.add("is-visible");
   }
 
   // ── 热力图 infra 问题高亮 ─────────────────────────────────────────────────
@@ -1905,8 +2677,7 @@
     "nvlink":            { hotCells: [19, 20], warmCells: [16,17,18,21,22,23],
                            hotWarn: "空等 · HCCS 链路掉线,HCCL 回退 RoCE 慢路径",
                            warmWarn: "空等 · PP pipeline 被慢路径拖住,等待上游数据" },
-    "perf-comm-straggler": { hotCells: [17, 23, 41],
-                           hotWarn: "空等 · straggler 承接 5× token,all-to-all 尾延迟拖慢全组" },
+
   };
 
   function applyInfraHeatHighlight(caseKey) {
@@ -2018,6 +2789,11 @@
     applyInfraHeatHighlight(caseKey);
     highlightProblemBadge(caseKey);
     if (!info) { hideDiagnosisLocator(); return; }
+    if (window.PtoTwinGraphAdapter) {
+      window.PtoTwinGraphAdapter.focus(caseKey, info);
+      hideDiagnosisLocator();
+      return;
+    }
     var stage = document.getElementById("graphStage");
     if (stage) {
       stage.classList.add("is-diagnosis-focus");
@@ -2091,11 +2867,48 @@
     ctrl.setTransform({ zoom: zoom, tx: stageW / 2 - cx * zoom, ty: stageH / 2 - cy * zoom });
   }
 
+  // ── wzh 单屏页面专属:点击「时光机」上仅存的问题一红色标记时,不走 training-monitoring.html
+  // 那套「问题诊断卡片 → 定位链整块视图」下钻,而是原地把单屏各图表都联动到问题一事故时刻——
+  // 时光机拖块跳到事故 step(驱动精度/infra 图表与关键指标一并回放)、整网图聚焦 layer 38 router、
+  // infra 热力图叠加 rank 23 死锁标注、底部 Timeline 面板展开(默认即 node2 ranks 16-23 +
+  // rank 23 all-to-all timeout 高亮,已经就是"问题 rank"),相当于原地复现事故时刻的全部细节。
+  function activateProblemOneLens(caseKey) {
+    var marker = diagnosisMarkers.find(function (m) { return m.key === caseKey; });
+    var info = diagnosisCases[caseKey];
+    // 先展开 Timeline dock 面板再做整网图聚焦平移——PtoTrainingTwinDockTabs.select("timeline")
+    // 会派发一次 window resize,opv-modelviz 的 centerView() 监听 resize 会无条件把画面 fit()
+    // 回默认视图;顺序上让这次 resize 先发生,下面的 applyDiagnosisFocus 才是最后生效的那次。
+    // 展开 Timeline dock 本身还会异步挤压整网图容器高度,触发 pattern.js 内部另一个
+    // ResizeObserver 的自动 fit()——这一个由 showRoutedExpertBankExpand() 里钉住的
+    // selectedItemId 抑制,并且下面注册的全局 resize 监听兜底把任何后续 resize 引发的
+    // 重置都重新纠正回来。
+    window.PtoTrainingTwinTimelineDock?.setVisible(true);
+    window.PtoTrainingTwinDockTabs?.select("timeline");
+    applyViewStep(marker && marker.step != null ? marker.step : INCIDENT_STEP);
+    applyDiagnosisFocus(caseKey);
+    // 问题一精准展开 routed_expert_bank 单节点(而不是下钻整块「模型层展开图」页面),
+    // 全局/实时监控视图下都要看到,故不受 .twin-live-on 隐藏问题徽标的规则影响(见函数注释)。
+    if (caseKey === "moe-a2a") showRoutedExpertBankExpand();
+    var locator = $("diagnosisLocator");
+    if (locator && info && marker) {
+      $("diagnosisLocatorTitle").textContent = marker.label || "";
+      $("diagnosisLocatorLayerTag").textContent = info.layer || "";
+      $("diagnosisLocatorCategoryTag").textContent = marker.category || "";
+      var sevEl = $("diagnosisLocatorSeverityTag");
+      sevEl.textContent = (marker.severity || "").toUpperCase();
+      sevEl.className = "twin-diagnosis-locator-severity is-" + (marker.severity || "");
+      $("diagnosisLocatorDesc").textContent = marker.sub || "";
+      // 卡片挪进顶栏后一行放不下描述,完整文字改走原生 title 提示(hover 卡片可见)
+      locator.title = marker.sub || "";
+      showDiagnosisLocator();
+    }
+  }
+
   // 定位链数据:对应 定位链.md 中三个案例各自实际走过的链路节点
   const locateChains = {
     "moe-a2a": {
-      title: "定位链 · MoE all-to-all 超时导致 loss NaN",
-      meta: "路径:迭代层 → 仅多卡异常 → 通信调度层 → 模型层 → infra层 → 超参/代码层",
+      title: "定位链 · Router 数值溢出 → 路由塌缩 → NaN+死锁双发",
+      meta: "路径:迭代层 → 通信调度层 → 模型层 → 数值层 → infra层 → 超参/代码层",
       steps: [
         { label: "迭代层", short: `Step ${INCIDENT_STEP}`, sub: `WHEN · step ${INCIDENT_STEP} loss 跳变至 NaN`,
           showSmoothing: true,
@@ -2128,18 +2941,37 @@
               </div>
               <span class="btn btn-solid btn-sm twin-layerview-cta-btn">查看</span>
             </div>
-            <p class="twin-locate-metric-note">layer 38 的 router 将当前 micro-batch 中 98% 的 token 路由到了 expert 193(恰好位于 EP rank 23),其余 255 个 expert 几乎无 token。</p>
+            <p class="twin-locate-metric-note">layer 38 的 router 将当前 micro-batch 中 98% 的 token 路由到了 expert 193(恰好位于 EP rank 23)，其余 255 个 expert 中 <strong style="color:#dc2626">247 个为 dead expert(0 token)</strong>——这是路由彻底塌缩，不是普通倾斜。</p>
             <p style="margin:8px 0 0;font-size:12px;color:var(--foreground-secondary);line-height:1.5">对比分析收发数据， layer 38 每个 rank 的 all-to-all send/recv buffer size 对比如下图：</p>
             <canvas id="bufChart" style="width:100%;height:168px;margin:6px 0 0;display:block;background:var(--surface-2);border-radius:6px"></canvas>
-            <p style="margin:8px 0 0;font-size:12px;color:var(--foreground-secondary);line-height:1.5">进一步证实 rank 23 的 send buffer 为 0（没有 token 被 router 分发到其他 rank 的 expert），而 recv buffer 期望接收 2048 token × 2560 dim × 8 experts 的数据，size 不匹配导致死锁。</p>
-            <p class="twin-locate-metric-note">↳ 需在【infra层】识别对训练集群的影响。</p>
+            <p style="margin:8px 0 0;font-size:12px;color:var(--foreground-secondary);line-height:1.5">rank 23 的 send buffer 为 0（没有 token 被 router 分发到其他 rank 的 expert），recv buffer 期望接收大量 token 数据，size 不匹配导致死锁——但死锁只是果。</p>
+            <p class="twin-locate-metric-note">↳ 需在【数值层】追查 router 的精度路径——为什么 softmax 输出会退化为 one-hot？</p>
           ` },
-        { label: "infra层", short: "EP rank 23", sub: "CONTEXT · EP rank 23 / PP stage 6 / DP0",
-          // infra 示意图完全复用外层「训练监控 · infra」的集群热力图(#heat 的 DP4×PP8×EP64 网格),
+        { label: "数值层", short: "FP8 softmax 溢出", sub: "WHICH(数值) · router logits max=1846→inf, FP8 softmax 溢出",
+          content: `
+            <p class="twin-locate-metric-note" style="margin:0 0 8px">此层是定位链的<strong style="color:var(--highlight-copy-blue-500, #3b6fe0)">核心转折点</strong>：从"通信怎么死的"下钻到"数值为什么先崩了"。</p>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:4px 0 10px">
+              <div style="border:1px solid var(--border-subtle);border-radius:8px;padding:10px 12px;background:var(--surface-2)">
+                <div style="font-size:11px;color:var(--foreground-muted)">router logits max</div>
+                <div style="font-size:22px;font-weight:700;color:#dc2626;font-family:ui-monospace,monospace;margin-top:4px">1846</div>
+                <div style="font-size:11px;color:var(--foreground-muted);margin-top:2px">正常应 &lt;50</div>
+              </div>
+              <div style="border:1px solid var(--border-subtle);border-radius:8px;padding:10px 12px;background:var(--surface-2)">
+                <div style="font-size:11px;color:var(--foreground-muted)">AMP loss scale</div>
+                <div style="font-size:22px;font-weight:700;color:#dc2626;font-family:ui-monospace,monospace;margin-top:4px">65536→4096</div>
+                <div style="font-size:11px;color:var(--foreground-muted);margin-top:2px">持续衰减=溢出前兆</div>
+              </div>
+            </div>
+            <p style="margin:8px 0 0;font-size:12px;color:var(--foreground-secondary);line-height:1.5">dump step ${INCIDENT_STEP} 时 layer 38 router 的 raw logits（softmax 之前），发现 max(logits)=<strong style="color:#dc2626">1846</strong>，且存在 inf 值——FP8 E4M3 下 exp(1846) 直接溢出为 inf。</p>
+            <p style="margin:8px 0 0;font-size:12px;color:var(--foreground-secondary);line-height:1.5">检查 router 计算精度路径：当前实现中 router 的 softmax 在 <strong style="color:#dc2626">FP8</strong> 下计算（<code>router_logits → FP8 cast → softmax</code>），而非业界建议的 FP32。AMP scaler 日志显示 loss scale 从 step 15000 起从 65536 持续衰减至 step 15202 的 4096，说明训练已处于持续 FP 溢出的临界状态。</p>
+            <p style="margin:10px 0 0;font-size:12px;color:var(--foreground);font-weight:600;line-height:1.5">判据：FP8 下 router logits 溢出 → softmax 产生 NaN/inf → 路由概率退化 → top-k 集中于 expert 193 → <strong style="color:#dc2626">同时触发两个后果</strong>：A) NaN 沿 forward 传播到 loss；B) 所有 token 路由到 rank 23 → all-to-all 死锁。死锁和 NaN 是同一 root cause 的两个平行后果，而非因果关系。</p>
+          ` },
+        { label: "infra层", short: "EP rank 23", sub: "CONTEXT · EP rank 23 / PP stage 3",
+          // infra 示意图完全复用外层「训练监控 · infra」的集群热力图(#heat 的 DP8×PP4×EP64 网格),
           // 由 syncLocateInfraHeat() 把当前 util 着色镜像到 #locateInfraHeat,再叠加本问题的 hot/warm 标记。
           content: `
             <div class="twin-infra-heat-block">
-              <p style="margin:0 0 8px;font-size:11px;color:var(--foreground-secondary);line-height:1.5"><strong style="color:#dc2626">node 2</strong> 的异常着色形成了本次病因指纹：</p>
+              <p style="margin:0 0 8px;font-size:11px;color:var(--foreground-secondary);line-height:1.5">AMP scaler 衰减在全部 64 rank 上同步发生，但 <strong style="color:#dc2626">only rank 23</strong> 因 expert 193 的地理位置成为死锁的"引爆点"——如果 expert 193 位于其他 rank，只会换一个 rank 触发死锁。问题聚集在单个 EP rank → 局部路由塌缩，但根因（router FP8 overflow）是系统性的。</p>
               <div id="locateInfraHeat" class="twin-heat locate-infra-heat"></div>
               <div class="twin-legend" style="margin-top:8px;font-size:11px">
                 <span><i class="twin-swatch twin-swatch-util-low"></i>&lt;70% util</span>
@@ -2148,38 +2980,50 @@
                 <span style="display:inline-flex;align-items:center;gap:5px"><i style="width:10px;height:10px;border-radius:2px;outline:2px solid #dc2626;outline-offset:1px"></i>EP rank 23 死锁</span>
                 <span style="display:inline-flex;align-items:center;gap:5px"><i style="width:10px;height:10px;border-radius:2px;outline:2px solid #ea580c;outline-offset:1px"></i>EP 16–22 空等</span>
               </div>
-              <p style="margin:8px 0 0;font-size:11px;color:var(--foreground-secondary);line-height:1.5"><span style="color:#dc2626;font-weight:700">EP rank 23</span> 在 all-to-all 死锁,<span style="color:#ea580c;font-weight:600">EP rank 16–22</span> 空等超时;异常聚集在单个 EP rank → 局部路由倾斜。</p>
             </div>
           ` },
-        { label: "超参/代码层", short: "3 处代码改动", sub: "FIX · n_group 8→16 + z-loss + 超时延长",
+        { label: "超参/代码层", short: "6 处代码改动", sub: "FIX · router 改 FP32 + z-loss + 降 lr + grad clip + n_group + 超时延长",
           content: `
-            <p class="twin-locate-metric-note" style="margin:0 0 12px">综合以上各层定位诊断，代码修改建议如下：</p>
+            <p class="twin-locate-metric-note" style="margin:0 0 12px">根因是 router softmax 在 FP8 下计算 + 缺乏 logits 正则化。按优先级修改如下：</p>
             <div style="display:flex;flex-direction:column;gap:12px;">
               <div style="border:1px solid var(--border-subtle);border-radius:8px;overflow:hidden">
-                <div style="padding:8px 12px;background:var(--surface-2);font-size:12px;font-weight:600;color:var(--foreground)">① model_config.json</div>
-                <div style="font-family:monospace;font-size:11px;line-height:1.7;padding:10px 12px;background:var(--surface-1);overflow-x:auto">
-                  <div style="color:var(--foreground-muted)">&nbsp;&nbsp;"num_experts": 256,</div>
-                  <div style="color:var(--foreground-muted)">&nbsp;&nbsp;"top_k": 8,</div>
-                  <div style="background:rgba(220,38,38,.1);color:#dc2626">− &nbsp;"n_group": <strong>8</strong>,</div>
-                  <div style="background:rgba(22,163,74,.1);color:#16a34a">+ &nbsp;"n_group": <strong>16</strong>,&nbsp;&nbsp;<span style="color:var(--foreground-muted);font-family:system-ui"># router 分组 8→16，增加 expert 选择多样性，分散热点</span></div>
-                  <div style="background:rgba(22,163,74,.1);color:#16a34a">+ &nbsp;"topk_group": <strong>6</strong>,&nbsp;&nbsp;<span style="color:var(--foreground-muted);font-family:system-ui"># topk_group 4→6，减少单一 expert 垄断概率</span></div>
+                <div style="padding:8px 12px;background:var(--surface-2);font-size:12px;font-weight:600;color:var(--foreground)">① router.py · softmax 改 FP32（最关键）</div>
+                <div style="font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:11px;line-height:1.7;padding:10px 12px;background:var(--surface-1);overflow-x:auto">
+                  <div style="background:rgba(220,38,38,.1);color:#dc2626">− router_logits = router(x); probs = softmax(router_logits)&nbsp;&nbsp;<span style="color:var(--foreground-muted);font-family:system-ui"># FP8 下 logits 溢出</span></div>
+                  <div style="background:rgba(22,163,74,.1);color:#16a34a">+ router_logits = <strong>router(x.float())</strong>; probs = <strong>softmax(router_logits)</strong></div>
+                  <div style="background:rgba(22,163,74,.1);color:#16a34a">+ probs = probs.to(dtype)&nbsp;&nbsp;<span style="color:var(--foreground-muted);font-family:system-ui"># softmax 在 FP32 计算后再 cast 回</span></div>
                 </div>
               </div>
               <div style="border:1px solid var(--border-subtle);border-radius:8px;overflow:hidden">
-                <div style="padding:8px 12px;background:var(--surface-2);font-size:12px;font-weight:600;color:var(--foreground)">② training_args.yaml</div>
-                <div style="font-family:monospace;font-size:11px;line-height:1.7;padding:10px 12px;background:var(--surface-1);overflow-x:auto">
-                  <div style="color:var(--foreground-muted)">&nbsp;&nbsp;aux_loss_coeff: 0.001</div>
-                  <div style="background:rgba(22,163,74,.1);color:#16a34a">+ &nbsp;z_loss_coeff: <strong>1e-4</strong>&nbsp;&nbsp;<span style="color:var(--foreground-muted);font-family:system-ui"># gate 前增加 z-loss 正则项，抑制 gate logit 极端值</span></div>
+                <div style="padding:8px 12px;background:var(--surface-2);font-size:12px;font-weight:600;color:var(--foreground)">② training_args.yaml · z-loss + grad clip</div>
+                <div style="font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:11px;line-height:1.7;padding:10px 12px;background:var(--surface-1);overflow-x:auto">
+                  <div style="background:rgba(22,163,74,.1);color:#16a34a">+ z_loss_coeff: <strong>1e-4</strong>&nbsp;&nbsp;<span style="color:var(--foreground-muted);font-family:system-ui"># gate 前加 z-loss 抑制 logits 极端值</span></div>
+                  <div style="background:rgba(22,163,74,.1);color:#16a34a">+ clip_grad_norm: <strong>1.0</strong>&nbsp;&nbsp;<span style="color:var(--foreground-muted);font-family:system-ui"># MoE 训练标配</span></div>
                 </div>
               </div>
               <div style="border:1px solid var(--border-subtle);border-radius:8px;overflow:hidden">
-                <div style="padding:8px 12px;background:var(--surface-2);font-size:12px;font-weight:600;color:var(--foreground)">③ env.sh</div>
-                <div style="font-family:monospace;font-size:11px;line-height:1.7;padding:10px 12px;background:var(--surface-1);overflow-x:auto">
+                <div style="padding:8px 12px;background:var(--surface-2);font-size:12px;font-weight:600;color:var(--foreground)">③ optimizer_config.json · router 学习率</div>
+                <div style="font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:11px;line-height:1.7;padding:10px 12px;background:var(--surface-1);overflow-x:auto">
+                  <div style="background:rgba(220,38,38,.1);color:#dc2626">− router_lr: <strong>3e-4</strong>&nbsp;&nbsp;<span style="color:var(--foreground-muted);font-family:system-ui"># 与 expert 相同</span></div>
+                  <div style="background:rgba(22,163,74,.1);color:#16a34a">+ router_lr: <strong>3e-5</strong>&nbsp;&nbsp;<span style="color:var(--foreground-muted);font-family:system-ui"># expert lr × 0.1</span></div>
+                </div>
+              </div>
+              <div style="border:1px solid var(--border-subtle);border-radius:8px;overflow:hidden">
+                <div style="padding:8px 12px;background:var(--surface-2);font-size:12px;font-weight:600;color:var(--foreground)">④ model_config.json · n_group 辅助保障</div>
+                <div style="font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:11px;line-height:1.7;padding:10px 12px;background:var(--surface-1);overflow-x:auto">
+                  <div style="background:rgba(220,38,38,.1);color:#dc2626">− "n_group": <strong>8</strong>,</div>
+                  <div style="background:rgba(22,163,74,.1);color:#16a34a">+ "n_group": <strong>16</strong>,&nbsp;&nbsp;<span style="color:var(--foreground-muted);font-family:system-ui"># 分散 expert 选择,辅助保障</span></div>
+                </div>
+              </div>
+              <div style="border:1px solid var(--border-subtle);border-radius:8px;overflow:hidden">
+                <div style="padding:8px 12px;background:var(--surface-2);font-size:12px;font-weight:600;color:var(--foreground)">⑤ env.sh · NCCL 超时兜底</div>
+                <div style="font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:11px;line-height:1.7;padding:10px 12px;background:var(--surface-1);overflow-x:auto">
                   <div style="background:rgba(220,38,38,.1);color:#dc2626">− export NCCL_IB_TIMEOUT=<strong>30</strong></div>
-                  <div style="background:rgba(22,163,74,.1);color:#16a34a">+ export NCCL_IB_TIMEOUT=<strong>60</strong>&nbsp;&nbsp;<span style="color:var(--foreground-muted);font-family:system-ui"># all-to-all 超时延长 30→60s 兜底</span></div>
+                  <div style="background:rgba(22,163,74,.1);color:#16a34a">+ export NCCL_IB_TIMEOUT=<strong>60</strong>&nbsp;&nbsp;<span style="color:var(--foreground-muted);font-family:system-ui"># 训练不中断兜底</span></div>
                 </div>
               </div>
             </div>
+            <p style="margin:12px 0 0;font-size:12px;color:#16a34a;font-weight:600;line-height:1.5">验证：①~④ 从 step 15000 续跑，router logits max 稳定在 18~35（安全范围），AMP scaler 维持在 65536 不衰减，256 expert 的 token CV 降至 8~15%。step 15203 正常通过，继续训练 5000 step 无 NaN 无死锁。</p>
           ` },
       ],
       // 单/多卡均异常时会绕过「通信调度层」直接从迭代层进入模型层,用弧形虚线标出这条未被走到的旁路
@@ -2199,30 +3043,130 @@
     },
     "perf-compute-bottleneck": {
       title: "定位链 · 整网耗时下钻：算子带宽瓶颈 + AICPU 回退导致步耗时超标 42%",
-      meta: "路径:迭代层 → 单/多卡均异常 → 模型层 → 算子层 → 张量层 → infra层 → 超参/代码层",
+      meta: "路径:性能表征层 → 瓶颈分类层(计算受限) → 阶段定位层 → 算子定位层 → 执行效率层 → 代码/配置层",
       steps: [
-        { label: "迭代层", short: "T_iter 3.2s", sub: "WHEN · 稳态训练步耗时 3.2s,超标 42%" },
-        { label: "分叉判定", sub: "单/多卡均异常 · 沿计算主干", branch: true },
-        { label: "模型层", short: "lm_head / logits", sub: "WHERE · lm_head / logits 路径耗时占比 38%" },
-        { label: "算子层", short: "cube_util 49%", sub: "WHAT · MatMulV2 cube_util 仅 49%,CE loss 走 AICPU 回退" },
-        { label: "张量层", short: "vocab 非对齐", sub: "WHICH · vocab 非对齐导致带宽利用率低" },
-        { label: "infra层", short: "stage7 1.82×", sub: "CONTEXT · PP stage 7 过载 1.82×,MFU 仅 38%" },
-        { label: "超参/代码层", short: "vocab padding 对齐", sub: "FIX · vocab padding 对齐 + fused CE kernel 替代 AICPU 回退" },
+        { label: "性能表征层", short: "T_iter 12.1s", sub: "WHEN · 稳态步耗时 12.1s,超标 42%,MFU 38%",
+          content: `
+            <p class="twin-locate-metric-note" style="margin:0 0 10px">128 GPU(16 节点 × 8 GPU)训练 openPangu-2.0-Flash，<strong>EP=64 / PP=4 / TP=1 / FP8</strong>，seq_len=4096，micro_batch=1，global_batch=1024。目标步耗时 ≤ 8.5s，实测 <strong style="color:#dc2626">12.1s</strong>。</p>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:2px 0 10px">
+              <div style="border:1px solid var(--border-subtle);border-radius:8px;padding:10px 12px;background:var(--surface-2)">
+                <div style="font-size:11px;color:var(--foreground-muted)">步耗时 T_iter</div>
+                <div style="font-size:22px;font-weight:700;color:#dc2626;font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;margin-top:4px">12.1<small style="font-size:12px;color:var(--foreground-muted)">s</small></div>
+                <div style="font-size:11px;color:#dc2626;margin-top:2px">目标 ≤8.5s · +3.6s(+42%)</div>
+              </div>
+              <div style="border:1px solid var(--border-subtle);border-radius:8px;padding:10px 12px;background:var(--surface-2)">
+                <div style="font-size:11px;color:var(--foreground-muted)">MFU</div>
+                <div style="font-size:22px;font-weight:700;color:#dc2626;font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;margin-top:4px">38<small style="font-size:12px;color:var(--foreground-muted)">%</small></div>
+                <div style="font-size:11px;color:#dc2626;margin-top:2px">目标 ≥50% · −12pp</div>
+              </div>
+              <div style="border:1px solid var(--border-subtle);border-radius:8px;padding:10px 12px;background:var(--surface-2)">
+                <div style="font-size:11px;color:var(--foreground-muted)">PHS 评分</div>
+                <div style="font-size:22px;font-weight:700;color:#dc2626;font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;margin-top:4px">D<small style="font-size:12px;color:var(--foreground-muted)">(32)</small></div>
+                <div style="font-size:11px;color:var(--foreground-muted);margin-top:2px">性能健康度</div>
+              </div>
+            </div>
+            <p class="twin-locate-metric-note"><strong>判据</strong>：步耗时超基线 &gt; 40% + MFU &lt; 40% → 显著性能劣化，非调度抖动。</p>
+            <p style="margin:8px 0 0;font-size:12px;color:var(--foreground-secondary);line-height:1.5">↳ 需在【瓶颈分类层】从 <code>step_trace_time.csv</code> 拆解计算/通信/空泡占比，判定走计算分支还是通信分支。</p>
+          ` },
+        { label: "分叉判定", sub: "计算受限 · Computing 78% > 60% · 沿计算主干", branch: true },
+        { label: "阶段定位层", short: "stage3 1.82×", sub: "WHERE · PP stage 3 Computing 2152ms,过载 1.82×",
+          content: `
+            <p class="twin-locate-metric-note">从 <code>step_trace_time.csv</code> 提取整步耗时构成——计算绝对主导，通信虽有占比但非主因，判定 <strong>计算受限，走计算分支</strong>：</p>
+            <div style="display:flex;height:26px;border-radius:6px;overflow:hidden;border:1px solid var(--border-subtle);font-size:10px;font-weight:600;color:#fff;margin:6px 0 4px">
+              <div style="flex:78;background:#3b6fe0;display:flex;align-items:center;justify-content:center" title="Computing 9422ms">Computing 78%</div>
+              <div style="flex:11;background:#ea580c;display:flex;align-items:center;justify-content:center" title="PP bubble ≈1337ms">Bubble 11%</div>
+              <div style="flex:9;background:#8b5cf6;display:flex;align-items:center;justify-content:center" title="未掩盖通信 1093ms">通信 9%</div>
+              <div style="flex:2;background:#94a3b8;display:flex;align-items:center;justify-content:center" title="Free 248ms">2%</div>
+            </div>
+            <p class="twin-locate-metric-note" style="margin:2px 0 12px;font-size:11px">Computing 9422ms(78%) · PP bubble ≈1337ms(11%) · 未掩盖通信 1093ms(9%) · Free 248ms(2%)</p>
+            <p class="twin-locate-metric-note">再看 Pipeline 时序泳道图，按 PP stage 0~3 拆分 Computing 段耗时。<strong style="color:#dc2626">末级 stage 3</strong>（layers 34~45 + final_layernorm + lm_head + loss）严重过载：</p>
+            <div style="display:flex;flex-direction:column;gap:5px;margin:8px 0">
+              ${[["stage 0","1310","embedding + L0~7","#64748b",1310],["stage 1","1180","L8~13 MoE","#64748b",1180],["stage 2","1180","L14~19 MoE","#64748b",1180],["stage 3","1180","L20~25 MoE","#64748b",1180],["stage 4","1180","L26~31 MoE","#64748b",1180],["stage 5","1180","L32~37 MoE","#64748b",1180],["stage 6","1180","L38~43 MoE","#64748b",1180],["stage 7","2152","+ lm_head + loss","#dc2626",2152]].map(([s,ms,note,color,val])=>`
+                <div style="display:flex;align-items:center;gap:8px;font-size:11px">
+                  <span style="flex:0 0 52px;color:var(--foreground-muted);font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace">${s}</span>
+                  <div style="flex:1;background:var(--surface-2);border-radius:4px;overflow:hidden;height:16px"><div style="width:${(val/2152*100).toFixed(0)}%;height:100%;background:${color}"></div></div>
+                  <span style="flex:0 0 56px;text-align:right;font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;color:${color==='#dc2626'?'#dc2626':'var(--foreground-secondary)'};font-weight:${color==='#dc2626'?'700':'400'}">${ms}ms</span>
+                  <span style="flex:0 0 118px;color:var(--foreground-muted);font-size:10px">${note}</span>
+                </div>`).join("")}
+            </div>
+            <p class="twin-locate-metric-note"><strong>判据</strong>：stage 7 耗时 / 中间 stage 均值 = 2152 / 1180 ≈ <strong style="color:#dc2626">1.82×</strong> → 末级严重过载；stage 0~6 在 stage 7 计算段期间空等，PP bubble ≈ 1337ms。</p>
+            <p style="margin:8px 0 0;font-size:12px;color:var(--foreground-secondary);line-height:1.5">↳ 需在【算子定位层】拆解 stage 7 的算子 parent-child 表（<code>op_statistic.csv</code>），定位到具体过载算子。</p>
+          ` },
+        { label: "算子定位层", short: "cube_util 49%", sub: "WHAT · lm_head MatMulV2 cube_util 49% + CE loss AICPU 526ms",
+          content: `
+            <p class="twin-locate-metric-note">stage 7 算子按总耗时降序（<code>op_statistic.csv</code>，device 6）。MatMul 占比虽高但属正常计算，关键异常在 <strong style="color:#dc2626">lm_head 的 cube 利用率</strong> 与 <strong style="color:#dc2626">CE loss 的 AICPU 回退</strong>：</p>
+            <div style="overflow-x:auto;margin:6px 0">
+              <table style="width:100%;border-collapse:collapse;font-size:11px;line-height:1.5">
+                <tr style="background:var(--surface-2)"><th style="padding:4px 8px;border:1px solid var(--border-subtle);text-align:left">算子</th><th style="padding:4px 8px;border:1px solid var(--border-subtle)">耗时</th><th style="padding:4px 8px;border:1px solid var(--border-subtle)">占比</th><th style="padding:4px 8px;border:1px solid var(--border-subtle)">诊断</th></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle)">MatMulV3（QKV/o_proj + fc1/fc2）</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace">5936ms</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">63%</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">🟢 cube_util 78~82% 正常</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle)">FlashAttentionScore + Grad</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace">723ms</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">7.7%</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">🟢 MLA core_attention</td></tr>
+                <tr style="background:#fef2f2"><td style="padding:4px 8px;border:1px solid var(--border-subtle);font-weight:700">↳ lm_head MatMulV2 [4096,2560]×[151552,2560]</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;color:#dc2626;font-weight:700">544ms</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#dc2626">5.8%</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#dc2626;font-weight:600">🔴 cube_util 仅 49%（预期 75%）</td></tr>
+                <tr style="background:#fef2f2"><td style="padding:4px 8px;border:1px solid var(--border-subtle);font-weight:700">CE loss 链路（Exp/Sub/RealDiv/ArgMax/ReduceSum）</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;color:#dc2626;font-weight:700">526ms</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#dc2626">5.6%</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#dc2626;font-weight:600">🔴 手写算子链 · AICPU 回退</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle)">ApplyAdamWV2 / LpNormV2（优化器）</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace">64ms</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">0.7%</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">🟢 BF16 状态,正常范围</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle)">RmsNorm ×92 + 残差/杂项</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace">560ms</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">5.9%</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">🟢 Add/Mul/Cast/Slice</td></tr>
+              </table>
+            </div>
+            <p class="twin-locate-metric-note"><strong>产出</strong>：两个问题算子 —— ① <code>lm_head MatMulV2</code>（vocab 非对齐 → 带宽瓶颈，cube_util 49% vs 预期 75%）；② <code>CE loss 链路</code>（Exp/Sub/RealDiv/ArgMax/ReduceSum 合计 526ms，走 AICPU 回退）。</p>
+            <p style="margin:8px 0 0;font-size:12px;color:var(--foreground-secondary);line-height:1.5">↳ 需在【执行效率层】用 Roofline + Timeline 判定这两个算子的根因归类（带宽瓶颈 / AICPU 回退）。</p>
+          ` },
+        { label: "执行效率层", short: "带宽瓶颈", sub: "WHY · lm_head memory-bound(vocab 尾块非对齐) + CE 手写链 AICPU 回退",
+          content: `
+            <p class="twin-locate-metric-note" style="margin:0 0 6px;font-weight:600;color:var(--foreground)">① lm_head 带宽瓶颈（Roofline memory-bound）</p>
+            <p class="twin-locate-metric-note"><code>kernel_details</code> 中 lm_head MatMulV2 <code>cube_util=49%</code>。DRAM 访存 ≈ 输入 4096×2560×2 + 权重 151552×2560×2 + 输出 4096×151552×2 ≈ <strong>2.0GB</strong>；H800 HBM 带宽 3.35TB/s，纯带宽耗时 ≈ 0.60ms，而实测 <strong style="color:#dc2626">8.5ms/call × 64 microbatch = 544ms</strong> → Roofline 落在 <strong style="color:#dc2626">memory-bound 区</strong>。根因：vocab=151552 的 tile 粒度与 hidden=2560 的 K 维不匹配，GEMM 尾块效率折半。</p>
+            <p class="twin-locate-metric-note" style="margin:14px 0 6px;font-weight:600;color:var(--foreground)">② CE loss 的 AICPU 串行链路</p>
+            <p class="twin-locate-metric-note">Timeline 中 lm_head 后有 5 个 vector 算子串行排列，每个算子间有 60~100μs 的 launch gap：</p>
+            <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin:8px 0;font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:10px">
+              ${["Exp 128ms","Sub 126ms","RealDiv 125ms","ReduceSum 75ms","ArgMax 72ms"].map((op,i)=>`
+                <span style="padding:5px 9px;border-radius:5px;background:#fef2f2;border:1px solid #fecaca;color:#dc2626;font-weight:600">${op}</span>${i<4?`<span style="color:var(--foreground-muted)">→</span>`:""}`).join("")}
+              <span style="color:var(--foreground-muted);margin-left:6px">= 526ms · 5 次 HBM 读写往返</span>
+            </div>
+            <p class="twin-locate-metric-note">若替换为 <code>F.cross_entropy</code>（路由到 <code>aclnnSoftmaxCrossEntropyWithLogits</code> 融合实现），融合后仅 1 个 kernel，消除 5 次 HBM 往返与 launch gap。</p>
+            <p class="twin-locate-metric-note" style="margin-top:12px"><strong>判据</strong>：lm_head → 带宽瓶颈（memory-bound），vocab 尾块未对齐导致 cube_util 折半；CE loss → 手写算子链 × AICPU 回退；其余算子（MatMul / FA / RmsNorm）正常。合计可优化 ≈ 750ms。</p>
+            <p style="margin:8px 0 0;font-size:12px;color:var(--foreground-secondary);line-height:1.5">↳ 需在【代码/配置层】把根因映射到具体修改项。</p>
+          ` },
+        { label: "代码/配置层", short: "3 处改动", sub: "FIX · lm_head tiling 调优 + CE loss 融合 + BF16 优化器",
+          content: `
+            <p class="twin-locate-metric-note" style="margin:0 0 12px"><strong style="color:var(--foreground)">诊断总结</strong>：lm_head vocab 尾块非对齐致带宽瓶颈 + CE loss 手写算子链走 AICPU 回退，共同拉高 stage 7 负载，拖累整网 MFU 至 38%。</p>
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <div style="border:1px solid var(--border-subtle);border-radius:8px;overflow:hidden">
+                <div style="padding:7px 12px;background:var(--surface-2);font-size:12px;font-weight:600">① lm_head tiling 调优（针对 vocab=151552 手工 tile）</div>
+                <div style="font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:11px;line-height:1.7;padding:8px 12px;background:var(--surface-1);overflow-x:auto">
+                  <div style="color:var(--foreground-muted)">&nbsp;&nbsp;# vocab=151552 已对齐 256(151552/256=592)，但 K=hidden 2560 tile 划分不友好</div>
+                  <div style="background:rgba(22,163,74,.1);color:#16a34a">+ &nbsp;lm_head.set_matmul_tiling(cube_tile=(256, 128), vec_tile=256)&nbsp;<span style="color:var(--foreground-muted)"># 手工指定尾块 tile</span></div>
+                  <div style="color:var(--foreground-muted)">&nbsp;&nbsp;# 预期 cube_util 49% → 72%，耗时 544ms → 约 370ms（↓174ms）</div>
+                </div>
+              </div>
+              <div style="border:1px solid var(--border-subtle);border-radius:8px;overflow:hidden">
+                <div style="padding:7px 12px;background:var(--surface-2);font-size:12px;font-weight:600">② CE loss 融合（消除 AICPU 回退）</div>
+                <div style="font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:11px;line-height:1.7;padding:8px 12px;background:var(--surface-1);overflow-x:auto">
+                  <div style="background:rgba(220,38,38,.1);color:#dc2626">− &nbsp;p = softmax(logits); loss = -(labels * log(p)).sum()&nbsp;<span style="color:var(--foreground-muted)"># 手写 5 段 AICPU/Vector</span></div>
+                  <div style="background:rgba(22,163,74,.1);color:#16a34a">+ &nbsp;loss = F.cross_entropy(logits, labels, ignore_index=pad_id)&nbsp;<span style="color:var(--foreground-muted)"># → aclnnSoftmaxCrossEntropyWithLogits 融合</span></div>
+                  <div style="color:var(--foreground-muted)">&nbsp;&nbsp;# 预期 526ms → 约 50ms（↓476ms）</div>
+                </div>
+              </div>
+              <div style="border:1px solid var(--border-subtle);border-radius:8px;overflow:hidden">
+                <div style="padding:7px 12px;background:var(--surface-2);font-size:12px;font-weight:600">③ 优化器 BF16 状态（openPangu-2.0-Flash 默认已启用）</div>
+                <div style="font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:11px;line-height:1.7;padding:8px 12px;background:var(--surface-1);overflow-x:auto">
+                  <div style="color:var(--foreground-muted)">&nbsp;&nbsp;use_distributed_optimizer: True&nbsp;&nbsp;# 已启用,ApplyAdamWV2 显存/耗时已减半,无需修改</div>
+                </div>
+              </div>
+            </div>
+            <p class="twin-locate-metric-note" style="margin:12px 0 6px;font-weight:600;color:var(--foreground)">验证结果（①+② 叠加）</p>
+            <div style="overflow-x:auto;margin:6px 0">
+              <table style="width:100%;border-collapse:collapse;font-size:11px;line-height:1.5">
+                <tr style="background:var(--surface-2)"><th style="padding:4px 8px;border:1px solid var(--border-subtle)">指标</th><th style="padding:4px 8px;border:1px solid var(--border-subtle);color:#dc2626">修改前</th><th style="padding:4px 8px;border:1px solid var(--border-subtle);color:#16a34a">修改后</th></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle)">步耗时 T_iter</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#dc2626;font-weight:600">12100ms</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#16a34a;font-weight:600">10350ms（↓14.5%）</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle)">MFU</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#dc2626;font-weight:600">38%</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#16a34a;font-weight:600">45%</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle)">lm_head cube_util</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#dc2626;font-weight:600">49%</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#16a34a;font-weight:600">72%</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle)">AICPU 耗时占比</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#dc2626;font-weight:600">7.2%</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#16a34a;font-weight:600">1.5%</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle)">PHS 评分</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#dc2626;font-weight:600">D(32)</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#16a34a;font-weight:600">C+(55)</td></tr>
+              </table>
+            </div>
+            <p class="twin-locate-metric-note" style="margin-top:8px">若要进一步达到 50%+ MFU，需配合 PP bubble 优化（interleaved 1F1B + 层数分配）。</p>
+          ` },
       ],
     },
-    "perf-comm-straggler": {
-      title: "定位链 · MoE all-to-all 快慢卡：步耗时周期性尖峰、尾延迟恶化",
-      meta: "路径:迭代层 → 仅多卡异常 → 通信调度层 → 模型层 → infra层 → 超参/代码层",
-      steps: [
-        { label: "迭代层", short: "CV 27%", sub: "WHEN · 步耗时 CV=27%,周期性尖峰 8~12×" },
-        { label: "分叉判定", sub: "仅多卡异常 · 切入通信分支", branch: true },
-        { label: "通信调度层", short: "rank 17/23/41", sub: "WHY(通信) · all-to-all 耗时暴增 32×,rank 17/23/41 尾延迟" },
-        { label: "模型层", short: "gate bias 漂移", sub: "WHERE · router gate bias 漂移致 3 rank 承接 5× expert token" },
-        { label: "infra层", short: "61 rank 空等", sub: "CONTEXT · 其余 61 rank 空等,EP64 负载严重不均" },
-        { label: "超参/代码层", short: "aux-loss+重映射", sub: "FIX · aux-loss + global-balance + EP group 重新映射" },
-      ],
-      bypass: [{ from: 0, to: 2 }],
-    },
+
     "low-precision-training": {
       title: "定位链 · 低精训练 loss 尾部不收敛，量化误差累积导致梯度信号淹没",
       meta: "路径:迭代层 → 单/多卡均异常 → 张量数值分析 → 误差传递路径 → infra层 → 超参/代码层",
@@ -2325,7 +3269,7 @@
           ` },
         { label: "infra层", short: "全 64 rank", sub: "CONTEXT · 跨所有 rank 复现，FP8 scale 0.62→0.18，有效 bit 4.5→2.8",
           content: `
-            <p class="twin-locate-metric-note">layer 35 属于 PP stage 5（layers 30~35），在所有 64 个 EP rank 上均观测到相同分布偏移。进一步检查 FP8 量化参数：layer 35 的 per-tensor scale 从 step 25000 的 <strong>0.62</strong> 持续下降至 step 32000 的 <strong style="color:#dc2626">0.18</strong>。</p>
+            <p class="twin-locate-metric-note">layer 35 属于 PP stage 3（layers 34~45），在所有 64 个 EP rank 上均观测到相同分布偏移。进一步检查 FP8 量化参数：layer 35 的 per-tensor scale 从 step 25000 的 <strong>0.62</strong> 持续下降至 step 32000 的 <strong style="color:#dc2626">0.18</strong>。</p>
             <div class="locate-canvas-card">
               <div class="locate-canvas-card__head"><span>Layer 35 · FP8 per-tensor scale 衰减曲线（step 25000→32000）</span></div>
               <div class="locate-canvas-card__body"><canvas id="case6ScaleDecayCanvas"></canvas></div>
@@ -2339,7 +3283,7 @@
             <div style="display:flex;flex-direction:column;gap:10px">
               <div style="border:1px solid var(--border-subtle);border-radius:8px;overflow:hidden">
                 <div style="padding:7px 12px;background:var(--surface-2);font-size:12px;font-weight:600">① model_config.json — per-token + per-channel 混合量化</div>
-                <div style="font-family:monospace;font-size:11px;line-height:1.7;padding:8px 12px;background:var(--surface-1);overflow-x:auto">
+                <div style="font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:11px;line-height:1.7;padding:8px 12px;background:var(--surface-1);overflow-x:auto">
                   <div style="color:var(--foreground-muted)">&nbsp;&nbsp;"fp8_quant_mode": "per_tensor",</div>
                   <div style="background:rgba(220,38,38,.1);color:#dc2626">− &nbsp;"fp8_quant_mode": <strong>"per_tensor"</strong>,</div>
                   <div style="background:rgba(22,163,74,.1);color:#16a34a">+ &nbsp;"fp8_quant_mode": <strong>"hybrid"</strong>,</div>
@@ -2350,14 +3294,14 @@
               </div>
               <div style="border:1px solid var(--border-subtle);border-radius:8px;overflow:hidden">
                 <div style="padding:7px 12px;background:var(--surface-2);font-size:12px;font-weight:600">② fp8_cast.py — 动态 scale 上界保护</div>
-                <div style="font-family:monospace;font-size:11px;line-height:1.7;padding:8px 12px;background:var(--surface-1);overflow-x:auto">
+                <div style="font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:11px;line-height:1.7;padding:8px 12px;background:var(--surface-1);overflow-x:auto">
                   <div style="background:rgba(220,38,38,.1);color:#dc2626">− &nbsp;scale = <strong>compute_scale(tensor)</strong></div>
                   <div style="background:rgba(22,163,74,.1);color:#16a34a">+ &nbsp;scale = <strong>max(compute_scale(tensor), 512.0 / 448.0)</strong>&nbsp;<span style="color:var(--foreground-muted)"># scale ≥ ~1.14，有效 ≥ 4.2 bit</span></div>
                 </div>
               </div>
               <div style="border:1px solid var(--border-subtle);border-radius:8px;overflow:hidden">
                 <div style="padding:7px 12px;background:var(--surface-2);font-size:12px;font-weight:600">③ attention.py — 深层启用 BF16 softmax</div>
-                <div style="font-family:monospace;font-size:11px;line-height:1.7;padding:8px 12px;background:var(--surface-1);overflow-x:auto">
+                <div style="font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:11px;line-height:1.7;padding:8px 12px;background:var(--surface-1);overflow-x:auto">
                   <div style="background:rgba(220,38,38,.1);color:#dc2626">− &nbsp;attn_output = softmax(scores, dtype=<strong>torch.float8_e4m3fn</strong>)</div>
                   <div style="background:rgba(22,163,74,.1);color:#16a34a">+ &nbsp;dtype = torch.float8_e4m3fn <strong>if layer_idx < 30 else torch.bfloat16</strong></div>
                   <div style="background:rgba(22,163,74,.1);color:#16a34a">+ &nbsp;attn_output = <strong>softmax(scores, dtype=dtype)</strong></div>
@@ -2365,7 +3309,7 @@
               </div>
               <div style="border:1px solid var(--border-subtle);border-radius:8px;overflow:hidden">
                 <div style="padding:7px 12px;background:var(--surface-2);font-size:12px;font-weight:600">④ training_args.yaml — 梯度 scale 预热</div>
-                <div style="font-family:monospace;font-size:11px;line-height:1.7;padding:8px 12px;background:var(--surface-1);overflow-x:auto">
+                <div style="font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:11px;line-height:1.7;padding:8px 12px;background:var(--surface-1);overflow-x:auto">
                   <div style="background:rgba(22,163,74,.1);color:#16a34a">+ &nbsp;fp8_grad_scale_warmup_steps: <strong>5000</strong></div>
                   <div style="background:rgba(22,163,74,.1);color:#16a34a">+ &nbsp;fp8_grad_scale_max: <strong>4.0</strong>&nbsp;&nbsp;<span style="color:var(--foreground-muted)"># warmup 后 grad scale 上限 4×</span></div>
                   <div style="background:rgba(22,163,74,.1);color:#16a34a">+ &nbsp;fp8_grad_scale_interval: <strong>1000</strong>&nbsp;<span style="color:var(--foreground-muted)"># 每 1000 step 递增</span></div>
@@ -2395,140 +3339,18 @@
   if (window.PtoHif8Case7) { locateChains["hif8-precision"] = window.PtoHif8Case7.chain(); locateChains["qproj-overflow"] = locateChains["hif8-precision"]; }
 
   let locateChainObserver = null;
-  let _locateTrackArgs = null; // 保存 drawLocateTrackLines 参数，resize 时重绘
 
-  // 选中态底色是独立图层(z-index 压在连线下方),节点切换时把它挪到对应节点的位置/尺寸上
-  function positionLocateHighlight() {
-    const top = $("locateChainTop");
-    const highlight = top?.querySelector(".twin-locate-highlight");
-    const activeNode = top?.querySelector(".twin-locate-node.is-active");
-    if (!top || !highlight) return;
-    if (!activeNode) {
-      highlight.classList.remove("is-visible");
-      return;
-    }
-    const containerRect = top.getBoundingClientRect();
-    const nodeRect = activeNode.getBoundingClientRect();
-    highlight.style.left = `${nodeRect.left - containerRect.left}px`;
-    highlight.style.top = `${nodeRect.top - containerRect.top}px`;
-    highlight.style.width = `${nodeRect.width}px`;
-    highlight.style.height = `${nodeRect.height}px`;
-    highlight.classList.add("is-visible");
-  }
-
-  // 悬浮底色同样是独立图层(z-index 压在连线下方),鼠标移入某节点时把它挪过去,移出则隐藏
-  function positionLocateHover(node) {
-    const top = $("locateChainTop");
-    const hover = top?.querySelector(".twin-locate-hover");
-    if (!top || !hover) return;
-    if (!node) {
-      hover.classList.remove("is-visible");
-      return;
-    }
-    const containerRect = top.getBoundingClientRect();
-    const nodeRect = node.getBoundingClientRect();
-    hover.style.left = `${nodeRect.left - containerRect.left}px`;
-    hover.style.top = `${nodeRect.top - containerRect.top}px`;
-    hover.style.width = `${nodeRect.width}px`;
-    hover.style.height = `${nodeRect.height}px`;
-    hover.classList.add("is-visible");
-  }
-
-  // 定位链栏兼作锚点导航:点击/滚动联动高亮对应的 nav 节点、下方内容区块、以及走过的连线
+  // 定位链栏兼作锚点导航:点击/滚动联动点亮对应刀锋、下方内容区块;
+  // is-active=当前层(最亮+发光)；is-done=已走过的层(点亮蓝刃)
   function setActiveLocateNode(sectionId) {
-    const nodes = Array.from(document.querySelectorAll(".twin-locate-node"));
-    nodes.forEach((node) => node.classList.toggle("is-active", node.dataset.target === sectionId));
+    const segs = Array.from(document.querySelectorAll(".twin-locate-seg"));
+    const activeIndex = segs.findIndex((seg) => seg.dataset.target === sectionId);
+    segs.forEach((seg, i) => {
+      seg.classList.toggle("is-active", seg.dataset.target === sectionId);
+      seg.classList.toggle("is-done", activeIndex >= 0 && i < activeIndex);
+    });
     document.querySelectorAll(".twin-locate-section").forEach((section) => {
       section.classList.toggle("is-active", section.id === sectionId);
-    });
-    const activeIndex = nodes.findIndex((node) => node.dataset.target === sectionId);
-    document.querySelectorAll(".twin-locate-line").forEach((line) => {
-      const segTo = Number(line.dataset.segmentTo);
-      line.classList.toggle("is-current", activeIndex >= 0 && segTo <= activeIndex);
-    });
-    positionLocateHighlight();
-  }
-
-  // 量出每个圆点的真实坐标后用 SVG 画出连线:保证逐点相连、不断线不错位;
-  // 同时按 chain.bypass 画出跳过某个节点的旁路虚线弧(例如绕过「通信调度层」直达「模型层」)
-  function drawLocateTrackLines(top, nodeCount, branchBeforeIndex, bypassList) {
-    _locateTrackArgs = { top, nodeCount, branchBeforeIndex, bypassList };
-    top.querySelector(".twin-locate-track-svg")?.remove();
-    if (nodeCount < 2) return;
-    const svgNS = "http://www.w3.org/2000/svg";
-    const svg = document.createElementNS(svgNS, "svg");
-    svg.setAttribute("class", "twin-locate-track-svg");
-    top.insertBefore(svg, top.firstChild);
-
-    requestAnimationFrame(() => {
-      const containerRect = top.getBoundingClientRect();
-      const centers = Array.from(top.querySelectorAll(".twin-locate-node-dot")).map((dot) => {
-        const r = dot.getBoundingClientRect();
-        return {
-          x: r.left + r.width / 2 - containerRect.left,
-          y: r.top + r.height / 2 - containerRect.top,
-        };
-      });
-      svg.setAttribute("width", String(containerRect.width));
-      svg.setAttribute("height", String(containerRect.height));
-      svg.innerHTML = "";
-
-      // 箭头标记:仅用于最后一段(连到「超参/代码层」),表示定位链从左到右的走向。
-      // fill=context-stroke 让箭头颜色跟随所在连线(含 is-current 高亮蓝)。
-      const defs = document.createElementNS(svgNS, "defs");
-      const marker = document.createElementNS(svgNS, "marker");
-      marker.setAttribute("id", "twin-locate-arrow");
-      marker.setAttribute("viewBox", "0 0 10 10");
-      marker.setAttribute("refX", "8");
-      marker.setAttribute("refY", "5");
-      marker.setAttribute("markerWidth", "7");
-      marker.setAttribute("markerHeight", "7");
-      marker.setAttribute("orient", "auto-start-reverse");
-      marker.setAttribute("markerUnits", "userSpaceOnUse");
-      const arrowPath = document.createElementNS(svgNS, "path");
-      arrowPath.setAttribute("d", "M 0 0 L 10 5 L 0 10 z");
-      arrowPath.setAttribute("fill", "context-stroke");
-      marker.appendChild(arrowPath);
-      defs.appendChild(marker);
-      svg.appendChild(defs);
-
-      for (let i = 0; i < centers.length - 1; i += 1) {
-        const a = centers[i];
-        const b = centers[i + 1];
-        const isLast = i === centers.length - 2;
-        const line = document.createElementNS(svgNS, "line");
-        line.setAttribute("x1", String(a.x));
-        line.setAttribute("y1", String(a.y));
-        if (isLast) {
-          // 终点回退 10px,让箭头落在最后一个节点圆点之前而不被其遮住
-          const dx = b.x - a.x;
-          const dy = b.y - a.y;
-          const len = Math.hypot(dx, dy) || 1;
-          line.setAttribute("x2", String(b.x - (dx / len) * 10));
-          line.setAttribute("y2", String(b.y - (dy / len) * 10));
-          line.setAttribute("marker-end", "url(#twin-locate-arrow)");
-        } else {
-          line.setAttribute("x2", String(b.x));
-          line.setAttribute("y2", String(b.y));
-        }
-        line.setAttribute("class", "twin-locate-line");
-        line.dataset.segmentTo = String(i + 1);
-        svg.appendChild(line);
-      }
-
-      bypassList.forEach(({ from, to }) => {
-        const a = centers[from];
-        const b = centers[to];
-        if (!a || !b) return;
-        const midX = (a.x + b.x) / 2;
-        const dipY = Math.max(a.y, b.y) + 22;
-        const path = document.createElementNS(svgNS, "path");
-        path.setAttribute("d", `M ${a.x} ${a.y} Q ${midX} ${dipY} ${b.x} ${b.y}`);
-        path.setAttribute("class", "twin-locate-bypass");
-        svg.appendChild(path);
-      });
-
-      positionLocateHighlight();
     });
   }
 
@@ -2540,15 +3362,12 @@
     top.innerHTML = "";
     content.innerHTML = "";
 
-    const highlight = document.createElement("div");
-    highlight.className = "twin-locate-highlight";
-    top.appendChild(highlight);
+    // 关卡进度条外壳：一条整体轨道，所有分段挂在里面（一体化 ribbon）
+    const track = document.createElement("div");
+    track.className = "twin-locate-track";
+    top.appendChild(track);
 
-    const hover = document.createElement("div");
-    hover.className = "twin-locate-hover";
-    top.appendChild(hover);
-
-    // 展开出真正会渲染成节点的层,同时记下哪些节点前面夹了一个「分叉判定」(虚线连接)
+    // 展开出真正会渲染成分段的层,同时记下哪些层前面夹了一个「分叉判定」(该段加分叉标记)
     const contentSteps = [];
     const branchBeforeIndex = new Set();
     let sawBranch = false;
@@ -2564,30 +3383,29 @@
 
     contentSteps.forEach((step, index) => {
       const sectionId = `locate-section-${caseKey}-${index}`;
+      const isBranch = branchBeforeIndex.has(index);
 
-      const node = document.createElement("div");
-      node.className = "twin-locate-node" + (index === 0 ? " is-active" : "");
-      node.dataset.target = sectionId;
-      node.setAttribute("role", "button");
-      node.setAttribute("tabindex", "0");
-      node.innerHTML = `
-        <strong class="twin-locate-node-label">${step.label}</strong>
-        <small class="twin-locate-node-sub">${step.short || ""}</small>
-        <span class="twin-locate-node-dot-row"><span class="twin-locate-node-dot"></span></span>
+      const seg = document.createElement("div");
+      seg.className = "twin-locate-seg" + (index === 0 ? " is-active" : "") + (isBranch ? " is-branch" : "");
+      seg.dataset.target = sectionId;
+      seg.setAttribute("role", "button");
+      seg.setAttribute("tabindex", "0");
+      seg.setAttribute("title", step.label + (step.short ? " · " + step.short : ""));
+      seg.innerHTML = `
+        <span class="twin-locate-seg-label">${step.label}</span>
+        ${step.short ? `<span class="twin-locate-seg-sub">${step.short}</span>` : ""}
       `;
       const jumpToSection = () => {
         setActiveLocateNode(sectionId);
         document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth", block: "start" });
       };
-      node.addEventListener("click", jumpToSection);
-      node.addEventListener("mouseenter", () => positionLocateHover(node));
-      node.addEventListener("mouseleave", () => positionLocateHover(null));
-      node.addEventListener("keydown", (event) => {
+      seg.addEventListener("click", jumpToSection);
+      seg.addEventListener("keydown", (event) => {
         if (event.key !== "Enter" && event.key !== " ") return;
         event.preventDefault();
         jumpToSection();
       });
-      top.appendChild(node);
+      track.appendChild(seg);
 
       const section = document.createElement("section");
       section.className = "twin-locate-section" + (index === 0 ? " is-active" : "");
@@ -2607,8 +3425,6 @@
       section.appendChild(bodyEl);
       content.appendChild(section);
     });
-
-    drawLocateTrackLines(top, contentSteps.length, branchBeforeIndex, chain.bypass || []);
 
     locateChainObserver?.disconnect();
     const root = $("runTwinLocateView");
@@ -2630,12 +3446,17 @@
   // 通过 [data-locate-chart] 占位符挂载,避免重复实现一套图表渲染逻辑
   let locateMetricCards = []; // [{el, cfg, ctrl, size}]
 
+  // 同 syncAccCards:批量读完尺寸再批量写,避免逐卡读写交替触发多次同步 layout。
   function syncLocateMetricCharts(force) {
+    const pending = [];
     locateMetricCards.forEach((c) => {
       const w = Math.round(c.el.clientWidth || 0);
       const h = Math.round(c.el.clientHeight || 0);
       if (w < 2 || h < 2) return;
       if (!force && c.ctrl && w === c.size.w && h === c.size.h) return;
+      pending.push({ c, w, h });
+    });
+    pending.forEach(({ c, w, h }) => {
       c.size = { w, h };
       c.ctrl = renderMetricChart(c.el, c.cfg, w, h);
     });
@@ -2791,23 +3612,18 @@
       node: 2, hotGPUs: [7], warmGPUs: [0, 1, 2, 3, 4, 5, 6],
       label: "node2 放大 · 32 GPU 内部",
       hotLabel: "GPU 7 (EP rank 23) 死锁", warmLabel: "GPU 0~6 空等",
-      ppStage: 3, ppLabel: "PP stage 3 · layers 24~35",
+      ppStage: 3, ppLabel: "PP stage 3 · layers 34~45",
     },
     "nvlink": {
       node: 2, hotGPUs: [3, 4], warmGPUs: [0, 1, 2, 5, 6, 7],
       label: "node2 放大 · NVLINK GPU3↔GPU4 掉线",
       hotLabel: "GPU 3 & 4 带宽降级", warmLabel: "同节点其余 GPU 受影响",
-      ppStage: 4, ppLabel: "PP stage 4↔5 跨 stage p2p 被拖慢",
+      ppStage: 2, ppLabel: "PP stage 2↔3 跨 stage p2p 被拖慢",
     },
-    "perf-comm-straggler": {
-      node: null, hotRanks: [17, 23, 41],
-      label: "2048 GPU 全局 · rank 17/23/41 straggler",
-      hotLabel: "rank 17/23/41 负载 5×", warmLabel: "其余 61 EP rank 空等",
-      ppStage: null, ppLabel: "周期性尖峰 · CV=27%",
-    },
+
   };
 
-  var PP_STAGE_COLORS = ["#3b82f6","#06b6d4","#10b981","#f59e0b","#f97316","#ef4444","#8b5cf6","#ec4899"];
+  var PP_STAGE_COLORS = ["#3b82f6","#10b981","#f59e0b","#ef4444"];
   var NODES = 64, GPUS_PER_NODE = 32, TOTAL = NODES * GPUS_PER_NODE;
 
   function renderInfraHeatSnapshot(caseKey) {
@@ -2873,9 +3689,10 @@
       var globalH = gRows * gCellH;
       var gStartX = padL, gStartY = padT;
 
-      // PP stage 行分组色带（每 8 node 一行 stage：64/8=8）
-      var NODES_PER_STAGE = 8;
-      for (var stage = 0; stage < 8; stage++) {
+      // PP stage 行分组色带（每 16 node 一行 stage：64/4=16）
+      var NODES_PER_STAGE = 16;
+      var STAGE_LAYERS = [[0,11],[12,22],[23,33],[34,45]];
+      for (var stage = 0; stage < 4; stage++) {
         var sy = gStartY + stage * NODES_PER_STAGE * gCellH;
         ctx.fillStyle = PP_STAGE_COLORS[stage];
         ctx.globalAlpha = 0.08;
@@ -2888,8 +3705,7 @@
         ctx.fillText("S" + stage, padL - 4, labelY);
         // 层范围标注
         ctx.font = "5px system-ui";
-        var layerStart = stage * 8, layerEnd = Math.min(layerStart + 7, 60);
-        ctx.fillText("L" + layerStart + "~" + layerEnd, padL - 4, labelY + 7);
+        ctx.fillText("L" + STAGE_LAYERS[stage][0] + "~" + STAGE_LAYERS[stage][1], padL - 4, labelY + 7);
       }
 
       // 2048 GPU 小格子（每格颜色=模拟利用率）
@@ -2927,7 +3743,7 @@
 
       // 标题
       ctx.fillStyle = cSec; ctx.font = "10px system-ui"; ctx.textAlign = "left";
-      ctx.fillText("全局 2048 GPU · 32 GPU/列 × 64 node/行 · PP stage 行分组（S0~S7，每 8 node）", 12, 12);
+      ctx.fillText("全局 2048 GPU · 32 GPU/列 × 64 node/行 · PP stage 行分组（S0~S3，每 16 node）", 12, 12);
 
       // 问题节点右侧标注
       var hotRowY = gStartY + snap.node * gCellH;
@@ -3380,8 +4196,12 @@
   //   ③ 收尾(5800~6800):rank 23 红色淡出、mesh 淡出,回到起点循环。
   // 单个 rAF 句柄(全页仅一个展开图),重画前先取消,避免泄漏。
   let lvAnimRaf = null;
+  let lvAnimIO = null;
+  let lvAnimVisHandler = null;
   function startLayerA2A(host) {
     if (lvAnimRaf) { cancelAnimationFrame(lvAnimRaf); lvAnimRaf = null; }
+    if (lvAnimIO) { lvAnimIO.disconnect(); lvAnimIO = null; }
+    if (lvAnimVisHandler) { document.removeEventListener("visibilitychange", lvAnimVisHandler); lvAnimVisHandler = null; }
     const mesh = Array.from(host.querySelectorAll(".lv-a2a-mesh"));
     const nodes = Array.from(host.querySelectorAll(".lv-a2a-node"));
     if (!mesh.length && !nodes.length) return;
@@ -3437,7 +4257,31 @@
       if (labelComb) labelComb.style.opacity = t >= 2600 ? "1" : "0.15";
       lvAnimRaf = requestAnimationFrame(frame);
     };
-    lvAnimRaf = requestAnimationFrame(frame);
+    // 该动画会一直循环播放;面板被折叠/滚出可视区或页面切到后台标签时暂停,
+    // 避免看不见的动画常驻占用主线程(IntersectionObserver 对 hidden/display:none 也会报 not-intersecting)。
+    let running = false;
+    const play = () => {
+      if (running) return;
+      running = true;
+      t0 = null; // 纯装饰性动画,恢复时重新起算相位即可,无需保留暂停前的进度
+      lvAnimRaf = requestAnimationFrame(frame);
+    };
+    const pause = () => {
+      running = false;
+      if (lvAnimRaf) { cancelAnimationFrame(lvAnimRaf); lvAnimRaf = null; }
+    };
+    let intersecting = true;
+    const sync = () => { if (!document.hidden && intersecting) play(); else pause(); };
+    if (typeof IntersectionObserver === "function") {
+      lvAnimIO = new IntersectionObserver((entries) => {
+        intersecting = entries[entries.length - 1]?.isIntersecting ?? true;
+        sync();
+      }, { threshold: 0 });
+      lvAnimIO.observe(host);
+    }
+    lvAnimVisHandler = sync;
+    document.addEventListener("visibilitychange", lvAnimVisHandler);
+    sync();
   }
 
   // 最大化:给 .twin-layerview 加 is-maximized(CSS 变 position:fixed 铺满) + 一层背板;
@@ -3475,7 +4319,10 @@
   }
 
   function renderTwinLayerViews() {
-    if (lvAnimRaf) { cancelAnimationFrame(lvAnimRaf); lvAnimRaf = null; } // 切换案例/重画前先停掉旧动画
+    // 切换案例/重画前先停掉旧动画及其可见性监听,避免 [data-layer-view] 为空时残留观察者
+    if (lvAnimRaf) { cancelAnimationFrame(lvAnimRaf); lvAnimRaf = null; }
+    if (lvAnimIO) { lvAnimIO.disconnect(); lvAnimIO = null; }
+    if (lvAnimVisHandler) { document.removeEventListener("visibilitychange", lvAnimVisHandler); lvAnimVisHandler = null; }
     document.querySelectorAll("[data-layer-view]").forEach((host) => {
       const draw = () => {
         const expanded = Number(host.dataset.lvExpanded ?? 38);
@@ -3703,7 +4550,7 @@
     syncLayerViewCTALabel();
   }
 
-  // ── 问题六 Canvas 图表渲染 ──
+  // ── 问题三 Canvas 图表渲染 ──
   function dprCase6(canvas, cssW, cssH) {
     const dpr = window.devicePixelRatio || 1;
     canvas.width = cssW * dpr; canvas.height = cssH * dpr;
@@ -3960,7 +4807,7 @@
     if (caseKey === "low-precision-training") renderCase6AllCharts();
     if (caseKey === "hif8-precision" || caseKey === "qproj-overflow") {
       window.PtoHif8Case7?.renderAll();
-      // 问题二默认收起底部泳道图(ide-frame 底部 dock 开关,见 wzh_index.html 内联脚本)
+      // 问题二默认收起底部泳道图(ide-frame 底部 dock 开关,见 training-monitoring.html 内联脚本)
       window.PtoTrainingTwinTimelineDock?.setVisible(false);
     }
     // 问题二(qproj-overflow / hif8-precision):把表搬到整网图位置并隐藏整网图;其余问题则复位
@@ -3979,6 +4826,7 @@
     if (graphCard && centerScroll && graphCard.parentElement && graphCard.parentElement.id === "hif8GraphSlot") {
       centerScroll.appendChild(graphCard);
     }
+    if (window.PtoTwinGraphAdapter) { window.PtoTwinGraphAdapter.clearOverflowBadges(); return; }
     document.querySelectorAll("#graphStage .c7over-badge").forEach((el) => el.remove());
     document.querySelectorAll("#graphStage .c7over-node-crit, #graphStage .c7over-node-ok")
       .forEach((el) => el.classList.remove("c7over-node", "c7over-node-crit", "c7over-node-ok"));
@@ -3987,8 +4835,10 @@
   // 把每层当前步溢出率(取自 hif8-case7)注入到 #graphStage 命中算子节点的右上角(药丸徽标,红/绿 2 档)
   // 返回命中并注入的节点数,供 scheduleHif8GraphBadges 判断整网图是否已就绪(未就绪则重试)
   function refreshHif8GraphBadges() {
+    if (!window.PtoHif8Case7 || !window.PtoHif8Case7.overflowMap) return 0;
+    if (window.PtoTwinGraphAdapter) return window.PtoTwinGraphAdapter.refreshOverflowBadges(window.PtoHif8Case7.overflowMap());
     const stage = document.getElementById("graphStage");
-    if (!stage || !window.PtoHif8Case7 || !window.PtoHif8Case7.overflowMap) return 0;
+    if (!stage) return 0;
     if (!stage.querySelector("svg")) return 0;                    // 整网图 SVG 未就绪
     const map = window.PtoHif8Case7.overflowMap();
     const NS = "http://www.w3.org/2000/svg";
@@ -4160,6 +5010,9 @@
     $("twinWorkArea")?.classList.remove("is-merged"); // 还原为两块独立面板
     $("runTwinLocateView").hidden = true;
     $("runTwinDefaultView").hidden = false;
+    // 退出问题详情(返回或再点一次问题卡片)时,整网图可能残留 panToProblemNodes 平移/缩放到的局部视图,
+    // 需恢复默认全局视图:等一帧让面板尺寸变化(is-merged 还原等)落地,再触发 resize→centerView 的 Fit 逻辑
+    requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
   }
 
   function toggleDiagnosisCard(card) {
@@ -4246,7 +5099,9 @@
     const handleClick = (e) => {
       const key = e.currentTarget.dataset.markerKey;
       const card = document.querySelector(`.diagnosis-card[data-diagnosis="${key}"]`);
-      if (card) toggleDiagnosisCard(card);
+      if (card) { toggleDiagnosisCard(card); return; }
+      // wzh 单屏页面没有「问题诊断」卡片列表,改走单屏问题一透镜联动(时光机跳转 + 整网图/infra 高亮 + 展开 Timeline)
+      if (isWzhTwinPage()) activateProblemOneLens(key);
     };
 
     // 事件委托在进度条上(问题点纵向线挂在 track 内)
@@ -4268,10 +5123,20 @@
     });
   }
 
+  // 深链接:training-monitoring-v2.html(问题一单屏深度看板)的「定位链详情」抽屉用 iframe 内嵌本页并带
+  // ?diagnosis=<key>,加载后自动选中对应「问题诊断」卡,直接展开定位链面板,不需要在 iframe 里再点一次。
+  function applyDeepLinkDiagnosis() {
+    const key = new URLSearchParams(window.location.search).get("diagnosis");
+    if (!key) return;
+    const card = document.querySelector(`.diagnosis-card[data-diagnosis="${key}"]`);
+    if (card) toggleDiagnosisCard(card);
+  }
+
   function boot() {
     bindControls();
     bindDiagnosisCards();
     bindDiagnosisMarkers();
+    bindTimeMachine();
     bindLayerViewTopbar();
     applyTheme(currentTheme, { skipRender: true });
     seedHistory();
@@ -4288,6 +5153,8 @@
       if (document.querySelector(".twin-center-pane")?.classList.contains("is-hif8-side-table")) {
         scheduleHif8GraphBadges(40);
       }
+      // opv-modelviz 重建 SVG 会连带清掉挂在旧 SVG 上的 routed_expert_bank 展开卡片,重建后按需重新挂上
+      if (routedExpertExpandActive) showRoutedExpertBankExpand();
     });
     $("hardwareSummary").textContent = `${hardwareProfiles[state.hardware].label}，每格为${hardwareProfiles[state.hardware].unit}。`;
     resetDevices();
@@ -4304,7 +5171,6 @@
       syncInfraCards(false);
       syncLocateMetricCharts(false);
       if (!document.getElementById("runTwinLocateView").hidden) renderCase6AllCharts();
-      if (_locateTrackArgs) drawLocateTrackLines(_locateTrackArgs.top, _locateTrackArgs.nodeCount, _locateTrackArgs.branchBeforeIndex, _locateTrackArgs.bypassList);
     });
     // 监控侧栏宽度改由 grid 的 minmax(420px, 0.4fr) 弹性伸缩(分辨率足够时占整网图列 40%),
     // 侧栏变宽不会触发 window resize,需单独观察侧栏尺寸变化重画图表,否则 SVG(height:auto)
@@ -4324,6 +5190,7 @@
       ro.observe(monitorSidebar);
     }
     setInterval(tick, 120000); // 每 2 分钟推进一次 step,图表与进度条同步刷新,不再频繁闪动
+    applyDeepLinkDiagnosis(); // 放在 boot() 末尾:模拟真实点击卡片时机,此时图表/设备状态均已初始化完毕
   }
 
   boot();

@@ -5,6 +5,214 @@
 
 ---
 
+## 2026-07-22 — TaskCompare：图表对比底部新增「Media 对比」栏
+
+- `Profiling_Insight_and_Tool/training-run-twin-standalone/TaskCompare.html` — 图表对比页底部增加多模态产出对比分区：左侧勾选几个任务就渲染几张卡片，卡片自上而下为任务名（含状态点/基线标签）、圆角视频封面（取自 `pic/`，16:10 定比裁切 + 综合评分/分辨率·帧率/时长角标）、生成 prompt、产出质量指标（CLIP-T / 时序一致性 / 美学评分 / FVD）、来源 checkpoint 与单条生成耗时；沿用 `.cmp-group` 外壳支持折叠，「标记最优」开关下逐指标高亮最优任务。
+- 同页「最佳任务」榜单第 2 项由 `grad_norm` 换成 `media` 综合评分（与 Media 卡片角标同源），榜首任务不再包揽全部指标——第 1 名赢 loss / MFU，media 由基线任务 v2 拿下。
+- 同页左侧任务对比栏加 300px 宽度上限，拖拽分隔条不再能把它拉宽到挤压右侧栅格。
+
+## 2026-07-22 — config-relation-observer：Layer 导航分组名跟随选中态降噪
+
+- `js/config-relation-observer.js` / `css/config-relation-observer.css` — 选中层（或任意关系）后，Layer 导航上下两行分组名（PP / Dense / MoE / Emb / Norm / Head）中未被牵连的整条压到 0.35 透明度；Dense/MoE 注记新增 `data-segment`，由 `rel.segments` 判定归属。
+
+## 2026-07-22 — `config-relation-observer.html`：关系连线标注块加重阴影
+
+- `.cro-link-label__box` 原来只有 `--surface-1` 填充 + `--border-subtle` 描边，浮在整网/刻度带/热力图上时融进背景信息里。改为三层 `filter: drop-shadow`（`0 2px 4px /.7` 贴边定形 + `0 8px 16px /.7` 中距 + `0 16px 40px /.65` 大范围暗场，末层近乎无位移，等效把标注块四周底图压暗一圈挖空），描边提到 `--border-strong`。透明度高于 `--shadow-*` token，因为它压的是彩色 3D deck 与热力图而非纯色页面底。SVG 元素不吃 `box-shadow`，所以走 filter。
+
+## 2026-07-22 — training-run-twin-standalone：训练监控 / 任务对比 / 配置关系三页 rail 互跳
+
+- `training-monitoring-v2.html`、`TaskCompare.html`、`config-relation-observer.html` 的 activity rail 底部统一为「训练监控 / 对比 / 配置关系」同款同序三键，当前页保持 `is-selected` 且不绑定跳转，其余两键 `location.href` 跳转，三页任意一页可直达另两页。
+- 「配置关系」用 lucide `share-2` 节点连线图标（三个圆 + 两条斜线），比代码分支更贴「关系连线」语义，与 rail 上 Source control（circle 6,6 / circle 18,18 + 折线）也不会看混。
+- `config-relation-observer.html` 首个 rail 键原为「折叠整网网格区」（用 `is-selected` 表达展开态），与「选中 = 当前页」的 rail 语义冲突：改为与 TaskCompare 完全同款的文件夹图标 + 跳转训练监控大盘，不带 `is-selected`；整网折叠交互与 `croNetToggle` 脚本一并移除（`.is-net-collapsed` 的 CSS 规则留着未删）。三页 rail 至此完全同构：文件夹 / Search / Source control / Terminal / 对比 / 配置关系。
+
+## 2026-07-22 — `config-relation-observer` 关系映射统一排查：五处连线/高亮缺陷
+
+- 单值 `rel.segment` 换成 `rel.segments` / `rel.units` 集合。一次选择往往横跨多列（一个 rank 压住它那段 PP 的 Dense + MoE + 端点列），旧写法在 `case "rank"` 里把 segment 写死成 `"moe"`，导致点一个 rank 只连 MoE 典型层，Dense / Norm / Head 既不高亮也不去色。现按「有层落进关系集」逐列判定，端点列（Emb / Norm / Head）按驻留的 PP stage 判定，且只在整段 stage 被选中（点 PP 标签 / 点 rank）时才接上——避免 MoE 算子横跨全部 stage 时把 Norm/Head 一并拖亮。
+- 新增 `rel.deckStatic`：Emb / Final Norm / LM Head / MTP 这些算子画在 deck 的 input/output 静态段里，不属于任何一张层卡片，而 `selectNode(id, layer)` 会把查找限死在那张卡内 —— 静态节点永远选不中，于是点整网的 MTP Decoder 节点连自己都被取消选中、一条线都连不出去，点 Layer 导航的 Emb/Norm/Head 刻度也没有线连回整网。静态节点现在不带层作用域查找；同时修正传参必须是 `undefined` 而非 `null`（deck 里判的是 `Number.isFinite(Number(layer))`，`Number(null) === 0` 会把查找锁进 L0）。
+- 整网 deck 点算子不再强制 `scopeLayer`。同一个算子（EP Combine、Attn…）在同类型的每一层都存在，直接点它就该亮出整列的层；收敛到单层的规则（select.png 的「EP Combine in Layer 3」）统一由 `emitSelect` 在「先选层、再点算子」时施加，与结构条点击路径同语义。新增 `preferLayer`，让 deck 停在用户正看的那一层而不甩到该列中间。
+- Layer 导航的端点刻度（Emb / Norm / Head）原先 `is-related` 恒为 `false`，点 stage / rank 时它们明明在那段流水线上、刻度带却是灰的；现按 `rel.units` 点亮。
+- 典型层补列级去色：只选到层 / stage / rank 时没有任何 `.cro-bar.is-selected`，原先那条 `:has(.cro-bar.is-selected)` 去色规则整条不生效，五列之间只剩 0.5 的透明度差，点一个 MoE 层时 Dense / Emb / Norm / Head 照旧满色。
+- 整网同步补去色：新增 `markDeckRelated()`，按「层内节点看所在层卡的层号是否在关系集里、静态段节点看 id 是否在 `rel.staticNodes`」标注 `is-related`，配 `:has(.is-related)` 的去色规则。一个 rank 只持有它那个 PP stage 的层 + 一端的 Emb 或 Norm/Head/MTP，整网里其余流水线段现在会退到灰底。
+- 点 rank / PP 标签时补上 `rel.deckLayer = entry.lo`：整网转到这段流水线的首层（以前点末段的卡，图还停在中间层上）；`collectAnchors().net` 的兜底选择器加入 `.pto-model-deck__layer.is-related`，让这类粗粒度选择也能连出到整网（正视图下非 front 的层卡 rect 全 0，`unionRect` 会跳过，锚点落在当前正视的那张卡上）。
+- 删掉 `case "rank"` 里写死的 `rel.segment = "moe"`：一张卡不属于某一列典型层，相关列一律按 `rel.layers` 派生。
+- 补齐 `decoder / input / parameter / state` 四个 op 的 `--cro-bar-color` 映射与 `.cro-board` 兜底色。`syncDeckPalette` 的 `DECK_COLOR_VARS` 一直搬着这四个变量，但结构条的 op→色映射表漏了它们，于是 MTP Decoder（`op="decoder"`，`#0D9488` 绿）在整网里是绿的、在典型层里是灰的。
+- 关系连线新增 `clampRectTo()`：锚点先夹回所在视图的可视宿主、再夹回 `.cro-board`。deck 的 `__viewport` 是 `overflow:hidden`，而 input / output 静态段落在层卡上下 `top:-700px` / `top:520px` 处（Emb、Final Norm、LM Head、MTP 全在里面），`getBoundingClientRect()` 给出的坐标必定在 deck 可视区之外 —— 连线从可视区一头扎出屏幕，表现为「点 Emb/Norm/Head 刻度，整网和 Cluster 都高亮了，就是没有线」。夹取只作用于绘制坐标，锚点有效性仍判在原始 rect 上；夹扁成一条边时不再画分组虚线框。
+
+---
+
+## 2026-07-22 — 新增 `config-relation-observer.html`：整网-layer-Cluster-expert 的 T 型关系观测页
+
+- 新页面 `Profiling_Insight_and_Tool/training-run-twin-standalone/config-relation-observer.html`（配套 `css/config-relation-observer.css`、`js/config-relation-observer.js`），以 `patterns/ide-frame` 为 shell，单一 pane 内用 CSS Grid 切出四个不可见区：左「整网」通栏两行，右上「Model Architecture」与「MoE」并列，「Cluster」挂在 Model Architecture 正下方构成 T 型下竖笔。已挂到 `launch.html`。
+- 拓扑模型层 `CroTopology` 是全页唯一数据源。并行语义取 `world = DP×PP×TP×CP×EP`（EP 与 DP 正交，8×4×1×1×64 = 2048 对齐 openPangu-2.0-Flash 的 Total Rank）。层→PP stage、专家→EP rank、(stage,dp,ep,inner)→global rank、rank→node 全部确定性推导，无随机、无数据文件；11 个 stepper 改动后四视图整体重算，配置不自洽时标红对应 stepper 并写出原因。
+- 整网图直接消费 `patterns/model-architecture-3d-deck`，用 `options.config` 注入 topology 派生的 `layerCount / stageRanges / denseLayers / dsaLayers / representativeLayers`，`options.showChrome:false` 去掉 pattern 自带的视图切换与工具栏，只保留正视图 + pan/zoom。
+- 结构条颜色不再走 `buildColorMap`：本地 `model-graphviz-pattern.js` 未导出 `modelArchitectureColormap`，deck 实际取的是自己的 `COLOR_FALLBACKS`（attention 是 `#3B82F6` 而非 `#EC4899`），两边色相差了一整格。改为把 deck 根节点的 `--pto-model-deck-*` 原样搬到 `.cro-board`，bar 用同名 `data-op` 取同一变量，并照抄它的渐变与 inset 高光，做到同一个算子在两处逐位同色。
+- Layer 导航（一条 49 格刻度带：46 层 + Emb/Norm/Head 三个端点格）按 `default.png` 逐像素落地。初版做成的五栏网格（等宽栏 + `--space-4` 栏距 + 实心刻度 + PP 胶囊标签 + 一条横向分割线）与参考图不是一回事。改成一条**连续**刻度带 —— 刻度是空心细胶囊（1px `--border-default` 描边、`--radius-pill`、无填充），带子按「PP 边界 ∪ Dense/MoE 起止」断开成组，组间空当正中一条 1px `--foreground-muted` 竖分隔线：PP 边界与带子两端的线从 PP 标签行顶画到刻度行下方，Dense / MoE 起止的线从刻度行顶画到底部标签行下方，两种线等长（91px）交错咬合。PP0…PPn 在上、Dense / MoE 在下，都是 14px 纯文字，不套底色；首尾 stage 的标签框延伸到带子两端（参考图里 PP0 含 Emb 格），`Norm|Head` 两侧都不是层故该处无分隔线。几何解一个方程写死：`width = (2n−g)·t + g·6.5t`（n 格 g 组，间隙与刻度同宽 t，空当 : 刻度 = 26 : 4 量自参考图），t 夹在 [1.5, 8]、余量吃进空当，保证带子既不横向溢出也不在右侧留空；分隔线与标签的 x 仍按组的实测 `getBoundingClientRect` 写入。面板由 `--surface-2` 无边框卡片改为 `--surface-1` + `--border-default` 描边 + `--radius-lg`。五段结构条未改动。
+- 刻度改空心后 `.cro-board.is-focused` 的降噪从 `opacity:.12` 提到 `.4` —— 1px 描边压到 12% 会让整条带子消失（原来是实心块才压得住）；`.cro-tick.is-endpoint` 的淡化规则一并删除，参考图里端点格与层刻度取色完全一致，两者的区分交给下方 Dense / MoE 标签划出的层区范围。
+- 集群图参数化重建（原 `training-run-twin.js` 里是写死的 DP4×8行×64列，且列同时被当作 EP rank 和 PP stage 的 1/4）：列 = EP rank，行组 = DP 副本，组内每行一个 PP stage，格数恒等于 Total Rank。复用 `training-run-twin.css` 的 `.twin-heat*` 视觉，但补了一圈中性描边作为静息态 —— 基类只有 6% 的 `.ep-tint-N` 底色，原页面靠 `renderHeat()` 写 util 环才可见，本页不做 util 着色故会整片空白。
+- 关系引擎 `resolveRelation()` 把任一视图的点击解析成四者的全量关系集，layer ↔ 专家 ↔ rank ↔ 算子 双向互查；整网图侧经 `onNodeSelect` 反查回结构条，回写时静音回调避免自激。`attention_core`、`post_mlp_norm` 在 Dense/MoE 两列同名，按节点所在层的 FFN 类型消歧。连线画在 `position:fixed` 的 SVG 上，滚动/缩放/拖拽重画；聚焦降噪只动 opacity 不动尺寸线宽。
+- 集群 2048 个格子用 roving tabindex + 方向键导航（整张网格只占 1 个 Tab 站），其余可交互元素均为原生 `<button>`。container decoration 审计通过：无 `border-left`、无侧条伪元素、无横向渐变高亮，唯一的 `border` 在 `.cro-select` 表单控件上。
+- 修复 Emb / Norm / Head 三个端点算子点不出关系连线：`structureColumns()` 给这三列的 `layers` 是空数组，`resolveRelation()` 的 `segment` 分支被 `if (col.layers.length)` 挡掉，既不收 PP stage 也不收 rank，于是 nav / cluster 两个锚点为空，只剩结构条自己亮着。改为给端点列声明 `stageAnchor`（Emb 在首段、Final Norm / LM Head 在末段），走 `ranksOfStage()` 接回 PP 段与集群格子；标签在无层可报时退化成 `Token Embedding · PP0`，不再拼出尾巴空掉的 `名称 · `；Layer 导航的端点刻度改按 segment 匹配选中态，`.cro-tick.is-endpoint` 的 `opacity:.14` 补上 `:not(.is-selected)`（它写在 `.is-selected` 之后且同特异度，原本会把选中的端点格压回不可见）。
+- 算子选中态从「压 opacity」改成「保色 / 去色」：选中某个算子后，整网 deck 与五个典型层里只有它保留语义色，其余节点 `grayscale(1)` + `opacity:.62`，让选中项从一片灰底上跳出来（层 / EP rank / global rank 这类粗粒度选择仍走原来的 opacity 降噪，不动色相）。规则用 `:has(.is-selected)` 锁在「确实有节点被选中」时 —— 只选到层时 `rel.deckNode` 为空、一个 `.is-selected` 都没有，整幅图不该无缘无故变灰；悬停未选中项时把本色放回来，方便在灰底上确认目标。只在 `.cro-board.is-focused` 状态下叠一层 filter，不改写 deck pattern 自身的节点样式。
+- 典型层算子栈与路由专家列表的滚动条从系统默认（Windows 上 17px 实心灰槽，在算子条右侧劈出一条比内容还抢眼的硬边）压成 6px：轨道透明，滑块用 `2px transparent border + background-clip:content-box` 撑成胶囊，静息 14% 前景色、指针进容器 30%、压在滑块上 46%；`overscroll-behavior:contain` 断掉滚动链，滚到底不再带着 `.cro-board` 一起位移。
+- 选中项自动滚进可视区：算子栈（每列 30+ 条）与路由专家（64 个 EP 组）都远高于各自视口，选中项多半落在折叠区里，不滚出来等于没高亮。`applyRelation()` 末尾对 `.cro-structure__stack` 与 `#croRoutedExperts` 各补一次 `revealIn()`；没有直接选中物时退而露出第一个 `is-related`（选一层 → 该层用到的 EP 组）。实现上手算容器与目标的相对位置、只 `container.scrollBy()`，不用 `el.scrollIntoView()` —— 后者会把所有祖先滚动容器（`.cro-board` 是 `overflow:auto`，document 也可滚）一起滚，点一个专家会把整块面板连同整网图挪走；目标已经露着则一动不动。取元素用按优先级逐个 `querySelector` 而非选择器列表，后者按文档顺序返回，会出现「选中了某个专家却滚到排在它前面的 is-related 组」。
+- Cluster 区左右换位：`.cro-cluster__side`（标题 + stepper）移到左、`.cro-cluster__grid`（矩阵）移到右，容器是 flex，只调 DOM 顺序即可。同时去掉 `#croClusterMeta` 那行「2048 卡 · 256 节点…」说明文字，连带删掉写它的 `controller.onChange` 片段与已无引用的 `.cro-region__meta` 样式。
+- EP 组升级为可单独选中的实体：`applyRelation()` 里 `.cro-moe-group` 从只有 `is-related` 增加 `is-selected`（`primary.kind === "epRank"` 时命中），`collectAnchors().moe` 优先取 `.cro-moe-group.is-selected` 作锚点，连线直接接到组卡片本身，不再退化成组内专家的并集包围盒外加一圈虚线。选中态视觉去掉 `--state-selected` 那层蓝，改成整组一圈 1.5px 白描边（与 `.cro-expert.is-selected` 同一套语言），组内专家保留 `is-related` 供聚焦降噪判断但底色压回 `--surface-3`；`.cro-moe-groups` 补 2px padding，否则描边被滚动容器裁掉。
+- EP 组的选中热区从「只有组名那几个字」扩到整张卡片：click 挂在 `.cro-moe-group` 上，命中 `.cro-expert` 时放行给专家自己的 `kind:"expert"`，其余区域（组名、padding、专家行的间隙）一律选中整组；组名按钮不再单独挂 listener，靠冒泡走同一条路径，仍保留它作为键盘可达入口。清空选择的 `SELECTABLE` 白名单相应从 `.cro-moe-group__name` 放宽到 `.cro-moe-group`，否则点卡片空白处会先选中再被自己清掉。
+- 顺带修 `expert` / `epRank` / `sharedExpert` 三个分支不设 `rel.deckLayer` 的问题：`selectNode()` 拿不到层号，整网侧没有锚点，专家类选择的连线一直少一条。改为取中间那个 MoE 层作代表。
+- 三处高亮统一到「白描边」这一套选中语言：① 共享专家 SE 胶囊只有一个，任何指向它的选中都只落成 `is-related`，铺满整行的 `--state-selected` 蓝比真正的选中态还抢眼，`.cro-expert--shared.is-related` 改为与 `.cro-expert.is-selected` 同款（中性底 + 1.5px 白描边）；② 连线指向整组时画的包围盒虚线 `.cro-link-group` 从 `--foreground` @0.4（深底上偏灰蓝，像另一套弱提示）改成纯白 @0.9、线宽 1.25；③ `.cro-tick.is-selected` 在蓝色实心之外补一圈白描边 —— 刻度只有 ~4px 宽，白圈走 `border-color` 而非外扩 `box-shadow`，否则会盖住邻格。
+- 遗留待办：设计系统当前没有 select / form-control 组件，`.cro-select` 是用 tokens 拼的最小实现，后续应吸收进共享系统。
+
+## 2026-07-22 — `TaskCompare.html` 统一全页字体
+
+- 页面大量中英混排文案（指标名「GPU 利用率」、分组名「运行参数」、标签「基线」「清除」等）套用 `--font-mono`（`JetBrains Mono`/`Fira Code`/`Consolas`），这三款字体不含中文字形，中文部分会回退到浏览器默认等宽字体，与 `--font-sans` 统一使用的 PingFang SC/Noto Sans SC 中文字形不一致。页面级 `<style>` 里新增 `:root` 覆盖，给 `--font-mono` 补上与 `--font-sans` 相同的中文回退字体，西文/数字部分等宽观感不变，全页中文字形统一。
+
+## 2026-07-21 — 智能对话面板头部收纳：Key 设置改齿轮图标，去掉三行状态条
+
+- `#trainChatKeyBtn`（设置 DeepSeek API Key）从原来挤在标题下方的独立"Key 状态条"整行，收成抽屉右上角关闭按钮左侧的一枚齿轮图标按钮；配置状态只通过图标颜色（`.is-configured` 时描边变 `--accent`）和 `title`/`aria-label` 文案区分，不再单独占一行。
+- 连带去掉标题下方原本的三行：训练上下文行（`#trainChatContextLabel`）、Key 状态行（`#trainChatKeybar`）、每日额度行（`#trainChatQuotabar`）；额度限流本身（`quotaLeft()`/`bumpQuota()`）逻辑不变，只是不再有独立进度条 UI。`js/training-chat-panel.js` 相应删掉 `updateQuotaUI()`/`fmtContextLabel()` 等只服务于这些行的死代码。
+- 标题栏 `.wzh-chat-head` 去掉 `border-bottom` 分割线，头部直接过渡到消息区，减少视觉分层。
+
+## 2026-07-21 — `training-monitoring-v2.html` 新增「日志」抽屉（全量/任务/系统 + SQL 搜索）
+
+- 顶栏主题切换图标左侧新增线性「日志」图标入口 `#trainLogToggle`，默认收起；点击后从底部滑出非模态抽屉 `#trainLogDrawer`（日志行信息密度高偏宽，不采用 `wzh-chat-panel` 那种竖版右侧面板），含「全量日志｜任务日志｜系统日志」页签（复用页面已有的 `.seg`/`.segbtn` 分段控件）与一条 SQL 风格搜索框。
+- 新增 `js/training-log-drawer.js`：内置 50 行固定重演日志（时间/级别/组件/消息 + 关联 step），时间线与 `js/training-run-twin.js` 的 `INCIDENT_STEP=41230`（问题一：router FP8 softmax 溢出→98.3% token 塌缩到 expert193→loss NaN + all-to-all 死锁双发）、问题三（q_proj 溢出，step 8500）、问题五（HCCS 掉链路，step 20000）三处事故点对齐，而非随机生成；「任务日志」/「系统日志」按组件（trainer/dataloader/ckpt/eval/router 为任务，scheduler/npu-driver/network/node-health/hccl 为系统）拆分。
+- SQL 搜索实现了对这份静态数组的简化 WHERE 解析：支持 `level`/`comp`/`message`/`step` 列，`= != > >= < <= LIKE IN` 运算符，多条件用 `AND` 连接；解析不出结构化条件时退化为对整行文本的关键字子串匹配。抽屉内 context 复用 `window.twinGetTrainingContext()` 显示当前模型/step，逻辑与 `js/training-chat-panel.js` 的面板开合模式一致（Escape 关闭、独立 `is-open` 状态）。
+
+## 2026-07-21 — `training-monitoring-v2.html` 「问题定位」卡片改挂顶栏，不再挤占整网图高度
+
+- 点击进度轴问题点弹出的「问题定位」卡片（`#diagnosisLocator`）原本插在 `.twin-graph-card` 内、位于 `.twin-architecture-stage` 上方，弹出时会挤压整网图的可用高度；现改为挂载到顶栏原本空白的 48px 区域,不再影响图区尺寸。
+- 顶栏空间有限，描述文字（原两行 clamp）收起改走原生 `title` 提示（hover 卡片可见完整文案，见 `js/training-run-twin.js` `activateProblemOneLens()`）；`showDiagnosisLocator()`/`hideDiagnosisLocator()`/`exitTimeMachine()` 等既有逻辑和 DOM id 不变，仅挪动位置与重排 CSS。
+- 卡片再从顶栏正中挪到 `.pto-ide-frame__topbar-left`、紧跟页面标题之后，并把 `.pto-ide-frame__topbar-center`/`-right` 的 flex-grow 就地清零（本页覆写，不改 `ide-frame-pattern.css`），让标题到进度条之间的整段留白都归它，问题标题因此少截断、多显本文；操作区「详情与修复建议」精简为「详情」，「关闭」文字按钮换成与顶栏其余按钮同款的 28×28 × 图标（`.pto-ide-frame__window-action`）。
+- 卡片标题字号 12px 收到 11px，与胶囊内其余徽标字号更协调；同时把 `.pto-ide-frame__host-chip`/`.pto-ide-frame__workspace`（页面标题）钉死 `flex: none` + `white-space: nowrap`，空间紧张时改由卡片自己收缩/走省略号，避免页面标题被挤成两行。
+- 首版挂在顶栏中央 `.pto-ide-frame__topbar-center`；按反馈改挂到顶栏左侧、紧跟页面标题之后（标题与右侧进度条之间本就大片留白，更靠左、不遮挡任何元素）。顺手把 `.pto-ide-frame__topbar-center` 原本固定的 420px flex-basis 收窄成 `auto`（该页此槽位已不再使用），否则这段空间被空置的中央槽占着，标题会被挤到换行。
+
+## 2026-07-21 — `training-monitoring-v2.html` 新增「智能对话」AI 助手面板
+
+- 参考 MindStudioNext 右侧 AI 对话 inspector 的实现手法（前端直连 DeepSeek API、用户自带 Key、按浏览器/天限额），在训练监控大盘顶栏右上角新增线性图标入口，默认收起；点击后从右侧滑出非模态面板（不遮挡左侧整网图/指标），面板含 API Key 状态条、每日额度条、训练场景快捷提问、流式回复。
+- 系统提示改为围绕当前训练运行作答（模型/step/loss/MFU/已定位问题），而非解读离线性能分析报告；训练态由 `training-run-twin.js` 新增的只读 `window.twinGetTrainingContext()` 实时提供，对话逻辑独立成 `js/training-chat-panel.js`，不引入外部 CDN 依赖（内置极简 Markdown 渲染器，保持离线可用）。
+- 新增「消息设置」固定演示场景（快捷提问区首位）：点击后发送带任务名 mention 胶囊的用户消息，走脚本直出（不经 DeepSeek、不占每日额度、无需 API Key）固定文案 + 一张构造的 WeLink 消息预览卡片（任务/时长/step/loss/acc/MFU/显存利用率字段 + 通知强度规则标签）。
+- 新增「调整图表」固定演示场景：回答用 Markdown 表格列出精度栏 4 张图的替换前/替换后/日志提取结果，随后调用 `training-run-twin.js` 新增的 `window.twinDemoApplyAccuracyOverride()`，把精度栏 precision/recall/f1/rollout 相关系数 4 张卡换成 WPLC val loss/LAMBADA val loss/Z loss/数值 t 分布（ν）——复用真实图表引擎(`buildAccCard`/`renderMetricChart`)和 `metricsAtStep` 同款事故态曲线形状生成虚构数据，而非贴图；关闭对话框时 `window.twinDemoResetAccuracyOverride()` 自动还原成默认 8 图。`renderMarkdown` 同步补上 GFM 管道表格解析。
+- 打磨「消息设置」「调整图表」两个演示场景的业务正确性与真实感：前者用户提问改为携带动机的自然口吻，回答拆成「识别信息→给理由→具体方案→播报样例→确认生效+邀请调整」分段，样例卡片改为"任务开始运行约 6 小时后的首次播报"（此前用具体日期时间戳，与上文"排队中"矛盾），且卡片内 loss/acc/step 进度按 5.6 天总时长与本页 acc≈1-loss/6 的换算关系重新配平，不再是收敛期读数错配到刚开始跑的任务；后者用户诉求改为先指出 precision/recall/f1（分类指标）与 rollout 相关系数（RL 后训练指标）放在 task=pretrain 页面里本来就文不对题（呼应 `body[data-task]` 声明的真实业务背景），回答先认同该诊断再给替换方案，表格新增「不适用原因」列。
+- 重做智能对话消息气泡视觉：参考 shadcn/ui 的 [Bubble 组件](https://ui.shadcn.com/docs/components/base/bubble)规范（用户消息 end-aligned + 内容自适应宽度 ≤80% 的实心气泡，AI 回复用不带底色的 ghost 形态，避免表格/卡片被塞进有色气泡里变形），改掉此前"提问和回答都只是散字、没有气泡容器"的问题。用户气泡加圆角+底色+投影，右下角收成小直角当视觉锚点；AI 回复统一走 `js/training-chat-panel.js` 新增的 `createAiMessageShell()`（头像圆标 + "PTO 助手"标签 + 缩进正文的外壳），流式更新/脚本演示/报错只需改 `bodyEl.innerHTML`，头像行不用重建；四处发消息的入口（`sendMessage`/`appendSystemNotice`/两个脚本化场景）统一收敛到这一份外壳，不再各自拼 DOM。
+- 「消息设置」预览卡片瘦身:去掉底部"定时播报/事件通知/异常升级"三个规则胶囊(方案文字里已经讲过,卡片没必要重复列)与顶部"首次播报示例"标签;字段行由"标签换行数值"改成 key/value 同一行、两端对齐。快捷提问栏(`.wzh-chat-suggestions`)改成中性色(不再借用 primary/accent)、不换行改横向滚动保持单行,并去掉与上方消息区、下方输入框之间的分割线。
+
+## 2026-07-21 — `TaskCompare.html` 图表曲线业务化 + 按 TensorBoard scalars 范式分组
+
+- 曲线业务化：新增 `enrichSeries()`（配 `cmpNoise()`/`cmpHashSeed()`），把手工 20 点序列上采样到 77 点并叠加确定性抖动，手法参考 `training-monitoring-v2.html` 精度/infra 10 图的 `stepNoise` 正弦哈希噪声。抖动幅度按「相邻步长中位数」而非全局值域定标，避免 loss spike 撑大值域后把收敛平坦段淹没；尖峰段走阶跃插值保持陡直。首尾端点精确保留，故 `last()`/稳态均值/Borda 排名/末值最优口径完全不变，且不改写 `TASKS.series`（仅绘图用）。
+- 图表分组：新增 `CMP_GROUPS`（训练收敛 / 算力·基础设施 / 优化·策略），`CMP_METRICS` 各项补 `group` 字段并新增 `mfu`、`tput` 两个 infra 指标（6 → 8 图）。「图表对比」与单任务「数据趋势」两处均改为按分区渲染，分区标题栏可折叠（对应 TensorBoard Scalars 按 tag 首个 `/` 前缀自动归入折叠目录的范式）。
+- 折叠后隐藏的图不重绘（`offsetParent` 为 null 时跳过），展开时重绘；单任务页签图表联动缓存改为按元素身份查找，避免分区折叠后序号不连续导致取错缓存。
+
+## 2026-07-21 — `training-monitoring-v3.html` 合并入 `training-monitoring-v2.html`
+
+- 删除旧 `training-monitoring-v2.html`（SVG 整网图版），将 `training-monitoring-v3.html`（3D deck 整网图版）重命名为 `training-monitoring-v2.html`。
+- 同步重命名 `js/training-monitoring-v3-deck.js` → `js/training-monitoring-v2-deck.js`，更新 HTML 内 `<script src>` 引用。
+- 更新 `js/model-architecture-3d-deck-pattern.js`、`css/model-architecture-3d-deck-pattern.css`、`js/training-run-twin.js` 内引用 v3 的注释为 v2。
+- `launch-v2.html` 已指向 `training-monitoring-v2.html`，无需额外修改。
+
+## 2026-07-20 — 新增 `training-monitoring-v3.html`：整网图换成 model-architecture-3d-deck 组件
+
+- 新增 `training-monitoring-v3.html`（从 v2 复制，现已是新版 v2），整网图由 SVG 的 `opv-modelviz` 换成 pto-design-system 的 `model-architecture-3d-deck` pattern（CSS 3D 层叠，46 层沿深度铺开）；组件与样式 vendored 为 `js/model-architecture-3d-deck-pattern.js` / `css/model-architecture-3d-deck-pattern.css`。
+- 新增 `js/training-monitoring-v2-deck.js` 适配器（`window.PtoTwinGraphAdapter`）：承接旧 v2 在整网图上叠加的全部内容——常驻问题标注、点问题后的聚焦、`routed_expert_bank`(deck 里为 `expert_pool`) 原地展开卡片与 all-to-all 连线动画、算子去色、问题二 HiF8 溢出率徽标；内含 v2↔deck 的节点 id 映射表。
+- 问题标注按用户口径挂到「问题实际发生的层」：问题一 L38 / 问题三 L33 / 问题四 L35 / 问题五 L23（跨栈链路问题取代表层）/ 问题二 输出区；聚焦时切正视并把该层提到最前。
+- `js/training-run-twin.js` 改为可插拔绘制：上述几处一旦发现 `window.PtoTwinGraphAdapter` 就把绘制让给适配器，业务语义仍只有一份；新增 `window.PtoTwinGraphBridge` 供适配器回调诊断联动入口。v2 与 `training-monitoring.html` 不注册适配器，继续走原 SVG 实现，行为不变。
+- v3 移除 v2 的「全局/实时」视图页签与底部 46 层 3D 侧视卡（`twin-live-deck`）；工具栏补上并行标注（PP/TP/EP/DP）切换，去掉不适用的 L1~L5 层级下拉。
+- 视图只保留正视/侧视两个正交投影，不出组件的等轴 3D（iso）视角。动线为「侧视总览 → 正视下钻」：侧视下 46 层全可见、5 枚问题标注同时在场（承接原 3D 视角的总览作用），故作为落地视图；点问题时切正视并把事故层提到最前——正视下只有 `is-front-layer` 那层不透明可交互，天然就是 v2 那套聚焦效果。Fit 回侧视总览。
+- 侧视新增「逐层指标曲线」（移植自 precision-debugger 整网 2D 侧视顶部的「逐层 cosine」折线 + op-rank-time 的 transfer line chart 样式）：对齐每一层的趋势曲线，随 pan/zoom/旋转逐帧跟随。指标取自 `temp.md` 的 9 项（精度/性能/Infra 各 Top1~3），做成勾选面板，默认每类只勾 Top1（grad_weight_l2_norm / layer_fwd_bwd_latency / peak_activation_mem）。46 层曲线数据结合业务构造，事故层 L33/L35/L38 做出与红色标注一致的形变（如权重梯度 L2 在 L38 越 1.0 阈值爆炸）。为此给 vendored 的 `model-architecture-3d-deck` pattern 加了 `options.onOverlay` 每帧覆盖层收尾钩子（需回流上游）。
+- 逐层曲线样式打磨：① 不再独立占一块顶部分区，改为每指标一条 lane 自模型层顶部向上堆叠、紧贴模型层，lane 高按选中条数自适应压缩；② Catmull-Rom 平滑成顺滑曲线并收窄构造数据的噪声幅度，消除原先的锯齿抖动；③ 曲线名改到左侧（text-anchor:end，配一小段竖色标 + Top/单位副标）；④ 线加粗到 2.1px round-cap + 柔和 drop-shadow，打点带背景描边环，越界点标红并按 `temp.md` 阈值贴数值读数（贪心留距防重叠）。
+- 侧视卡顿优化（先减重节点绘制路线）：整网 3D deck 侧视下 46 层同时在场共 3778 个元素（1451 个带渐变+双阴影的节点 + 1772 条层内连线 + 92 个 preserve-3d 上下文），逐帧栅格化是卡顿主因（对照 precision-debugger 侧视是单一扁平 SVG 故不卡）。① 正视只显示单层，其余 45 层由 `opacity:0` 改 `display:none`，彻底移出合成树；② 侧视（data-view="right"）下把节点/专家池的渐变压成扁平填充、去掉 inset/drop 双阴影、层内文字透明（22px 薄片本就看不清），可读算子名仍由 side-labels 提供；③ 侧视整块隐藏层内连线 `__edges`——层间数据流由屏幕坐标的 interlayer-spine/side-guides 另画，不受影响。正视与下钻仍是单层，保留原有光泽。若仍不够顺，下一档是把侧视换成扁平 2D SVG（option B）。
+- 训练动画时序修正为「层先亮起 → 算完 → 才出曲线点」：前向时第 prog.fwd 层是正在计算的层，应已点亮(reached)但还没出点；点亮前沿因此比已出点的层领先一层——层点亮传 `prog.fwd+1`(已完成 0..prog.fwd-1 + 正在算的 prog.fwd)，曲线打点仍 `L < prog.fwd` 只画算完的层。二者仍由同一个 prog.fwd 在同一次调用算出，不漂移。验证:t=0 亮 1 层(L0 在算)出 0 点、t=10s 亮 11 层出 10 点、前向完成后亮=点各 46。
+- 训练动画曲线「跑在模型层前面」根因修复（宽度相关的横向缩放）：曲线 SVG 的 viewBox 用的是 `viewport.clientWidth/clientHeight`，而曲线点坐标 `xs[L]` 是按 `viewport.getBoundingClientRect()`（实际渲染像素框）换算的。两者只要差 1px（边框/子像素/布局未落定/infra 栏影响视口宽），SVG 就给 viewBox 乘一个随 x 放大的缩放系数，曲线越往右越比模型层跑得快、看着提前好几层；用户实测「收起右侧 infra 栏后才对齐」正是那一刻两把尺子恰好相等。改为 viewBox 也用同一个 `getBoundingClientRect()` 的宽高，并加 `preserveAspectRatio="none"` 保证 x/y 各自 1:1、绝不再缩放。验证:在 clientWidth(1100)≠BCR(1200) 的构造场景下，L10 卡片中心 x=329 对应的曲线点 cx≈329（未被 1.09× 拉伸）。
+- 训练动画曲线与层点亮对齐修复：原来层点亮在 animTick 里按 fwdDone 算、曲线在 renderMetricCurve 里按 prog.fwd 算，两处分算 + 层点亮 0.45s 淡入过渡，导致视觉上曲线跑在层前面。改为单一真源——层点亮改由 renderMetricCurve 用与曲线揭示完全相同的 prog.fwd 在同一次调用里算完（animTick 只推进状态 + 触发重画，加 lastLitFwd 去抖），并把点亮过渡收短到 .18s 让层紧跟曲线打点。验证：t=10s 恰好 10 层亮 + 10 个点，t=45s→45，t=46.5s→46，每个时刻「亮到第几层」==「曲线画到第几层」。
+- 侧视图加「训练过程动画」：播放一个训练 step。前向 L0→L45（1s/层）逐层点亮，未执行到的层压到 30% 透明；前向类指标随扫层从左往右逐层描点。全部层亮完后，反向 L45→L0（0.2s/层）沿途从右往左回描反向类指标。每个 step 走完短暂停顿后循环，面板底部显示当前前向/反向扫到第几层。指标按 `temp.md` 采集阶段分前/反向（`METRIC_FLOW`）：纯 Fwd（hidden_states_std/attention_entropy/peak_activation_mem/pp_transfer_bytes）为前向；梯度类及合并指标显著信号出现在反向的（grad_weight_l2_norm/layer_fwd_bwd_latency/layer_mfu/effective_flops_ratio/hbm_bandwidth_util）为反向。动画仅侧视播放，切正视即停并复位层透明度；`prefers-reduced-motion` 下直接全亮全曲线不动。
+- 修 `model-architecture-3d-deck` 的 `showChrome:false` 空指针：`apply()` 未判空就写 `[data-deck-readout]`，关掉自带工具栏时必崩（vendored 副本已修，需回流上游 `pto-design-system`）。
+
+## 2026-07-20 — `training-monitoring-v2.html` 新增问题一「详情与修复建议」抽屉，顶栏进度条简化为常显态
+
+- 新增「详情与修复建议」抽屉：入口从顶栏进度条面板移到点击问题点后弹出的中央「问题定位」卡片(`#diagnosisLocator`)上，按钮打开右侧抽屉，iframe 内嵌 `training-monitoring.html`（新增 `?embed=locate-sidebar` 内嵌模式，只渲染 `.twin-monitor-sidebar` 训练监控侧栏，配合已有的 `?diagnosis=moe-a2a` 深链自动展开定位链面板）。
+- 顶栏「训练进度」缩略部件不再靠悬浮展开问题列表面板：移除 `#progressAxis`/`#progressConnectors`/`#progressIssues`（连带 `renderProgressIssues()`/`layoutProgressConnectors()`），已训练时长默认常显，悬浮/聚焦不再触发部件变宽，避免轨道问题标记点跟着挪位导致点不中。
+- `css/training-run-twin.css` 新增 `?embed=locate-sidebar` 内嵌样式规则。
+
+## 2026-07-20 — `training-monitoring-v2.html` 顶栏进度条面板合并为一体 + 问题一定位卡新增「关闭」
+
+- 顶栏「训练进度」缩略条与悬浮问题列表面板不再是两块分离浮层：面板宽度改为贴齐缩略条(不再固定 300px)，二者悬浮时一起变宽(`min-width`)+ 面板向下变高(`max-height`)，衔接处去圆角/去边框做到零缝拼接。
+- 移除进度条面板里的「返回」按钮(`#timeMachineBack`)；点击「问题一」后架构图上方弹出的红色定位卡新增「关闭」按钮(`#diagnosisLocatorClose`)承接同一个 `exitTimeMachine()` 退出回放逻辑，且该卡片填色改为复用进度条面板「问题1」条目(`.wzh-tm-issue.is-p0`)同一套红色 inset 光晕，两处色感保持一致。
+
+## 2026-07-20 — `wzh_training-monitoring.html` 更名为 `training-monitoring-v2.html`，V1 入口改回旧文件
+
+- 文件改名以贴合其 V2 定位；同步更新引用：`launch-v2.html`「训练任务监控」卡的 `href`（指向新文件）、`js/training-run-twin.js` 内一处说明性注释。
+- `launch-v2.html`：V1/V2 两个 variant 此前都误指向同一文件，现改为 V1 → `training-monitoring.html`（旧版）、V2 → `training-monitoring-v2.html`（新版）。
+
+## 2026-07-20 — launch-v2「训练任务监控」卡加 V1/V2 入口
+
+- `launch-v2.html`：「训练任务监控」卡片 href 与新增的 `variants: [V1, V2]` 底部入口（样式对齐「Pangu 训练时空透视」等既有卡片）均指向 `wzh_training-monitoring.html`；卡片原先指向的 `training-monitoring.html` 不再是本卡默认入口。
+
+## 2026-07-20 — 精度栏恢复 precision/recall/F1，8 图表 + infra 2 图表补指标说明气泡
+
+- `js/training-run-twin.js`：`ACC_CARD_DEFS` 新增 `f1` 卡（precision、recall 的调和平均，数据在 `metricsAtStep()` 里同步算出），补满精度栏 2×4 网格的第 8 格。
+- `css/training-run-twin.css`：新增 `--twin-chart-f1` 颜色变量（4 处主题变体）。
+- `wzh_training-monitoring.html`：删除此前把精度栏压缩成 2×2、隐藏 precision/recall 的局部 CSS 覆盖，恢复默认 2×4/640px 布局；「精度」8 图表 + 「集群监控」MFU/显存利用率 2 图表标题旁新增「?」气泡，悬浮/聚焦展示指标含义与好坏判定标准（复用既有 `#diagnosisTooltip` 浮层，绑定逻辑抽成 `window.wzhBindHelpTooltips` 供动态建卡后按需重新扫描绑定）；气泡文案按「指标解释 \n\n 判断标准(可多条)」分段(靠 `.diagnosis-bubble` 已有的 `white-space:pre-wrap`)，grad_norm/weight_diff 补充 L2 范数的直白解释，weight_diff 额外说明其与 grad_norm 两条曲线同步波动才是健康信号；精度 8 图卡面上原有的 note 说明行（如 precision 卡下「预测正例中的准确率」）改为 CSS 隐藏，避免与新气泡重复，图例(legend)不受影响仍保留。
+- `js/training-metrics-chart.js`：新增常驻事故点标注 `spec.markerStep`——独立于原本借用 hover 游标(`cursor`)实现的临时高亮，单独一层(`gMarker`)绘制红色虚线(`.pto-tmchart__marker`)，不受 hover 交互影响，超出当前窗口范围时自动不画。`css/training-run-twin.css` 配套加了该类样式。
+- `js/training-run-twin.js`：`renderMetricChart()` 里 `cursor` 与 `markerStep` 解耦（此前 3 张卡靠把 `cursor` 初值设成 `markerStep` 来常驻显示，游标线是中性灰色且与「问题一」讲述以外的图表不一致）；`ACC_CARD_DEFS` 全部 8 张卡 + `INFRA_CARD_DEFS` 的 MFU / 显存利用率都补上 `markerStep: INCIDENT_STEP`，统一在 step 41230 常驻红色虚线；INFRA_CARD_DEFS 的 `regions` 改由 `markerStep` 派生的等效区间自动生成，移除了重复的 `INFRA_REGIONS` 常量。同时把 x 轴刻度档数从写死的 `xTicks: 4` 改成按实际绘图宽度动态收缩(窄卡 2 档/中等 3 档/宽敞 4 档)，解决训练监控侧栏窄卡下首尾 step 数字交错重叠不可读的问题。
+
+## 2026-07-20 — 整网图 Fit 改为按高度适配窗口
+
+- `model-graphviz-embed/pattern.js`：`fit()` 新增 `fitMode: 'height'` 分支，缩放系数只由 `heightFit` 决定（不再与 `widthFit`/`readableFloor` 取 min/max）；`height` 分支进一步去掉全局 `MIN_ZOOM(0.18)` 下限——该下限本是给交互式缩放用的最小可读比例，但套用到 Fit 计算上会在可视区高度较小/图较高时把缩放顶回 0.18，导致图仍然纵向溢出而不是贴合窗口，因此改为仅用极小值(0.02)兜底避免 0/负值。宽度超出时依赖既有 pan 交互左右滚动查看。
+- `js/opv-modelviz.js`：openPangu 整网图渲染改用 `fitMode: 'height'`（原为 `'readable'`）。
+
+## 2026-07-19 — training-run-twin「W_gate」移入 infra 并列页签，精度栏改「Weight Diff」，EP All-to-All 联动抽牌动画
+
+- `wzh_training-monitoring.html`：W_gate(Router)·专家负载分布从「训练监控」列移入 infra 列，与 EP All-to-All 合并为 `#wzhRouterMeshCard` 并列页签（复用 `.seg`/`.segbtn` 分段控件，而非新造 tab 组件）；两个 tooltip 里"左侧/右侧"措辞相应改为"切换页签"。
+- `js/training-run-twin.js`：`ACC_CARD_DEFS` 精度栏新增 `weightdiff` 卡（`‖ΔW‖` 权重差分 + `grad_norm` 右轴对照线，事故步同步跳 inf），替代原 Router 卡在精度栏的位置；`metricsAtStep`/`buildAccuracyData` 同步产出 `weight_diff` 序列。
+- `css/training-run-twin.css`：新增 `--twin-chart-weightdiff` 图表色变量（4 处主题块）；`.twin-accuracy-cards` 2×3 网格改 2×4 以容纳第 7 张卡。
+- `wzh_training-monitoring.html`：EP All-to-All 新增 `#wzhMeshLiveFlow`（8 条跨节点竖线 + 虚线流动动画），由「实时监控」抽牌层的 `layerType(L)` 判定驱动——MoE 层显示流动、Dense 层隐去，与事故态的静态汇聚线互斥显示。
+
+## 2026-07-19 — training-run-twin「W_gate 专家负载分布」「EP All-to-All」默认展示最新态
+
+- `wzh_training-monitoring.html`：两张卡默认显示训练最新健康态（负载均衡/收发对称），不再固定展示 step 41230 事故内容；新增 `window.wzhSyncProblemOneMonitorCards` 回调按事故态/最新态切换 KPI、SVG 柱状图、mesh 热点圈与图例文案。
+- `js/training-run-twin.js`：`applyViewStep` 新增 `INCIDENT_STEP_TOLERANCE`(300 步) 容差判定，时光机拖动落在事故 step 附近或点击问题标记（精确跳转）时触发上述回调切回事故态，松手/离开后自动切回最新态。
+
+## 2026-07-19 — training-run-twin 去除中心区底部多余内边距，Timeline 底栏默认收起
+
+- `wzh_training-monitoring.html`：`.twin-center-scroll`（`.pto-ide-frame__pane-body`）去掉底部 8px padding，只保留右侧 8px；底部 Timeline dock 默认收起（`setVisible(false)`），需要时手动点顶栏按钮展开。
+
+## 2026-07-19 — training-run-twin 时光机进度条支持拖块回放历史 step
+
+- `wzh_training-monitoring.html` / `js/training-run-twin.js`：时光机进度条加拖块，可在 `[200, liveStep]` 区间内往回拖（越过最新 step 的部分被钳制，未执行的 step 不可回放），轨道上补一条浅色残影标出可回拖范围。拖动时展示时钟 `state.step` 与实时时钟 `liveStep` 分离，精度 / infra 各图表窗口、进度读数、集群热力图整体回放到拖中的 step；拖到事故步 41230 可复现 loss NaN / grad_norm inf / MFU 0%。标题在回放态变为「xx,xxx Step」并在同行最右露出「返回」按钮，点击回到最新 step 并恢复实时态。回放态的热力图改用绝对 step 播种的确定性噪声，同一 step 反复回放结果一致；拖动中间帧跳过 2048 格热力图重绘（实测占单帧耗时大头），松手时整套补齐。
+
+## 2026-07-19 — training-run-twin infra「集群监控」补 smoothing 滑条，与精度卡双向同步
+
+- `wzh_training-monitoring.html` / `js/training-run-twin.js`：「集群监控」标题右侧新增 `#infraSmoothSlot`，挂同款 smoothing 滑条控制 MFU / 显存利用率两图；滑条统一登记到 `smoothControls`，拖动任一处即镜像其余滑条的位置与读数并重画精度 / infra / 定位链各组图表。
+
+## 2026-07-19 — training-run-twin 去掉左右栏级标题，infra「?」下沉到集群监控
+
+- `wzh_training-monitoring.html`：删除左栏「训练监控」标题（`#runTwinHeader`）与右栏「infra」标题，减少一层冗余标题；原 infra 栏级「?」（集群规模/并行策略说明）移到「集群监控」标题后。两栏 body 补上顶部内边距（原由标题提供），并清掉随之失效的 `.twin-sidebar-title` 样式。
+
+## 2026-07-19 — training-run-twin 制品/事件流移入底部 Timeline dock，形成三页签
+
+- `wzh_training-monitoring.html`：训练监控列的「制品」「事件流」两张卡片移入底部 dock，与 Timeline 并列为三个页签（复用 ide-frame pattern 的 `__terminal-tablist` / `__terminal-tab` 视觉）；副标题随页签切换；切回 Timeline 时补发 `resize` 让泳道图重排。
+
+## 2026-07-19 — training-run-twin infra 栏「?」上移 + MFU/显存图 y 轴按健康段收窄
+
+- 「集群监控」标题旁的并行策略「?」气泡移到上级 infra 栏标题后（`.wzh-card-title` 复用 `.wzh-card-title-row`），页内 4 处「见…标题旁「?」」交叉引用同步改为「见 infra 栏标题旁「?」」。
+- MFU / 显存利用率两图原先把事故步跌到 0 的点纳入自适应值域，正常波动被压成图表顶部窄带、下方大片留白。`training-metrics-chart.js` 新增 `spec.yDomain`（显式轴域 + 折线层 clip），`training-run-twin.js` 用 `healthyDomain()` 排除事故窗口 `[INCIDENT_STEP, RECOVERY_END]` 后取值域；骤降段裁到画面外，事故仍由新增的 regions 区带与悬浮气泡真实数值体现。曲线纵向占比由约 1/4 提升到约 7/10。
+
+## 2026-07-17 — training-run-twin 入口文件更名 wzh_index.html → training-monitoring.html
+
+- 个人前缀文件名改为语义化英文名(「训练监控」→ training monitoring)，避免与仓库内其它 `index.html`/`train/training-run-twin.html` 混淆。同步更新 `launch.html`、`launch-v2.html` 的入口链接，`SKILL.md`、`training-run-twin.css`、`training-run-twin.js`、`MindStudioNext.html` 中引用该文件名的注释；`CHANGELOG.md` 历史条目与 `prompt.md` 提示词记录保持原文不改。
+
+## 2026-07-17 — training-run-twin 问题详情顶部定位链重构为「速度刃进度轨」
+
+- `wzh_index.html` / `js/training-run-twin.js` — 顶部定位链从「圆点+连线」彻底重构为异形、有速度感/力量感的一体化进度轨：每层=一片前倾的「刀锋」分段(skewX 斜切 + 圆角，内容逆 skew 保持直立)，段间为斜向缝隙；当前层最亮 + 斜向速度条纹 + 外发光并展开(层名/子标题竖排)。三态：已通过=定向渐变蓝刃 / 当前=最亮发光 / 未到达=暗刃。整条栏做扁(高 ~62px)、去掉层号序号、去掉右侧白炽前缘(远看似缺块)、去掉底部推进光带。移除旧的 SVG 连线/高亮/悬浮图层及 `drawLocateTrackLines`/`positionLocate*` 相关代码，`setActiveLocateNode` 按分段索引点亮 is-done/is-active，浅/深色主题自适应。
+
+## 2026-07-17 — training-run-twin 问题五补全定位链详情页
+- **问题五「算子带宽瓶颈 + AICPU 回退」定位链详情**(`Profiling_Insight_and_Tool/training-run-twin-standalone/js/training-run-twin.js` 的 `locateChains["perf-compute-bottleneck"]`):将原本只有节点标签的骨架链，按定位链文档「案例一」(计算分支下钻)补齐为六层完整详情——性能表征层(T_iter 12.1s/MFU 38%/PHS D KPI 卡)、瓶颈分类层分叉(step_trace 堆叠条 + PP stage 0~7 计算段条形图)、阶段定位层(stage 7 过载 1.82×)、算子定位层(`op_statistic` 算子表,lm_head cube_util 49% + CE loss AICPU 526ms)、执行效率层(Roofline memory-bound + CE 手写 5 段串行链)、代码/配置层(lm_head tiling 调优 + `F.cross_entropy` 融合 + BF16 优化器 + 验证表)。内容为纯 HTML/CSS(复用其它问题的表格/代码 diff/metric-note 视觉),经现有 `content` innerHTML 渲染路径直出,无需新增 canvas JS。同步把整网图 lm_head 节点副标题的过时 `vocab 129280` 更正为 `151552`,与页面「训练信息」及架构参考一致。
+
+## 2026-07-16 — openPangu Swimlane 事件详情信息收口
+- **按事件类型呈现悬浮详情**(`pangu-moe-trainviz/op-rank-time-openpangu-flash-events.html`):计算区间只显示层范围、时间与对应 activation/gradient 摘要；通信事件只显示 Tensor、通信算子和 Active/Wait/Exposed；Activation 保留区间只显示保留时长与显存，不再把无关指标堆进同一张悬浮卡。
+- **Profiling 下钻产品化**:展开区改为“模型算子 / 设备 Kernel / 集合通信”三层，头部只保留 MB、PP、阶段、事件计数与局部时间；Inspector 和 hover 统一使用所属阶段、阶段内时间、模型路径、关联 ID 等用户语义。可见界面不再暴露 `mock profile JSON`、fidelity 枚举、测试目的或点击操作说明，仅以“内置示例 Trace · 局部事件覆盖”标明数据属性。
+- **浅色悬浮面板背景**:页面已跟踪的 Swimlane tooltip pattern 增加背景变量，本页浅色主题设为 `#F8F8F8`，深色与 glass 主题保持原 surface。
+- **空白点击取消选择**:Swimlane 空白区域现在统一清除 profiling span、通信事件、关联模型节点、Inspector 详情与联动去色；时间游标仍移动到点击位置，已展开的 task 明细保持展开，用户可继续选择同一 task 内的其他子事件。
+
 ## 2026-07-15 — openPangu PP 边界增加双向通信桥
 - **侧视 PP Send/Recv 语义**(`pangu-moe-trainviz/op-rank-time-openpangu-flash-events.html`):三个 PP stage 分割点常驻紧凑黄色 `===` 桥，并稳定排在 PP 标签下方；hover、键盘聚焦或选中后展开为 `F ACT ===▶` 与 `◀=== dH B`，明确区分前向 activation handoff 和反向 dHidden return。通信桥复用原 Layer-gap 数据键、Tooltip、去色聚焦与 Swimlane 下钻，PP 竖线仍只表示模型切分位置；侧视投影使用独立的 80% 默认 Fit 比例，不再继承正视/轴测的 50%。
 - **补充通信数值与命中优先级**:桥默认直接显示最大 `Exposed µs`，展开后分别显示 Forward activation / Backward dHidden 的 Payload 与 Exposed，Tooltip 展示两相独立的 Active、Wait、Exposed，并注明 Send/Recv 两端观测不可相加；删除侧视旧 EP token-flow 紫线及 hitbox，桥 hover 会优先截断底层 3D raycast，避免不可见 EP 对象覆盖 PP Tooltip。
