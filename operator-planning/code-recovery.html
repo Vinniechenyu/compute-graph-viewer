@@ -60,7 +60,7 @@
     .source-line-tag.is-compute,
     .source-line-tag.is-sync { color: var(--warning); }
     .source-line-tag.is-memory { color: var(--primary-hover); }
-    .source-line-detail { margin: 2px var(--space-3) var(--space-3) 44px; padding: var(--space-3); border-radius: var(--radius-md); background: var(--surface-2); color: var(--foreground-secondary); font: var(--text-body-sm); line-height: 1.5; }
+    .source-line-detail { border-color:color-mix(in srgb, var(--primary) 60%, var(--border-default));margin: 2px var(--space-3) var(--space-3) 44px; padding: var(--space-3); border-radius: var(--radius-md); background: color-mix(in srgb, var(--primary) 10%, var(--surface-2)); color: var(--foreground-secondary); border:1px solid var(--border-subtle);font: var(--text-body-sm); line-height: 1.5; }
     .source-line-detail strong { color: var(--foreground); }
     .source-line-detail code { display: block; margin-top: var(--space-1); color: var(--foreground-muted); font: var(--text-label); }
     .syntax-keyword { color: #c792ea; }
