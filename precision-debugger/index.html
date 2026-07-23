@@ -8122,8 +8122,7 @@ function renderMigInspector2(L) {
   ][migStepIndex()];
   const next = `<div class="isec"><div class="mi-k">证据链 · 第 ${migStepIndex() + 1}/${MIG_STEPS.length} 步</div>
     ${migStepsHtml()}
-    <button class="btn btn-solid mi-primary" onclick="${PRIMARY[1]}">${PRIMARY[0]} →</button>
-    <div class="mi-why">完整源码、采集计划与实验矩阵在<b>下方证据卡</b>里操作，右栏只给当前这一步。</div></div>`;
+    <button class="btn btn-solid mi-primary" onclick="${PRIMARY[1]}">${PRIMARY[0]} →</button></div>`;
   host.body.innerHTML = `<div class="mig-insp mi-4">${obj}${concl}${bound}${next}</div>`;
 }
 /* §6.7：右栏收敛为四区块。旧的详细版保留为 renderMigrationInspectorFull（当前不挂 UI）。 */
@@ -8215,7 +8214,6 @@ function renderMigrationNodeEvidence(L, node) {
     : migCollectStep < 3 ? `推进：${MIG_COLLECT_STEPS[migCollectStep + 1] || '完成采集'}` : '返回首差结论';
   const primaryAction = migCollectStep < 3 ? 'advanceMigrationCollection()' : `renderMigrationInspector(${L})`;
   body.innerHTML = `<div class="mig-insp evi-workbench">
-    <div class="evi-lead"><b>选择的是算法边界，不是某个标红结果。</b>页面已经把该节点对应到 GPU 语义入口与 NPU 实际执行路径；用户可以直接生成采集计划，无需再回到代码中寻找打点位置。</div>
     <div class="mig-vsec" style="margin-top:0"><div class="mig-vh">① 双端代码映射 <span class="mig-vh-sub">置信度 ${(p.mapping.confidence * 100).toFixed(0)}%</span></div>
       <div class="code-map-grid">
         <div class="code-map-card"><div class="code-map-role">${MIG_CODE_EVIDENCE.gpu.role}<span>REFERENCE</span></div><div class="code-map-path">${esc(MIG_CODE_EVIDENCE.gpu.path)}</div><div class="code-map-call">${esc(MIG_CODE_EVIDENCE.gpu.call)}</div></div>
@@ -8227,7 +8225,7 @@ function renderMigrationNodeEvidence(L, node) {
     <div class="mig-vsec"><div class="mig-vh">② 自动采集计划 <span class="mig-vh-sub">${stepLabel}</span></div>
       <div class="collect-plan"><div class="collect-plan-h"><span>Layer ${L} · ${esc(ALGO_OBJ.name)}</span><span>粗→细自动缩圈</span></div><div class="collect-plan-b">${migCollectRows()}
         <div class="collect-meta"><span>共同输入边界 ×3</span><span>共同输出 ×1</span><span>异常触发保留</span><span>预计 1 次重跑</span></div></div></div>
-      <div class="mig-vnote" style="margin-top:8px">先采集可直接比较的算法边界；只有边界确认异常后，才扩大到融合内部可采样点，避免整网全量 dump。</div>
+      <div class="mig-vnote" style="margin-top:8px">先采共同边界，边界确认异常后再扩到融合内部可采样点。</div>
     </div>
     <div class="mig-vsec"><div class="mig-vh">③ 当前结论边界</div>
       <div class="ichain"><div class="ichain-r ok"><span>上游 Layer ${Math.max(0, L - 1)}</span><b>达标</b></div><div class="ichain-r bad"><span>Layer ${L} 输出边界</span><b>首次超阈候选</b></div><div class="ichain-r ${migCollectStep >= 3 ? 'ok' : 'warn'}"><span>融合内部证据</span><b>${migCollectStep >= 3 ? '已可比较' : '待采集'}</b></div><div class="ichain-r muted"><span>代码根因</span><b>未确认</b></div></div>
@@ -9775,7 +9773,7 @@ function drillRight(d) {
 function simScrollToTail() { const g = document.getElementById('simGrid2d'); if (g) { g.scrollLeft = g.scrollWidth; g.scrollTop = g.scrollHeight; } }
 function simVizInner() {
   return S.simRun ? simLayoutViz()
-    : '<div class="note-box" style="margin-top:8px">点「仿真」按所选排布把 <b>2D 逻辑矩阵</b>编码为 <b>1D 物理内存</b>，联动追踪同一逻辑尾块的物理落位，判断异常是否来自排布 / 搬运。</div>';
+    : '<div class="note-box" style="margin-top:8px">按所选排布把逻辑矩阵映射到物理内存，定位差异元素落位。</div>';
 }
 /* 只重绘 ② 仿真视图本体，不整块 renderDrill —— 否则 drill-right 滚动位置被重置回顶部 */
 function updateSimViz() {
@@ -9891,8 +9889,7 @@ function simLayoutViz() {
 }
 function simTab(d, o) {
   if (o.anom !== 'crit') return `<div class="note-box">仿真对标锚定在首错算子 <span class="ilink" onclick="drillSelect('${d.root}')">OP_SOFTMAX</span>（当前为传播算子）。</div>`;
-  const pain = `<div class="sim-pain"><div class="sim-pain-h">⚠ 痛点 · 算子级精度定位手段有限、耗时长</div>
-    <div class="sim-pain-b">整算子 cos ${PREC[SPEC.rootId].cos.toFixed(4)} 只说明"softmax 错了"，但 <b>tensor 数据量大、无法逐步算理论值</b>，且 <b>CPU golden 粒度与 NPU 非对称</b>——难定位到具体哪一步 / 哪块数据。下面两个仿真把定位下沉到<b>指令级</b>与<b>排布级</b>。</div></div>`;
+  const pain = '';
   const instrs = [
     ['reduce_max', 'Vcmax 逐行最大', 'fp32 逐行 max', '1.00000', 'ok'],
     ['sub', 'Vsub x − max', 'fp32 广播减', '1.00000', 'ok'],
@@ -9903,11 +9900,9 @@ function simTab(d, o) {
   ];
   const rows = instrs.map((r) => `<tr class="${r[4] === 'crit' ? 'sim-bad' : ''}"><td>${r[0]}</td><td>${esc(r[1])}</td><td>${esc(r[2])}</td><td class="${r[4] === 'ok' ? '' : 'num-bad'}">${r[3]}</td><td><span class="sim-st ${r[4]}">${r[4] === 'crit' ? '分歧点' : r[4] === 'high' ? '传播' : '对齐'}</span></td></tr>`).join('');
   const f1 = `<div class="dsec"><div class="dsec-h">① 指令级仿真对标<span class="dsec-sub">CPU golden 拆成与 NPU 同步的逻辑切片</span>${capTag('mock', '指令切片与同步切片为方案设想')}</div>
-    <div class="hint" style="margin-bottom:7px">把 CPU 端计算过程拆解为<b>与 NPU 同步的逻辑切片</b>，在每条指令后建立<b>细粒度对标点</b>——解决 golden 粒度与 NPU 非对称、无法逐步比对的问题。</div>
     <div class="gridwrap"><table class="grid"><thead><tr><th>NPU 指令 · 逻辑切片</th><th>NPU 实现</th><th>CPU golden 同步切片</th><th>cos</th><th>对标</th></tr></thead><tbody>${rows}</tbody></table></div>
-    <div class="note-box" style="margin-top:8px"><b>分歧锁定在 reduce_sum 累加指令（bf16）</b> —— 从"整算子 cos 0.992"精确到<b>具体指令</b>，逐算子二分下沉到指令级，定位耗时大幅缩短。</div></div>`;
+    <div class="note-box" style="margin-top:8px"><b>分歧锁定在 reduce_sum 累加指令（bf16）</b>。</div></div>`;
   const f2 = `<div class="dsec"><div class="dsec-h">② 排布仿真调试器<span class="dsec-sub">输入原始数据 + 排布格式 → 仿真每步理论结果</span>${capTag('real', '地址映射为真实分形公式，已校验双射')}</div>
-    <div class="hint" style="margin-bottom:7px">解决"数据排布不直观、难判断是否正常"：输入原始数据 + 排布格式，在仿真环境按该排布计算<b>每一步理论结果</b>并可视化对比。</div>
     <div class="sim-form">
       <div class="side-row"><span class="side-lbl">排布格式</span><select class="hsel" onchange="setSimLayout(this.value)">
         <option value="ND"${S.simLayout === 'ND' ? ' selected' : ''}>ND（行主序）</option>
@@ -10522,7 +10517,7 @@ function opCoordBarHtml(blocked) {
       <button class="btn btn-icon" onclick="opStepCoord(1)" title="下一个执行坐标"><svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></button>
       <button class="btn ${atEarliest ? 'is-selected' : ''}" onclick="opJumpEarliest()" title="${e ? `跳到最早出现越界的执行坐标 block${e.block}·loop${e.loop}` : '当前用例未扫描到越界坐标'}">跳到最早异常坐标</button>
     </div>
-    ${blocked ? '' : `<div class="op-coord-scope">「首次差异」= 当前 block×loop 快照内的<b>执行序首次</b>，未扫描全部执行坐标，<b>不等同于全局元素序首次</b>。</div>`}
+    ${blocked ? '' : `<div class="op-coord-scope">「首次差异」为当前坐标的执行序首次，<b>非全局元素序首次</b>。</div>`}
   </div>`;
 }
 function opStepCoord(d) {
@@ -10947,7 +10942,7 @@ function opIntervalInspector() {
   const sq = opSqueeze(), R = OPDEV.rows;
   const tile = (k, v) => `<div class="mig-tile"><div class="tl">${k}</div><div class="tv">${v}</div></div>`;
   const scope = `<div class="mig-tiles c3">${tile('执行坐标', `b${opdevState.block}·it${opdevState.loop}`)}${tile('可对标点', `${opAnchorCount()}/${R.length}`)}${tile('AscendC 步骤', opStepCount())}</div>
-    <div class="isec"><div class="op-scope-note">作用域：当前 <b>block ${opdevState.block} × loop ${opdevState.loop}</b> 快照内的<b>执行序首次</b>；未扫描全部执行坐标，不代表全局元素序首次。</div></div>`;
+    <div class="isec"><div class="op-scope-note">作用域：当前 <b>block ${opdevState.block}×loop ${opdevState.loop}</b> 的<b>执行序首次</b>，非全局元素序首次。</div></div>`;
   /* 端点卡可点 → 定位并选中中央对应行（右栏 → 中央 的反向联动） */
   const bound = (row, m, cls) => `<div class="op-bound ${cls} is-link" onclick="opSelectRow('${row.id}')" title="点击定位到中央该行并查看证据">
     <span class="ob-n">${esc(opRefLabel(row))}</span><span class="ob-c">${m}</span><span class="ob-go">›</span></div>`;
@@ -10962,12 +10957,10 @@ function opIntervalInspector() {
   const basis = `<div class="isec"><div class="ikick">判定依据</div>
     <div class="op-basis"><span>cosine ≥ ${CFG.cos}</span><b class="${jf && jf.trig.includes('cosine') ? 'bad' : ''}">${jf ? jf.cos.toFixed(5) : '—'}</b></div>
     <div class="op-basis"><span>rel-p99 ≤ ${fmtRel(CFG.rel)}</span><b class="${jf && jf.trig.includes('rel-p99') ? 'bad' : ''}">${jf ? fmtRel(jf.rel) : '—'}</b></div>
-    <div class="op-tl-note" style="margin-top:6px">任一指标越界即判异常；reference 来源逐点标注 SOURCE / DERIVED / NO BASELINE，<b>无可靠基线的步骤不显示指标</b>。</div></div>`;
+    <div class="op-tl-note" style="margin-top:6px">reference 来源标注 SOURCE / DERIVED / NO BASELINE；无可靠基线的步骤不给指标。</div></div>`;
   const triage = `<div class="isec">${pfTriageCard(OPDEV.op)}</div>`;
   const hypo = `<div class="isec"><div class="ikick">当前假设 · 数值/累加 还是 搬运/排布</div>
-    <div class="note-box">误差随 <b>loop_it 单调增大</b>、随<b>尾块 block ≥ ${OPDEV.blocks / 2} 放大</b>且集中在归约步 → 倾向 <b>数值 / 累加类</b>。
-    判别规则：逻辑聚集 + 物理分散 = 数值类；逻辑散乱 + 物理连续 = 搬运 / 排布类。<b>此为假设，未经排布落位核实前不作为结论。</b></div>
-    <div class="op-tl-note" style="margin-top:6px">核实入口在<b>首次越界点的证据页</b>：点上面的红色端点卡进入。</div></div>`;
+    <div class="note-box">误差随 <b>loop_it 单调增大</b>、随<b>尾块放大</b>且集中在归约步 → 倾向 <b>数值 / 累加类</b>（假设，需排布落位核实）。</div></div>`;
   const act = `<div class="isec"><div class="ikick">下一步 · 采样与回归</div>
     <div style="display:flex;flex-direction:column;gap:6px">
       <button class="btn" style="justify-content:center" onclick="opToggleCfg()">${opdevState.cfg ? '收起采样配置' : '▸ 由夹逼区间生成采样配置'}</button>
@@ -11010,7 +11003,7 @@ function opNodeInspector(sel) {
           ${num('rel-p99', '0', `≤ ${fmtRel(CFG.rel)}`, `<span class="${j.trig.includes('rel-p99') ? 'num-bad' : ''}">${fmtRel(j.rel)}</span>`)}
           ${num('NaN / Inf', '0 / 0', '无溢出', '0 / 0')}
         </div>
-        <div class="op-tl-note" style="margin-top:7px">触发项：<b>${j.trig.length ? j.trig.join(' + ') : '无（达标）'}</b> · 判定同时遵循界面启用的 cosine 与 rel-p99。 ${capTag('synth', '指标随 block × loop 确定性变化，可复现')}</div>`;
+        <div class="op-tl-note" style="margin-top:7px">触发项：<b>${j.trig.length ? j.trig.join(' + ') : '无（达标）'}</b> ${capTag('synth', '指标随 block × loop 确定性变化，可复现')}</div>`;
   const evidSec = `<div class="isec"><div class="ikick">① 数值证据</div>${evid}</div>`;
   /* ③ 三级坐标链 + 反查 + 排布落位唯一入口 */
   const chain = j || notCap ? `<div class="isec"><div class="ikick">② 排布落位 · 逻辑 ↔ ${esc(OPDEV.layout)} 块 ↔ 物理</div>
@@ -11027,8 +11020,8 @@ function opNodeInspector(sel) {
         ${R.slice(sq.from, sq.to).map((r, k) => mark(sq.from + k, opRefLabel(r) + ' · 无可靠基线')).join('')}
         ${mark(sq.to, opRefLabel(R[sq.to]) + ' · 第一个越界点')}
       </div>
-      ${ri < sq.lastPass ? '<div class="op-tl-note" style="margin-top:7px">该点在区间<b>之前</b>，已达标，不在当前嫌疑范围内。</div>'
-        : ri > sq.to ? '<div class="op-tl-note" style="margin-top:7px">该点在区间<b>之后</b>，异常可能由上游传播，非独立根因。</div>' : ''}
+      ${ri < sq.lastPass ? '<div class="op-tl-note" style="margin-top:7px">该点在区间前，已达标。</div>'
+        : ri > sq.to ? '<div class="op-tl-note" style="margin-top:7px">该点在区间后，为上游传播、非独立根因。</div>' : ''}
       ${opIntervalHtml()}
       </div>`;
   }
