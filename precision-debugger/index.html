@@ -1007,8 +1007,8 @@ body.wm-opdev #precMode,body.wm-opdev #precModeLbl,body.wm-opdev .graph-pane > .
 .op-coord-r .btn{font-size:11px;padding:4px 9px}
 .op-coord-scope{flex:1 1 100%;font:var(--text-body-sm);font-size:10.5px;line-height:1.5;color:var(--foreground-muted)}
 .op-coord-scope b{color:var(--foreground-secondary)}
-/* ── §P1-1 执行坐标分布总览：block×loop 异常热力矩阵 ── */
-.op-coord-matrix{flex:1 1 100%;margin-top:4px;padding:10px 12px;border:1px solid var(--border-subtle);border-radius:var(--radius-md);background:var(--surface-1)}
+/* ── §P1-1 执行坐标分布总览：block×loop 异常热力矩阵（脱离粘顶坐标条，随内容滚动，与下方泳道留间距）── */
+.op-coord-matrix{margin:0 0 22px;padding:12px 14px;border:1px solid var(--border-subtle);border-radius:var(--radius-lg);background:var(--surface-1)}
 .ocm-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px}
 .ocm-t{font:600 11px/1 var(--font-sans);color:var(--foreground)}
 .ocm-flags{display:flex;gap:6px}
@@ -10707,9 +10707,8 @@ function opCoordBarHtml(blocked) {
         <button class="segbtn ${opdevState.coordMap ? '' : 'on'}" onclick="opSetCoordMap(false)">关</button>
       </span>
     </div>
-    ${blocked || !opdevState.coordMap ? '' : opCoordMatrixHtml()}
     ${blocked ? '' : `<div class="op-coord-scope">「首次差异」为当前坐标的执行序首次，<b>非全局元素序首次</b>。</div>`}
-  </div>`;
+  </div>${blocked || !opdevState.coordMap ? '' : opCoordMatrixHtml()}`;
 }
 /* §P1-1 分布总览：block×loop 全扫，先看异常分布（只在尾块？随 loop 放大？哪些 block 全正常？
    最早 vs 最严重是否同一坐标？），再点格精确回放。sev 用 opScale 归一，与逐坐标指标同源可复现。 */
