@@ -5,6 +5,13 @@
 
 ---
 
+## 2026-10-15 — LinguaFlow：新增多语种在线学习平台 `lingua-learn/`
+
+- 新增 `lingua-learn/`：英语（CEFR）/ 日语（JLPT）/ 韩语（TOPIK）三语种分级课程体系，每语种 5 等级 × 4 单元（词汇 / 语法 / 听力 / 口语），共 135 课时；纯静态前端 + localStorage 持久化，无构建依赖，本地 HTTP 直接运行。
+- 互动学习模块：单词记忆卡（翻转 + 间隔复习）、语法选择题（即时解析）、听力精听、口语跟读（Web Speech API 的 TTS/ASR + 发音相似度评分），由 `js/player.js` 统一驱动。
+- 学习进度追踪（XP / 连续打卡 / 分语种统计）、个性化路径推荐（`js/recommend.js` 按到期复习与模块正确率排序）、注册登录（`js/store.js` 单库本地账号）、共学社区与成就徽章激励系统。
+- `launch.html` — 新增「在线学习」分组，收录 LinguaFlow 入口卡（iframe 预览 + 跳转 `lingua-learn/index.html`）。
+
 ## 2026-07-22 — TaskCompare：图表对比底部新增「Media 对比」栏
 
 - `Profiling_Insight_and_Tool/training-run-twin-standalone/TaskCompare.html` — 图表对比页底部增加多模态产出对比分区：左侧勾选几个任务就渲染几张卡片，卡片自上而下为任务名（含状态点/基线标签）、圆角视频封面（取自 `pic/`，16:10 定比裁切 + 综合评分/分辨率·帧率/时长角标）、生成 prompt、产出质量指标（CLIP-T / 时序一致性 / 美学评分 / FVD）、来源 checkpoint 与单条生成耗时；沿用 `.cmp-group` 外壳支持折叠，「标记最优」开关下逐指标高亮最优任务。

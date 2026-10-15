@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LinguaFlow · 多语种在线学习平台</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%235b5bd6'/%3E%3Ctext x='32' y='44' font-size='34' text-anchor='middle' fill='white' font-family='sans-serif'%3E%E8%AF%AD%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<!-- 未登录：认证页 -->
+<div id="auth-root" class="auth-root"></div>
+
+<!-- 已登录：应用外壳 -->
+<div id="app-shell" class="app-shell" hidden>
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="brand-mark">语</span>
+      <span class="brand-text">LinguaFlow</span>
+    </div>
+    <nav class="nav" id="main-nav"></nav>
+    <div class="sidebar-foot">
+      <div class="user-card" id="sidebar-user"></div>
+      <button class="btn btn-ghost btn-sm" id="logout-btn">退出登录</button>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="topbar-title">
+        <h1 id="page-title">学习首页</h1>
+        <p id="page-sub" class="muted"></p>
+      </div>
+      <div class="topbar-stats" id="topbar-stats"></div>
+    </header>
+    <main id="view" class="view"></main>
+  </div>
+</div>
+
+<!-- 题型作答反馈浮层 -->
+<div id="toast-layer" class="toast-layer"></div>
+
+<script src="js/catalog-a.js"></script>
+<script src="js/catalog-b.js"></script>
+<script src="js/catalog-c.js"></script>
+<script src="js/curriculum.js"></script>
+<script src="js/store.js"></script>
+<script src="js/speech.js"></script>
+<script src="js/recommend.js"></script>
+<script src="js/player.js"></script>
+<script src="js/views-learn.js"></script>
+<script src="js/views-track.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
